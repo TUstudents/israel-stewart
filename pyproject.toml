@@ -106,26 +106,30 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-line-length = 88
+line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-    "NPY", # numpy-specific rules
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
 ]
 ignore = [
-    "E501", # line too long, handled by black
+    "E501",  # line too long (handled by formatter)
+    "B905",  # zip without explicit strict parameter
+    "F841",  # unused variables
+    "F401",  # unused imports
+    "E731",  # lambda expressions (useful for short functions)
+    "E722",  # bare except (sometimes needed for symbolic math)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # unused imports in __init__.py
+"__init__.py" = ["F401"]      # unused imports in __init__.py
 "tests/*" = ["F401", "F811"]  # test files can have unused imports
 
 [tool.ruff.format]
@@ -155,5 +159,7 @@ module = [
     "matplotlib.*",
     "numba.*",
     "h5py.*",
+    "sympy.*",
+    "opt_einsum.*",
 ]
 ignore_missing_imports = true

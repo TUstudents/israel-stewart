@@ -125,9 +125,7 @@ def validate_relativistic_velocity(
     """
     v_squared = np.dot(velocity, velocity)
     if v_squared >= (C_LIGHT**2 - tolerance):
-        raise ValueError(
-            f"Velocity magnitude {np.sqrt(v_squared):.6f} exceeds speed of light"
-        )
+        raise ValueError(f"Velocity magnitude {np.sqrt(v_squared):.6f} exceeds speed of light")
     return True
 
 
@@ -205,12 +203,7 @@ def natural_to_si_time(time_natural: float) -> float:
 
 def natural_to_si_length(length_natural: float) -> float:
     """Convert length from natural units to SI (meters)."""
-    return (
-        length_natural
-        * SI_CONSTANTS["hbar"]
-        * SI_CONSTANTS["c"]
-        / natural_to_si_energy(1.0)
-    )
+    return length_natural * SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"] / natural_to_si_energy(1.0)
 
 
 # Dimensionless combinations for Israel-Stewart hydrodynamics

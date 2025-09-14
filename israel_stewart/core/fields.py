@@ -69,9 +69,7 @@ class ThermodynamicState:
     def _validate_energy_density(self, rho: float) -> float:
         """Validate energy density."""
         if rho < ENERGY_DENSITY_MIN:
-            raise FieldValidationError(
-                f"Energy density {rho} below minimum {ENERGY_DENSITY_MIN}"
-            )
+            raise FieldValidationError(f"Energy density {rho} below minimum {ENERGY_DENSITY_MIN}")
         if not np.isfinite(rho):
             raise FieldValidationError(f"Energy density must be finite, got {rho}")
         return rho
@@ -84,9 +82,7 @@ class ThermodynamicState:
         if p < 0:
             import warnings
 
-            warnings.warn(
-                f"Negative pressure {p} indicates exotic matter", stacklevel=2
-            )
+            warnings.warn(f"Negative pressure {p} indicates exotic matter", stacklevel=2)
         return p
 
     def _validate_thermodynamic_consistency(self) -> None:
@@ -187,9 +183,7 @@ class FluidVelocityField:
             self.four_velocity = four_velocity
             self._validate_four_velocity()
         elif three_velocity is not None:
-            self.four_velocity = self._construct_four_velocity_from_three(
-                three_velocity
-            )
+            self.four_velocity = self._construct_four_velocity_from_three(three_velocity)
         else:
             # Default to rest frame
             self.four_velocity = FourVector([1.0, 0.0, 0.0, 0.0], False, metric)
@@ -208,9 +202,7 @@ class FluidVelocityField:
                 f"Four-velocity not normalized: u�u = {norm_sq}, expected {expected_norm}"
             )
 
-    def _construct_four_velocity_from_three(
-        self, three_velocity: np.ndarray
-    ) -> FourVector:
+    def _construct_four_velocity_from_three(self, three_velocity: np.ndarray) -> FourVector:
         """Construct four-velocity from three-velocity."""
         from .constants import compute_lorentz_factor, validate_relativistic_velocity
 
@@ -232,9 +224,7 @@ class FluidVelocityField:
         """Extract three-velocity from four-velocity."""
         gamma = self.four_velocity.time_component
         if abs(gamma) < 1e-15:
-            raise FieldValidationError(
-                "Cannot extract three-velocity from null four-velocity"
-            )
+            raise FieldValidationError("Cannot extract three-velocity from null four-velocity")
 
         return self.four_velocity.spatial_components / gamma
 
@@ -311,12 +301,8 @@ class TransportCoefficients:
             tau_q_pi: Heat-shear relaxation coupling τ_qπ
         """
         # First-order transport coefficients
-        self.shear_viscosity = self._validate_coefficient(
-            shear_viscosity, "shear_viscosity"
-        )
-        self.bulk_viscosity = self._validate_coefficient(
-            bulk_viscosity, "bulk_viscosity"
-        )
+        self.shear_viscosity = self._validate_coefficient(shear_viscosity, "shear_viscosity")
+        self.bulk_viscosity = self._validate_coefficient(bulk_viscosity, "bulk_viscosity")
         self.thermal_conductivity = self._validate_coefficient(
             thermal_conductivity, "thermal_conductivity"
         )
@@ -412,9 +398,7 @@ class TransportCoefficients:
             return float("inf") if self.bulk_viscosity > 0 else 0.0
         return self.bulk_viscosity / self.shear_viscosity
 
-    def estimate_relaxation_times(
-        self, thermodynamic_state: ThermodynamicState
-    ) -> None:
+    def estimate_relaxation_times(self, thermodynamic_state: ThermodynamicState) -> None:
         """
         Estimate relaxation times from thermodynamic state.
 
@@ -521,9 +505,7 @@ class HydrodynamicState:
         if self.velocity.metric != self.velocity.four_velocity.metric:
             import warnings
 
-            warnings.warn(
-                "Velocity field and four-velocity have different metrics", stacklevel=2
-            )
+            warnings.warn("Velocity field and four-velocity have different metrics", stacklevel=2)
 
         # Estimate relaxation times if not provided
         self.transport.estimate_relaxation_times(self.thermodynamic)
@@ -605,7 +587,9 @@ class HydrodynamicState:
         )
 
     def __repr__(self) -> str:
-        return f"HydrodynamicState(thermodynamic={self.thermodynamic!r}, velocity={self.velocity!r})"
+        return (
+            f"HydrodynamicState(thermodynamic={self.thermodynamic!r}, velocity={self.velocity!r})"
+        )
 
 
 class ISFieldConfiguration:
@@ -728,9 +712,7 @@ class ISFieldConfiguration:
 
         # Unpack shear tensor
         pi_size = 16 * grid_size
-        self.pi_munu = state[offset : offset + pi_size].reshape(
-            (*self.grid.shape, 4, 4)
-        )
+        self.pi_munu = state[offset : offset + pi_size].reshape((*self.grid.shape, 4, 4))
         offset += pi_size
 
         # Unpack heat flux
@@ -790,9 +772,7 @@ class ISFieldConfiguration:
         offset += pi_munu_size
 
         # Unpack heat flux q^μ
-        self.q_mu = dissipative_state[offset : offset + q_size].reshape(
-            (*self.grid.shape, 4)
-        )
+        self.q_mu = dissipative_state[offset : offset + q_size].reshape((*self.grid.shape, 4))
 
     @property
     def dissipative_field_count(self) -> int:
@@ -837,9 +817,7 @@ class ISFieldConfiguration:
 
         if self.grid.metric is None:
             # Minkowski metric normalization
-            u_squared = -(self.u_mu[..., 0] ** 2) + np.sum(
-                self.u_mu[..., 1:4] ** 2, axis=-1
-            )
+            u_squared = -(self.u_mu[..., 0] ** 2) + np.sum(self.u_mu[..., 1:4] ** 2, axis=-1)
         else:
             # General metric normalization
             u_squared = optimized_einsum(
@@ -852,9 +830,7 @@ class ISFieldConfiguration:
 
         # Normalize to correct value
         normalization_factor = np.sqrt(np.abs(u_squared / expected_norm))
-        normalization_factor = np.where(
-            normalization_factor > 1e-15, normalization_factor, 1.0
-        )
+        normalization_factor = np.where(normalization_factor > 1e-15, normalization_factor, 1.0)
 
         self.u_mu /= normalization_factor[..., np.newaxis]
 
@@ -908,9 +884,7 @@ class ISFieldConfiguration:
         self.n = np.maximum(self.n, 0.0)
 
         # Pressure positivity (can be relaxed for exotic matter)
-        self.pressure = np.maximum(
-            self.pressure, -0.1 * self.rho
-        )  # Allow some negativity
+        self.pressure = np.maximum(self.pressure, -0.1 * self.rho)  # Allow some negativity
 
         # Temperature must be positive
         if hasattr(self, "temperature"):
@@ -926,9 +900,7 @@ class ISFieldConfiguration:
             Stress-energy tensor at each grid point with shape (*grid.shape, 4, 4)
         """
         if not self._constraints_enforced:
-            warnings.warn(
-                "Computing stress-energy tensor without enforcing constraints"
-            )
+            warnings.warn("Computing stress-energy tensor without enforcing constraints")
 
         T_total = np.zeros((*self.grid.shape, 4, 4))
 
@@ -991,8 +963,7 @@ class ISFieldConfiguration:
                 * spatial_volume
             )
             charges["total_particle_number"] = (
-                np.sum(charges["particle_current"][..., 0] * volume_element)
-                * spatial_volume
+                np.sum(charges["particle_current"][..., 0] * volume_element) * spatial_volume
             )
 
         return charges
@@ -1010,22 +981,16 @@ class ISFieldConfiguration:
 
         # Check four-velocity normalization
         if self.grid.metric is None:
-            u_norm_sq = -(self.u_mu[..., 0] ** 2) + np.sum(
-                self.u_mu[..., 1:4] ** 2, axis=-1
-            )
+            u_norm_sq = -(self.u_mu[..., 0] ** 2) + np.sum(self.u_mu[..., 1:4] ** 2, axis=-1)
         else:
             u_norm_sq = optimized_einsum(
                 "...i,...j,ij->...", self.u_mu, self.u_mu, self.grid.metric.components
             )
 
         expected_norm = (
-            -1.0
-            if getattr(self.grid.metric, "signature", (-1, 1, 1, 1))[0] < 0
-            else 1.0
+            -1.0 if getattr(self.grid.metric, "signature", (-1, 1, 1, 1))[0] < 0 else 1.0
         )
-        validation["four_velocity_normalized"] = np.allclose(
-            u_norm_sq, expected_norm, rtol=1e-10
-        )
+        validation["four_velocity_normalized"] = np.allclose(u_norm_sq, expected_norm, rtol=1e-10)
 
         # Check shear tensor properties
         pi_trace = np.trace(self.pi_munu, axis1=-2, axis2=-1)
@@ -1035,9 +1000,7 @@ class ISFieldConfiguration:
         pi_u_contraction = optimized_einsum("...ij,...i->...j", self.pi_munu, self.u_mu)
         q_u_contraction = optimized_einsum("...i,...i->...", self.q_mu, self.u_mu)
 
-        validation["shear_orthogonal_to_velocity"] = np.allclose(
-            pi_u_contraction, 0.0, atol=1e-12
-        )
+        validation["shear_orthogonal_to_velocity"] = np.allclose(pi_u_contraction, 0.0, atol=1e-12)
         validation["heat_flux_orthogonal_to_velocity"] = np.allclose(
             q_u_contraction, 0.0, atol=1e-12
         )
@@ -1112,9 +1075,7 @@ class ISFieldConfiguration:
             f.attrs["thermodynamic_consistent"] = self._thermodynamic_consistent
 
     @classmethod
-    def load_from_hdf5(
-        cls, filename: str, grid: "SpacetimeGrid"
-    ) -> "ISFieldConfiguration":
+    def load_from_hdf5(cls, filename: str, grid: "SpacetimeGrid") -> "ISFieldConfiguration":
         """Load field configuration from HDF5 file."""
         try:
             import h5py

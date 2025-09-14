@@ -120,9 +120,7 @@ class LorentzTransformation:
         return rotation_4d
 
     @monitor_performance("vector_transformation")
-    def transform_vector(
-        self, vector: FourVector, transformation: np.ndarray
-    ) -> FourVector:
+    def transform_vector(self, vector: FourVector, transformation: np.ndarray) -> FourVector:
         """
         Apply Lorentz transformation to four-vector: V'^μ = Λ^μ_ν V^ν.
 
@@ -138,9 +136,7 @@ class LorentzTransformation:
 
         # Apply transformation
         if isinstance(vector.components, np.ndarray):
-            transformed_components = optimized_einsum(
-                "mn,n->m", transformation, vector.components
-            )
+            transformed_components = optimized_einsum("mn,n->m", transformation, vector.components)
         else:
             transformation_sp = sp.Matrix(transformation)
             transformed_components = transformation_sp * vector.components
@@ -148,9 +144,7 @@ class LorentzTransformation:
         return FourVector(transformed_components, vector.indices[0][0], self.metric)
 
     @monitor_performance("tensor_transformation")
-    def transform_tensor(
-        self, tensor: TensorField, transformation: np.ndarray
-    ) -> TensorField:
+    def transform_tensor(self, tensor: TensorField, transformation: np.ndarray) -> TensorField:
         """
         Apply Lorentz transformation to rank-2 tensor: T'^μν = Λ^μ_α Λ^ν_β T^αβ.
 
@@ -162,9 +156,7 @@ class LorentzTransformation:
             Transformed tensor
         """
         if tensor.rank != 2:
-            raise NotImplementedError(
-                "Transformation only implemented for rank-2 tensors"
-            )
+            raise NotImplementedError("Transformation only implemented for rank-2 tensors")
 
         if transformation.shape != (4, 4):
             raise ValueError("Transformation matrix must be 4x4")
@@ -175,9 +167,7 @@ class LorentzTransformation:
 
         if isinstance(tensor.components, np.ndarray):
             # Determine transformation based on index types
-            if (
-                not tensor.indices[0][0] and not tensor.indices[1][0]
-            ):  # Both contravariant
+            if not tensor.indices[0][0] and not tensor.indices[1][0]:  # Both contravariant
                 transformed = optimized_einsum(
                     "ma,nb,ab->mn", transformation, transformation, tensor.components
                 )
@@ -206,18 +196,12 @@ class LorentzTransformation:
         else:
             # SymPy version - simplified
             transformation_sp = sp.Matrix(transformation)
-            if (
-                not tensor.indices[0][0] and not tensor.indices[1][0]
-            ):  # Both contravariant
-                transformed = (
-                    transformation_sp * tensor.components * transformation_sp.T
-                )
+            if not tensor.indices[0][0] and not tensor.indices[1][0]:  # Both contravariant
+                transformed = transformation_sp * tensor.components * transformation_sp.T
             else:
                 # More complex transformation for mixed/covariant indices
                 inv_transformation_sp = sp.Matrix(inv_transformation)
-                transformed = (
-                    inv_transformation_sp * tensor.components * inv_transformation_sp.T
-                )
+                transformed = inv_transformation_sp * tensor.components * inv_transformation_sp.T
 
         return TensorField(transformed, tensor._index_string(), self.metric)
 
@@ -266,9 +250,7 @@ class LorentzTransformation:
 
         # Three-velocity: v^i = u^i / u^0 for timelike vectors
         if not four_velocity.is_timelike():
-            raise PhysicsError(
-                "Can only extract three-velocity from timelike four-velocity"
-            )
+            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
 
         three_velocity = four_velocity.spatial_components / gamma
 
@@ -292,9 +274,7 @@ class LorentzTransformation:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
         if not four_velocity.is_timelike():
-            raise PhysicsError(
-                "Can only extract three-velocity from timelike four-velocity"
-            )
+            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
 
         three_velocity = four_velocity.spatial_components / gamma
 
@@ -302,9 +282,7 @@ class LorentzTransformation:
         return self.boost_matrix(three_velocity)
 
     @staticmethod
-    def thomas_wigner_rotation(
-        velocity1: np.ndarray, velocity2: np.ndarray
-    ) -> np.ndarray:
+    def thomas_wigner_rotation(velocity1: np.ndarray, velocity2: np.ndarray) -> np.ndarray:
         """
         Compute Thomas-Wigner rotation for successive boosts.
 

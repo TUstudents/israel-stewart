@@ -145,9 +145,7 @@ class TestNumericalChristoffel:
     def test_constant_metric_derivatives(self):
         """Test that constant metrics have zero derivatives."""
         # Create a constant non-Minkowski metric
-        components = np.array(
-            [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]]
-        )
+        components = np.array([[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
         metric = GeneralMetric(components)
 
         t = np.linspace(0, 1, 10)
@@ -168,9 +166,7 @@ class TestNumericalChristoffel:
             metric.christoffel_symbols_numerical([np.linspace(0, 1, 10)])
 
         with pytest.raises(CoordinateError):
-            metric.christoffel_symbols_numerical(
-                [np.linspace(0, 1, 10) for _ in range(5)]
-            )
+            metric.christoffel_symbols_numerical([np.linspace(0, 1, 10) for _ in range(5)])
 
     def test_warning_for_no_coordinates(self):
         """Test warning when no coordinates provided for numerical computation."""
@@ -306,10 +302,7 @@ class TestSymbolicChristoffel:
         christoffel = metric.christoffel_symbols
         # All components should be zero for constant metric
         is_zero = all(
-            christoffel[i, j, k] == 0
-            for i in range(4)
-            for j in range(4)
-            for k in range(4)
+            christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4)
         )
         assert is_zero
 
@@ -325,10 +318,7 @@ class TestSymbolicChristoffel:
 
         # Should have non-zero components
         is_zero = all(
-            christoffel[i, j, k] == 0
-            for i in range(4)
-            for j in range(4)
-            for k in range(4)
+            christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4)
         )
         assert not is_zero
 
@@ -417,9 +407,7 @@ class TestPerformanceAndAccuracy:
     def test_numerical_vs_symbolic_consistency(self):
         """Test consistency between numerical and symbolic computations."""
         # Use a simple symbolic metric that can be evaluated numerically
-        g_symbolic = sp.Matrix(
-            [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]]
-        )
+        g_symbolic = sp.Matrix([[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
 
         g_numerical = np.array(
             [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]], dtype=float
@@ -434,10 +422,7 @@ class TestPerformanceAndAccuracy:
 
         # Both should give zero for constant metrics
         sym_is_zero = all(
-            christoffel_sym[i, j, k] == 0
-            for i in range(4)
-            for j in range(4)
-            for k in range(4)
+            christoffel_sym[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4)
         )
         assert sym_is_zero
         assert np.allclose(christoffel_num, 0.0)

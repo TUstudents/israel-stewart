@@ -112,9 +112,7 @@ class CovariantDerivative:
                     divergence += div_term.mean()  # Use mean for scalar result
 
             # Christoffel symbol terms: Γ^μ_μλ V^λ - vectorized
-            christoffel_trace = np.einsum(
-                "iij,j->", christoffel, vector_field.components
-            )
+            christoffel_trace = np.einsum("iij,j->", christoffel, vector_field.components)
             divergence += christoffel_trace
 
         else:
@@ -128,9 +126,7 @@ class CovariantDerivative:
 
                 # Christoffel terms
                 for lam in range(4):
-                    divergence += (
-                        christoffel[mu, mu, lam] * vector_field.components[lam]
-                    )
+                    divergence += christoffel[mu, mu, lam] * vector_field.components[lam]
 
         return divergence
 
@@ -159,13 +155,9 @@ class CovariantDerivative:
             cov_deriv = self.tensor_covariant_derivative(tensor_field, mu, coordinates)
 
             # Contract with u^μ: u^μ ∇_μ T
-            material_deriv_components += (
-                four_velocity.components[mu] * cov_deriv.components
-            )
+            material_deriv_components += four_velocity.components[mu] * cov_deriv.components
 
-        return TensorField(
-            material_deriv_components, tensor_field._index_string(), self.metric
-        )
+        return TensorField(material_deriv_components, tensor_field._index_string(), self.metric)
 
     @monitor_performance("tensor_covariant_derivative")
     def tensor_covariant_derivative(
@@ -191,9 +183,7 @@ class CovariantDerivative:
         christoffel = self.christoffel_symbols
 
         if not isinstance(tensor_field.components, np.ndarray):
-            raise NotImplementedError(
-                "Symbolic tensor derivatives not fully implemented"
-            )
+            raise NotImplementedError("Symbolic tensor derivatives not fully implemented")
 
         # Start with partial derivative term
         partial_derivative = self._partial_derivative(
@@ -260,17 +250,13 @@ class CovariantDerivative:
         elif tensor_field.rank == 2:
             # Tensor divergence: ∇_μ T^μν
             divergence = (
-                np.zeros(4)
-                if isinstance(tensor_field.components, np.ndarray)
-                else sp.zeros(4, 1)
+                np.zeros(4) if isinstance(tensor_field.components, np.ndarray) else sp.zeros(4, 1)
             )
 
             for nu in range(4):
                 for mu in range(4):
                     # Compute ∇_μ T^μν
-                    cov_deriv = self.tensor_covariant_derivative(
-                        tensor_field, mu, coordinates
-                    )
+                    cov_deriv = self.tensor_covariant_derivative(tensor_field, mu, coordinates)
                     if isinstance(divergence, np.ndarray):
                         divergence[nu] += cov_deriv.components[mu, nu]
                     else:
@@ -437,9 +423,7 @@ class CovariantDerivative:
         # Lie derivative: L_V T = V^μ ∇_μ T + (∇_μ V^ν) T terms
 
         # Material derivative part: V^μ ∇_μ T
-        material_part = self.material_derivative(
-            tensor_field, vector_field, coordinates
-        )
+        material_part = self.material_derivative(tensor_field, vector_field, coordinates)
 
         # Additional terms depend on tensor rank - simplified implementation
         # Full implementation would include all index contractions
@@ -617,9 +601,7 @@ class ProjectionOperator:
             for mu in range(4):
                 for nu in range(4):
                     scalar += (
-                        u_cov.components[mu]
-                        * u_cov.components[nu]
-                        * tensor.components[mu, nu]
+                        u_cov.components[mu] * u_cov.components[nu] * tensor.components[mu, nu]
                     )
 
         return scalar

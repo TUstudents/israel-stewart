@@ -33,9 +33,7 @@ if tomllib and pyproject.exists():
     authors = meta.get("authors", [])
     if authors:
         # join all author names if present
-        names = [
-            a.get("name") or a.get("email") for a in authors if isinstance(a, dict)
-        ]
+        names = [a.get("name") or a.get("email") for a in authors if isinstance(a, dict)]
         author = ", ".join([n for n in names if n]) or author
 
 # Sphinx requires a string for copyright

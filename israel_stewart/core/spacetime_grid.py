@@ -65,8 +65,7 @@ class SpacetimeGrid:
         # Compute grid spacing
         self.dt = (time_range[1] - time_range[0]) / (grid_points[0] - 1)
         self.spatial_spacing = [
-            (r[1] - r[0]) / (n - 1)
-            for r, n in zip(spatial_ranges, grid_points[1:], strict=False)
+            (r[1] - r[0]) / (n - 1) for r, n in zip(spatial_ranges, grid_points[1:], strict=False)
         ]
 
     def _validate_grid_parameters(self) -> None:
@@ -79,9 +78,7 @@ class SpacetimeGrid:
             raise ValueError("Must provide exactly 3 spatial coordinate ranges")
 
         if len(self.grid_points) != 4:
-            raise ValueError(
-                "Must provide exactly 4 grid point counts (Nt, Nx, Ny, Nz)"
-            )
+            raise ValueError("Must provide exactly 4 grid point counts (Nt, Nx, Ny, Nz)")
 
         if any(n < 2 for n in self.grid_points):
             raise ValueError("All grid dimensions must have at least 2 points")
@@ -95,9 +92,7 @@ class SpacetimeGrid:
             time_name = "tau"
         else:
             time_name = "t"
-        coords[time_name] = np.linspace(
-            self.time_range[0], self.time_range[1], self.grid_points[0]
-        )
+        coords[time_name] = np.linspace(self.time_range[0], self.time_range[1], self.grid_points[0])
 
         # Spatial coordinates depend on coordinate system
         if self.coordinate_system == "cartesian":
@@ -192,9 +187,7 @@ class SpacetimeGrid:
             Gradient array
         """
         if field.shape != self.shape:
-            raise ValueError(
-                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
-            )
+            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
         coord_name = self.coordinate_names[axis]
         spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
@@ -236,9 +229,7 @@ class SpacetimeGrid:
             Laplacian field
         """
         if field.shape != self.shape:
-            raise ValueError(
-                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
-            )
+            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
         laplacian = np.zeros_like(field)
 
@@ -248,16 +239,12 @@ class SpacetimeGrid:
             spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
 
             # Second derivative using central differences
-            second_deriv = np.gradient(
-                np.gradient(field, spacing, axis=axis), spacing, axis=axis
-            )
+            second_deriv = np.gradient(np.gradient(field, spacing, axis=axis), spacing, axis=axis)
             laplacian += second_deriv
 
         return laplacian
 
-    def interpolate(
-        self, field: np.ndarray, coords: np.ndarray, method: str = "linear"
-    ) -> float:
+    def interpolate(self, field: np.ndarray, coords: np.ndarray, method: str = "linear") -> float:
         """
         Interpolate field value at arbitrary coordinates.
 
@@ -272,9 +259,7 @@ class SpacetimeGrid:
         from scipy.interpolate import RegularGridInterpolator
 
         if field.shape != self.shape:
-            raise ValueError(
-                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
-            )
+            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
         # Create interpolator
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
@@ -434,9 +419,7 @@ class AdaptiveMeshRefinement:
         """
         self.refinement_criteria.append(criterion)
 
-    def refine_grid(
-        self, field: np.ndarray, refinement_factor: int = 2
-    ) -> dict[str, Any]:
+    def refine_grid(self, field: np.ndarray, refinement_factor: int = 2) -> dict[str, Any]:
         """
         Refine grid based on field gradients and criteria.
 

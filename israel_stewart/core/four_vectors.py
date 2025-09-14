@@ -175,9 +175,7 @@ class FourVector(TensorField):
             return bool(timelike_condition)
         else:
             return bool(
-                float(mag_sq) < -tolerance
-                if signature[0] < 0
-                else float(mag_sq) > tolerance
+                float(mag_sq) < -tolerance if signature[0] < 0 else float(mag_sq) > tolerance
             )
 
     def is_spacelike(self, tolerance: float = 1e-10) -> bool:
@@ -208,9 +206,7 @@ class FourVector(TensorField):
             return bool(spacelike_condition)
         else:
             return bool(
-                float(mag_sq) > tolerance
-                if signature[0] < 0
-                else float(mag_sq) < -tolerance
+                float(mag_sq) > tolerance if signature[0] < 0 else float(mag_sq) < -tolerance
             )
 
     def is_null(self, tolerance: float = 1e-10) -> bool:
@@ -249,9 +245,7 @@ class FourVector(TensorField):
         # Compute boost parameters
         v_squared = np.dot(velocity, velocity)
         if v_squared >= 1.0:
-            raise ValueError(
-                "Velocity must be less than speed of light (in units where c=1)"
-            )
+            raise ValueError("Velocity must be less than speed of light (in units where c=1)")
 
         gamma = 1.0 / np.sqrt(1.0 - v_squared)
 
@@ -434,9 +428,7 @@ class FourVector(TensorField):
         gamma = self.lorentz_factor()
         return gamma * rest_mass  # c=1 in natural units
 
-    def relativistic_momentum_magnitude(
-        self, rest_mass: float | sp.Expr = 1.0
-    ) -> float | sp.Expr:
+    def relativistic_momentum_magnitude(self, rest_mass: float | sp.Expr = 1.0) -> float | sp.Expr:
         """
         Compute magnitude of relativistic momentum |p⃗| = γm|v⃗|.
 

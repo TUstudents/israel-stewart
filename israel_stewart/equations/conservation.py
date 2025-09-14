@@ -219,9 +219,7 @@ class ConservationLaws:
             return [grid.coordinates[name] for name in coord_names]
         else:
             # Construct coordinate arrays from grid ranges
-            t_coords = np.linspace(
-                grid.time_range[0], grid.time_range[1], grid.grid_points[0]
-            )
+            t_coords = np.linspace(grid.time_range[0], grid.time_range[1], grid.grid_points[0])
 
             coord_arrays = [t_coords]
             for i, (x_min, x_max) in enumerate(grid.spatial_ranges):
@@ -230,9 +228,7 @@ class ConservationLaws:
 
             return coord_arrays
 
-    def _partial_derivative(
-        self, field: np.ndarray, direction: int, coords: list
-    ) -> np.ndarray:
+    def _partial_derivative(self, field: np.ndarray, direction: int, coords: list) -> np.ndarray:
         """
         Compute partial derivative ∂_μ field using finite differences.
 
@@ -333,9 +329,7 @@ class ConservationLaws:
         energy_conserved = np.allclose(div_T[..., 0], 0.0, atol=tolerance)
         momentum_conserved = np.allclose(div_T[..., 1:4], 0.0, atol=tolerance)
 
-        validation["energy_momentum_conserved"] = (
-            energy_conserved and momentum_conserved
-        )
+        validation["energy_momentum_conserved"] = energy_conserved and momentum_conserved
 
         # Check particle number conservation
         div_N = self.particle_number_conservation()
@@ -346,9 +340,7 @@ class ConservationLaws:
         validation["all_conserved"] = all(validation.values())
 
         if not validation["all_conserved"]:
-            warnings.warn(
-                "Conservation laws not satisfied within tolerance", stacklevel=2
-            )
+            warnings.warn("Conservation laws not satisfied within tolerance", stacklevel=2)
 
         return validation
 
@@ -356,7 +348,4 @@ class ConservationLaws:
         return f"ConservationLaws(grid_shape={self.fields.grid.shape})"
 
     def __repr__(self) -> str:
-        return (
-            f"ConservationLaws(fields={self.fields!r}, "
-            f"coefficients={self.coeffs!r})"
-        )
+        return f"ConservationLaws(fields={self.fields!r}, " f"coefficients={self.coeffs!r})"

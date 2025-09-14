@@ -37,9 +37,7 @@ def test_spacetime_grid():
         print(f"   Coordinates at center: {coords_at_center}")
 
         # Test gradients
-        test_field = np.sin(np.linspace(0, np.pi, grid.total_points)).reshape(
-            grid.shape
-        )
+        test_field = np.sin(np.linspace(0, np.pi, grid.total_points)).reshape(grid.shape)
         gradient_t = grid.gradient(test_field, axis=0)
         print(f"   Gradient shape: {gradient_t.shape}")
 
@@ -300,9 +298,7 @@ def main():
         print(f"  {status} {name}")
 
     overall_success = all(results)
-    print(
-        f"\nOverall: {'✅ ALL TESTS PASSED' if overall_success else '❌ SOME TESTS FAILED'}"
-    )
+    print(f"\nOverall: {'✅ ALL TESTS PASSED' if overall_success else '❌ SOME TESTS FAILED'}")
 
     return overall_success
 

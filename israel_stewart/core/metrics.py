@@ -50,9 +50,7 @@ class MetricBase(ABC):
         """
         self.coordinates = coordinates or ["t", "x", "y", "z"]
         if len(self.coordinates) != 4:
-            raise CoordinateError(
-                f"Must have exactly 4 coordinates, got {len(self.coordinates)}"
-            )
+            raise CoordinateError(f"Must have exactly 4 coordinates, got {len(self.coordinates)}")
 
         # Cache for expensive computations
         self._inverse_cache = None
@@ -120,9 +118,7 @@ class MetricBase(ABC):
             except sp.NonInvertibleMatrixError as e:
                 raise SingularMetricError(f"Cannot invert symbolic metric tensor: {e}")
         else:
-            raise TypeError(
-                f"Unsupported metric component type: {type(self.components)}"
-            )
+            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
 
     @cached_property
     def determinant(self) -> float | sp.Expr:
@@ -140,9 +136,7 @@ class MetricBase(ABC):
         elif isinstance(self.components, sp.Matrix):
             return self.components.det()
         else:
-            raise TypeError(
-                f"Unsupported metric component type: {type(self.components)}"
-            )
+            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
 
     @cached_property
     def christoffel_symbols(self) -> np.ndarray | sp.Array:
@@ -160,13 +154,9 @@ class MetricBase(ABC):
         elif isinstance(self.components, sp.Matrix):
             return self._compute_christoffel_symbolic()
         else:
-            raise TypeError(
-                f"Unsupported metric component type: {type(self.components)}"
-            )
+            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
 
-    def christoffel_symbols_numerical(
-        self, coordinates: list[np.ndarray]
-    ) -> np.ndarray:
+    def christoffel_symbols_numerical(self, coordinates: list[np.ndarray]) -> np.ndarray:
         """Compute numerical Christoffel symbols with explicit coordinate arrays.
 
         Args:
@@ -176,9 +166,7 @@ class MetricBase(ABC):
             Christoffel symbols Γ^λ_μν with shape (*grid_shape, 4, 4, 4)
         """
         if len(coordinates) != 4:
-            raise CoordinateError(
-                f"Need exactly 4 coordinate arrays, got {len(coordinates)}"
-            )
+            raise CoordinateError(f"Need exactly 4 coordinate arrays, got {len(coordinates)}")
         return self._compute_christoffel_numerical(coordinates)
 
     def christoffel_symbols_from_grid(self, grid) -> np.ndarray:
@@ -196,9 +184,7 @@ class MetricBase(ABC):
             coordinates = [grid.coordinates[name] for name in coord_names]
         else:
             # Create coordinate arrays from grid ranges
-            t_coords = np.linspace(
-                grid.time_range[0], grid.time_range[1], grid.grid_points[0]
-            )
+            t_coords = np.linspace(grid.time_range[0], grid.time_range[1], grid.grid_points[0])
             coordinates = [t_coords]
             for i, (x_min, x_max) in enumerate(grid.spatial_ranges):
                 x_coords = np.linspace(x_min, x_max, grid.grid_points[i + 1])
@@ -232,9 +218,7 @@ class MetricBase(ABC):
 
         return self._compute_christoffel_finite_difference(coordinates)
 
-    def _compute_christoffel_finite_difference(
-        self, coordinates: list[np.ndarray]
-    ) -> np.ndarray:
+    def _compute_christoffel_finite_difference(self, coordinates: list[np.ndarray]) -> np.ndarray:
         """
         Compute Christoffel symbols using finite differences.
 
@@ -248,9 +232,7 @@ class MetricBase(ABC):
             Christoffel symbols with shape (4, 4, 4)
         """
         if len(coordinates) != 4:
-            raise CoordinateError(
-                f"Need exactly 4 coordinate arrays, got {len(coordinates)}"
-            )
+            raise CoordinateError(f"Need exactly 4 coordinate arrays, got {len(coordinates)}")
 
         # Get metric components and inverse
         g = self.components
@@ -261,9 +243,7 @@ class MetricBase(ABC):
             # Constant metric - expand to coordinate grid shape
             coord_shape = tuple(len(coord) for coord in coordinates)
             g = np.broadcast_to(g[None, None, None, None, :, :], (*coord_shape, 4, 4))
-            g_inv = np.broadcast_to(
-                g_inv[None, None, None, None, :, :], (*coord_shape, 4, 4)
-            )
+            g_inv = np.broadcast_to(g_inv[None, None, None, None, :, :], (*coord_shape, 4, 4))
 
         # Initialize Christoffel array
         grid_shape = g.shape[:-2]  # Remove last two indices (μ, ν)
@@ -323,9 +303,7 @@ class MetricBase(ABC):
                 if direction == 0:  # Time derivative
                     for mu in range(4):
                         for nu in range(4):
-                            grad_components = np.gradient(
-                                metric[:, mu, nu], coord_array
-                            )
+                            grad_components = np.gradient(metric[:, mu, nu], coord_array)
                             derivs[:, direction, mu, nu] = grad_components
 
             elif len(grid_shape) == 4:  # Full 4D grid
@@ -334,9 +312,7 @@ class MetricBase(ABC):
                 for mu in range(4):
                     for nu in range(4):
                         # Use numpy gradient for finite differences
-                        grad_components = np.gradient(
-                            metric[..., mu, nu], coord_array, axis=axis
-                        )
+                        grad_components = np.gradient(metric[..., mu, nu], coord_array, axis=axis)
                         derivs[..., direction, mu, nu] = grad_components
 
             else:
@@ -363,9 +339,7 @@ class MetricBase(ABC):
             all_symbols.update(comp.free_symbols)
 
         # Initialize Christoffel components list
-        christoffel_components = [
-            [[0 for _ in range(4)] for _ in range(4)] for _ in range(4)
-        ]
+        christoffel_components = [[[0 for _ in range(4)] for _ in range(4)] for _ in range(4)]
 
         if not all_symbols:
             # Constant metric has zero Christoffel symbols
@@ -446,10 +420,7 @@ class MetricBase(ABC):
         else:
             # Check if all components are zero
             return all(
-                christoffel[i, j, k] == 0
-                for i in range(4)
-                for j in range(4)
-                for k in range(4)
+                christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4)
             )
 
     def raise_index(
@@ -578,9 +549,7 @@ class MetricBase(ABC):
         try:
             det = self.determinant
             if isinstance(det, (int, float)) and det >= 0:
-                warnings.warn(
-                    "Metric determinant is non-negative - check signature", stacklevel=2
-                )
+                warnings.warn("Metric determinant is non-negative - check signature", stacklevel=2)
         except:
             pass  # Skip check for complex symbolic expressions
 
@@ -609,9 +578,7 @@ class MinkowskiMetric(MetricBase):
     Standard for special relativity and particle physics.
     """
 
-    def __init__(
-        self, signature: str = "mostly_plus", coordinates: list[str] | None = None
-    ):
+    def __init__(self, signature: str = "mostly_plus", coordinates: list[str] | None = None):
         """
         Initialize Minkowski metric.
 
@@ -627,9 +594,7 @@ class MinkowskiMetric(MetricBase):
         elif signature == "mostly_minus":
             self._diag = np.array([1.0, -1.0, -1.0, -1.0])
         else:
-            raise ValueError(
-                f"Unknown signature: {signature}. Use 'mostly_plus' or 'mostly_minus'"
-            )
+            raise ValueError(f"Unknown signature: {signature}. Use 'mostly_plus' or 'mostly_minus'")
 
     @property
     def components(self) -> np.ndarray:
@@ -728,9 +693,7 @@ class GeneralMetric(MetricBase):
             metric_components = np.array(metric_components)
 
         if metric_components.shape != (4, 4):
-            raise CoordinateError(
-                f"Metric must be 4x4, got shape {metric_components.shape}"
-            )
+            raise CoordinateError(f"Metric must be 4x4, got shape {metric_components.shape}")
 
         self._components = metric_components
 

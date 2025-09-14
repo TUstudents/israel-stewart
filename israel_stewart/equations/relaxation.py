@@ -81,9 +81,7 @@ class ISRelaxationEquations:
 
         # Transport coefficients (symbolic)
         eta, zeta, kappa = sp.symbols("eta zeta kappa", positive=True, real=True)
-        tau_pi, tau_Pi, tau_q = sp.symbols(
-            "tau_pi tau_Pi tau_q", positive=True, real=True
-        )
+        tau_pi, tau_Pi, tau_q = sp.symbols("tau_pi tau_Pi tau_q", positive=True, real=True)
 
         # Second-order coupling coefficients
         lambda_pi_pi = sp.Symbol("lambda_pi_pi", real=True)
@@ -97,9 +95,7 @@ class ISRelaxationEquations:
         # Bulk viscous pressure evolution equation
         bulk_linear = -Pi / tau_Pi - zeta * theta
         bulk_nonlinear = (
-            xi_1 * Pi * theta
-            + xi_2 * Pi**2 / (zeta * tau_Pi)
-            + lambda_Pi_pi * pi_00 * theta
+            xi_1 * Pi * theta + xi_2 * Pi**2 / (zeta * tau_Pi) + lambda_Pi_pi * pi_00 * theta
         )  # Simplified shear-bulk coupling
 
         dPi_dt = bulk_linear + bulk_nonlinear
@@ -112,17 +108,14 @@ class ISRelaxationEquations:
             + tau_pi_omega * (pi_01 * omega_munu[1, 0] - omega_munu[0, 1] * pi_01)
             + lambda_pi_pi * pi_00 * theta
             + lambda_pi_Pi * Pi * sigma_munu[0, 0]
-            + lambda_pi_q
-            * (q_0 * sp.Symbol("nabla_0_T") + q_1 * sp.Symbol("nabla_1_T"))
+            + lambda_pi_q * (q_0 * sp.Symbol("nabla_0_T") + q_1 * sp.Symbol("nabla_1_T"))
         )
 
         dpi_00_dt = shear_linear + shear_nonlinear
 
         # Heat flux evolution equation (using q^0 as representative component)
         heat_linear = -q_0 / tau_q + kappa * sp.Symbol("nabla_0_T")
-        heat_nonlinear = (
-            lambda_q_pi * pi_00 * sp.Symbol("nabla_0_T") - tau_q * q_0 * theta
-        )
+        heat_nonlinear = lambda_q_pi * pi_00 * sp.Symbol("nabla_0_T") - tau_q * q_0 * theta
 
         dq_0_dt = heat_linear + heat_nonlinear
 
@@ -169,13 +162,9 @@ class ISRelaxationEquations:
         dq_mu_dt = self._heat_rhs(q_mu, pi_munu, expansion_scalar, temp_gradient)
 
         # Pack into dissipative vector format
-        return np.concatenate(
-            [dPi_dt.flatten(), dpi_munu_dt.reshape(-1), dq_mu_dt.reshape(-1)]
-        )
+        return np.concatenate([dPi_dt.flatten(), dpi_munu_dt.reshape(-1), dq_mu_dt.reshape(-1)])
 
-    def _bulk_rhs(
-        self, Pi: np.ndarray, pi_munu: np.ndarray, theta: np.ndarray
-    ) -> np.ndarray:
+    def _bulk_rhs(self, Pi: np.ndarray, pi_munu: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Compute bulk pressure evolution."""
         # Linear relaxation term
         linear = (
@@ -246,9 +235,7 @@ class ISRelaxationEquations:
         # Shear-bulk coupling
         if self.coeffs.lambda_pi_Pi != 0:
             # Broadcast Pi scalar to tensor shape
-            bulk_coupling = (
-                self.coeffs.lambda_pi_Pi * Pi[..., np.newaxis, np.newaxis] * sigma_munu
-            )
+            bulk_coupling = self.coeffs.lambda_pi_Pi * Pi[..., np.newaxis, np.newaxis] * sigma_munu
             nonlinear += bulk_coupling
 
         # Shear-heat coupling (simplified)
@@ -259,10 +246,7 @@ class ISRelaxationEquations:
                     if nabla_T.shape[-1] > max(mu, nu):
                         heat_term = (
                             self.coeffs.lambda_pi_q
-                            * (
-                                q_mu[..., mu] * nabla_T[..., nu]
-                                + q_mu[..., nu] * nabla_T[..., mu]
-                            )
+                            * (q_mu[..., mu] * nabla_T[..., nu] + q_mu[..., nu] * nabla_T[..., mu])
                             / 2
                         )
                         nonlinear[..., mu, nu] += heat_term
@@ -270,12 +254,8 @@ class ISRelaxationEquations:
         # Nonlinear shear terms
         if self.coeffs.tau_pi_pi != 0 and self.coeffs.shear_relaxation_time:
             # pi^mu_alpha * pi_alpha^nu term (simplified)
-            pi_pi_term = -self.coeffs.tau_pi_pi * np.einsum(
-                "...ik,...kj->...ij", pi_munu, pi_munu
-            )
-            pi_pi_term /= (
-                self.coeffs.shear_viscosity * self.coeffs.shear_relaxation_time
-            )
+            pi_pi_term = -self.coeffs.tau_pi_pi * np.einsum("...ik,...kj->...ij", pi_munu, pi_munu)
+            pi_pi_term /= self.coeffs.shear_viscosity * self.coeffs.shear_relaxation_time
             nonlinear += pi_pi_term
 
         # Vorticity coupling
@@ -350,9 +330,7 @@ class ISRelaxationEquations:
         # Placeholder: return zero vorticity tensor
         return np.zeros((*u_mu.shape[:-1], 4, 4))
 
-    def _compute_temperature_gradient(
-        self, T: np.ndarray, u_mu: np.ndarray
-    ) -> np.ndarray:
+    def _compute_temperature_gradient(self, T: np.ndarray, u_mu: np.ndarray) -> np.ndarray:
         """Compute projected temperature gradient."""
         # Simplified finite difference gradient
         grad_T = np.zeros((*T.shape, 4))
@@ -430,17 +408,13 @@ class ISRelaxationEquations:
 
         try:
             # Solve nonlinear system
-            x_solution = newton_krylov(
-                residual, x_initial, method="gmres", f_tol=1e-8, maxiter=50
-            )
+            x_solution = newton_krylov(residual, x_initial, method="gmres", f_tol=1e-8, maxiter=50)
 
             # Update fields
             fields.from_dissipative_vector(x_solution)
 
         except Exception as e:
-            warnings.warn(
-                f"Implicit solver failed: {e}. Using explicit step.", stacklevel=3
-            )
+            warnings.warn(f"Implicit solver failed: {e}. Using explicit step.", stacklevel=3)
             self._explicit_evolution(fields, dt)
 
     def _exponential_integrator(self, fields: ISFieldConfiguration, dt: float) -> None:

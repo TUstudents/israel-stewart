@@ -67,14 +67,10 @@ class PerformanceMonitor:
 
         return decorator
 
-    def _check_performance_warnings(
-        self, operation_name: str, elapsed_time: float
-    ) -> None:
+    def _check_performance_warnings(self, operation_name: str, elapsed_time: float) -> None:
         """Check if performance warnings should be issued."""
         # Warn about slow operations (>1 second)
-        if elapsed_time > 1.0 and not self.warnings_issued.get(
-            f"{operation_name}_slow", False
-        ):
+        if elapsed_time > 1.0 and not self.warnings_issued.get(f"{operation_name}_slow", False):
             warnings.warn(
                 f"Operation {operation_name} took {elapsed_time:.2f}s - consider optimization",
                 stacklevel=2,
@@ -83,9 +79,7 @@ class PerformanceMonitor:
 
         # Warn about very frequent operations (>1000 calls)
         call_count = self.operation_counts.get(operation_name, 0)
-        if call_count > 1000 and not self.warnings_issued.get(
-            f"{operation_name}_frequent", False
-        ):
+        if call_count > 1000 and not self.warnings_issued.get(f"{operation_name}_frequent", False):
             warnings.warn(
                 f"Operation {operation_name} called {call_count} times - consider caching",
                 stacklevel=2,
@@ -210,9 +204,7 @@ def suggest_einsum_optimization(einsum_string: str, *tensor_shapes) -> str | Non
         dummy_arrays = [np.zeros(shape) for shape in tensor_shapes]
 
         # Get optimized path
-        path_info = opt_einsum.contract_path(
-            einsum_string, *dummy_arrays, optimize="optimal"
-        )
+        path_info = opt_einsum.contract_path(einsum_string, *dummy_arrays, optimize="optimal")
 
         if len(path_info) > 1 and hasattr(path_info[1], "largest_intermediate"):
             return f"Use opt_einsum for {einsum_string} - reduces memory by factor of {path_info[1].largest_intermediate:.1e}"

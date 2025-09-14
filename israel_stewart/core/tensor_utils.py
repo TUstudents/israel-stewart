@@ -113,9 +113,7 @@ def validate_tensor_dimensions(
         if expected_shape is not None and components.shape != expected_shape:
             raise ValueError(f"Expected shape {expected_shape}, got {components.shape}")
     else:
-        raise TypeError(
-            f"Components must be NumPy array or SymPy matrix, got {type(components)}"
-        )
+        raise TypeError(f"Components must be NumPy array or SymPy matrix, got {type(components)}")
 
 
 def validate_index_compatibility(

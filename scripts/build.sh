@@ -89,7 +89,7 @@ log_verbose() {
 
 # Check if we're in the right directory
 check_project_root() {
-    if [[ ! -f "pyproject.toml" ]] || [[ ! -d "rtrg" ]]; then
+    if [[ ! -f "pyproject.toml" ]] || [[ ! -d "israel_stewart" ]]; then
         log_error "Must be run from project root (where pyproject.toml exists)"
         exit 1
     fi
@@ -338,7 +338,7 @@ validate_packages() {
             # Install the wheel
             if pip install "${wheel_files[0]}" >/dev/null 2>&1; then
                 # Try importing the package
-                if python -c "import rtrg" >/dev/null 2>&1; then
+                if python -c "import israel_stewart" >/dev/null 2>&1; then
                     log_verbose "Package installation test passed"
                 else
                     log_warn "Package installs but cannot be imported"

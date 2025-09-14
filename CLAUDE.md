@@ -53,13 +53,25 @@ The package follows a modular physics-based architecture:
 - `uv sync --extra jupyter` - Install with Jupyter support
 - `uv sync --extra all` - Install all optional dependencies
 
-**Code Quality**:
+**Development Scripts (Recommended)**:
+- `./scripts/format.sh` - Comprehensive code formatting with multi-pass execution
+- `./scripts/format.sh --all-files` - Format entire codebase
+- `./scripts/test.sh` - Run test suite (excludes slow tests by default)
+- `./scripts/test.sh --coverage` - Run tests with coverage reporting
+- `./scripts/build.sh` - Build packages with full validation
+- `./scripts/build.sh --clean` - Clean build from scratch
+
+**Direct Commands (Alternative)**:
 - `uv run ruff check` - Run linting
 - `uv run ruff format` - Format code
 - `uv run mypy israel_stewart` - Type checking
 - `uv run pytest` - Run tests
 - `uv run pytest -m "not slow"` - Skip slow tests
 - `uv run pytest --cov` - Run tests with coverage
+
+**Pre-commit Hooks**:
+- `uv run pre-commit install` - Install git hooks (one-time setup)
+- `uv run pre-commit run --all-files` - Run all hooks manually
 
 **Development Environment**:
 - `uv run jupyter lab` - Start JupyterLab
@@ -125,6 +137,24 @@ print(f"Recommended timestep: {stability['recommended_dt']}")
 - Tensor operations should respect general covariance and work in curved spacetime
 - Numerical methods should handle the stiff relaxation timescales in the IS equations
 - The RG analysis module implements field-theoretic renormalization group techniques for hydrodynamic fluctuations
+
+## Development Workflow
+
+**Quick Start**:
+1. `uv sync --extra dev` - Install all development dependencies
+2. `uv run pre-commit install` - Set up git hooks (one-time)
+3. `./scripts/format.sh --all-files` - Format entire codebase
+4. `./scripts/test.sh --coverage` - Run comprehensive tests
+
+**Daily Development**:
+1. Make changes to code
+2. `./scripts/format.sh` - Auto-fix formatting and linting
+3. `./scripts/test.sh` - Run relevant tests
+4. `git commit` - Pre-commit hooks run automatically
+5. For releases: `./scripts/build.sh --clean`
+
+**CI/CD Integration**:
+All scripts support `--quiet` flag for automated environments and have proper exit codes for pipeline integration.
 
 ## Module Dependencies
 

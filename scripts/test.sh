@@ -93,7 +93,7 @@ log_verbose() {
 
 # Check if we're in the right directory
 check_project_root() {
-    if [[ ! -f "pyproject.toml" ]] || [[ ! -d "tests" ]]; then
+    if [[ ! -f "pyproject.toml" ]] || [[ ! -d "israel_stewart" ]]; then
         log_error "Must be run from project root (where pyproject.toml exists)"
         exit 1
     fi
@@ -227,7 +227,6 @@ build_pytest_command() {
 
     # Basic configuration
     pytest_args+=("--tb=short")
-    pytest_args+=("--strict-markers")
     pytest_args+=("--strict-config")
 
     # Verbose/quiet modes
@@ -239,7 +238,107 @@ build_pytest_command() {
 
     # Coverage
     if [[ "$COVERAGE" == "true" ]]; then
-        pytest_args+=("--cov=rtrg")
+        pytest_args+=("--cov=israel_stewart")
+        pytest_args+=("--cov-report=html:$REPORT_DIR/htmlcov")
+        pytest_args+=("--cov-report=xml:$REPORT_DIR/coverage.xml")
+        pytest_args+=("--cov-report=term-missing")
+    fi
+
+    # Parallel execution
+    if [[ "$PARALLEL" == "true" ]]; then
+        # Use number of CPU cores
+        local num_cores
+        num_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "4")
+        pytest_args+=("-n" "$num_cores")
+        log_verbose "Running tests in parallel with $num_cores workers"
+    fi
+
+    # JUnit XML reporting
+    if [[ "$JUNIT_XML" == "true" ]]; then
+        pytest_args+=("--junit-xml=$REPORT_DIR/junit.xml")
+    fi
+
+    # Test category markers
+    local marker_expr=""
+    if [[ -n "$TEST_CATEGORY" ]]; then
+        case "$TEST_CATEGORY" in
+            "unit")
+                marker_expr="unit"
+                ;;
+            "integration")
+                marker_expr="integration"
+                ;;
+            "physics")
+                marker_expr="physics"
+                ;;
+        esac
+    fi
+
+    # Benchmark tests
+    if [[ "$BENCHMARK" == "true" ]]; then
+        if [[ -n "$marker_expr" ]]; then
+            marker_expr="$marker_expr or benchmark"
+        else
+            marker_expr="benchmark"
+        fi
+    fi
+
+    # Slow test handling
+    if [[ "${EXCLUDE_SLOW:-}" == "true" ]]; then
+        if [[ -n "$marker_expr" ]]; then
+            marker_expr="($marker_expr) and not slow"
+        else
+            marker_expr="not slow"
+        fi
+    elif [[ "${INCLUDE_SLOW:-}" != "true" ]] && [[ "$BENCHMARK" != "true" ]]; then
+        # By default, exclude slow tests unless explicitly requested
+        if [[ -n "$marker_expr" ]]; then
+            marker_expr="($marker_expr) and not slow"
+        else
+            marker_expr="not slow"
+        fi
+    fi
+
+    if [[ -n "$marker_expr" ]]; then
+        pytest_args+=("-m")
+        pytest_args+=("$marker_expr")
+    fi
+
+    # Filter expression
+    if [[ -n "$FILTER" ]]; then
+        pytest_args+=("-k")
+        pytest_args+=("$FILTER")
+    fi
+
+    # Test path
+    if [[ -n "$TEST_PATH" ]]; then
+        pytest_args+=("$TEST_PATH")
+    else
+        pytest_args+=("israel_stewart/tests/")
+    fi
+
+    echo "${pytest_args[@]}"
+}
+
+# Run the actual tests
+run_tests() {
+    local pytest_args=()
+
+    # Build pytest command inline to preserve array structure
+    # Basic configuration
+    pytest_args+=("--tb=short")
+    pytest_args+=("--strict-config")
+
+    # Verbose/quiet modes
+    if [[ "$VERBOSE" == "true" ]]; then
+        pytest_args+=("-v")
+    elif [[ "$QUIET" == "true" ]]; then
+        pytest_args+=("-q")
+    fi
+
+    # Coverage
+    if [[ "$COVERAGE" == "true" ]]; then
+        pytest_args+=("--cov=israel_stewart")
         pytest_args+=("--cov-report=html:$REPORT_DIR/htmlcov")
         pytest_args+=("--cov-report=xml:$REPORT_DIR/coverage.xml")
         pytest_args+=("--cov-report=term-missing")
@@ -313,20 +412,12 @@ build_pytest_command() {
     if [[ -n "$TEST_PATH" ]]; then
         pytest_args+=("$TEST_PATH")
     else
-        pytest_args+=("tests/")
+        pytest_args+=("israel_stewart/tests/")
     fi
-
-    echo "${pytest_args[@]}"
-}
-
-# Run the actual tests
-run_tests() {
-    local pytest_cmd
-    read -ra pytest_cmd <<< "$(build_pytest_command)"
 
     log_info "Running test suite..."
     if [[ "$VERBOSE" == "true" ]]; then
-        log_verbose "Command: uv run pytest ${pytest_cmd[*]}"
+        log_verbose "Command: uv run pytest ${pytest_args[*]}"
     fi
 
     local start_time
@@ -334,7 +425,7 @@ run_tests() {
 
     # Run pytest
     local exit_code=0
-    uv run pytest "${pytest_cmd[@]}" || exit_code=$?
+    uv run pytest "${pytest_args[@]}" || exit_code=$?
 
     local end_time
     end_time=$(date +%s)

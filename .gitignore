@@ -1,0 +1,42 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build & packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Linters & type checking
+.mypy_cache/
+.ruff_cache/
+pyrightconfig.json
+
+# Sphinx documentation build
+docs/build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors/IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db

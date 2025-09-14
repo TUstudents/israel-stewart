@@ -9,7 +9,6 @@ This module tests:
 """
 
 import warnings
-from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -25,7 +24,10 @@ from israel_stewart.core import (
     create_cartesian_grid,
 )
 from israel_stewart.core.derivatives import CovariantDerivative
-from israel_stewart.core.metrics import CoordinateError, MetricError, SingularMetricError
+from israel_stewart.core.metrics import (
+    CoordinateError,
+    MetricError,
+)
 
 
 class TestMinkowskiChristoffel:
@@ -82,7 +84,7 @@ class TestSpecializedMetrics:
         """Test Milne metric basic properties."""
         metric = MilneMetric()
 
-        assert metric.coordinates == ['tau', 'eta', 'x', 'y']
+        assert metric.coordinates == ["tau", "eta", "x", "y"]
         assert metric.signature == (1, -1, -1, -1)
         assert not metric.is_constant()
 
@@ -94,7 +96,7 @@ class TestSpecializedMetrics:
         bjorken = BJorkenMetric()
         milne = MilneMetric()
 
-        assert bjorken.coordinates == ['tau', 'eta', 'x', 'y']
+        assert bjorken.coordinates == ["tau", "eta", "x", "y"]
         assert bjorken.signature == milne.signature
         assert isinstance(bjorken, MilneMetric)
 
@@ -102,7 +104,7 @@ class TestSpecializedMetrics:
         """Test FLRW metric basic properties."""
         metric = FLRWMetric()
 
-        assert metric.coordinates == ['t', 'r', 'theta', 'phi']
+        assert metric.coordinates == ["t", "r", "theta", "phi"]
         assert metric.signature == (1, -1, -1, -1)
         assert not metric.is_constant()
 
@@ -110,7 +112,7 @@ class TestSpecializedMetrics:
         """Test Schwarzschild metric basic properties."""
         metric = SchwarzschildMetric()
 
-        assert metric.coordinates == ['t', 'r', 'theta', 'phi']
+        assert metric.coordinates == ["t", "r", "theta", "phi"]
         assert metric.signature == (1, -1, -1, -1)
         assert not metric.is_constant()
 
@@ -143,12 +145,9 @@ class TestNumericalChristoffel:
     def test_constant_metric_derivatives(self):
         """Test that constant metrics have zero derivatives."""
         # Create a constant non-Minkowski metric
-        components = np.array([
-            [2, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        components = np.array(
+            [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]]
+        )
         metric = GeneralMetric(components)
 
         t = np.linspace(0, 1, 10)
@@ -169,27 +168,24 @@ class TestNumericalChristoffel:
             metric.christoffel_symbols_numerical([np.linspace(0, 1, 10)])
 
         with pytest.raises(CoordinateError):
-            metric.christoffel_symbols_numerical([
-                np.linspace(0, 1, 10) for _ in range(5)
-            ])
+            metric.christoffel_symbols_numerical(
+                [np.linspace(0, 1, 10) for _ in range(5)]
+            )
 
     def test_warning_for_no_coordinates(self):
         """Test warning when no coordinates provided for numerical computation."""
         # Create a coordinate-dependent metric (symbolic)
-        t = sp.Symbol('t')
-        g = sp.Matrix([
-            [t**2, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        t = sp.Symbol("t")
+        g = sp.Matrix([[t**2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
         metric = GeneralMetric(g)
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            christoffel = metric._compute_christoffel_numerical()
+            metric._compute_christoffel_numerical()
             # Filter out other warnings (like metric validation warnings)
-            coord_warnings = [warning for warning in w if "coordinate arrays" in str(warning.message)]
+            coord_warnings = [
+                warning for warning in w if "coordinate arrays" in str(warning.message)
+            ]
             assert len(coord_warnings) == 1
             assert "coordinate arrays" in str(coord_warnings[0].message)
 
@@ -203,7 +199,12 @@ class TestNumericalChristoffel:
         assert christoffel_1d.shape == (4, 4, 4)
 
         # 2D grid
-        coords_2d = [np.linspace(0, 1, 5), np.linspace(-1, 1, 5), np.array([0]), np.array([0])]
+        coords_2d = [
+            np.linspace(0, 1, 5),
+            np.linspace(-1, 1, 5),
+            np.array([0]),
+            np.array([0]),
+        ]
         christoffel_2d = metric.christoffel_symbols_numerical(coords_2d)
         assert christoffel_2d.shape == (4, 4, 4)
 
@@ -299,36 +300,36 @@ class TestSymbolicChristoffel:
     def test_minkowski_symbolic_christoffel(self):
         """Test symbolic computation for Minkowski metric."""
         # Create symbolic Minkowski metric
-        g = sp.Matrix([
-            [-1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ])
+        g = sp.Matrix([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
         metric = GeneralMetric(g)
 
         christoffel = metric.christoffel_symbols
         # All components should be zero for constant metric
-        is_zero = all(christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4))
+        is_zero = all(
+            christoffel[i, j, k] == 0
+            for i in range(4)
+            for j in range(4)
+            for k in range(4)
+        )
         assert is_zero
 
     def test_coordinate_dependent_metric(self):
         """Test symbolic computation for coordinate-dependent metric."""
         # Simple time-dependent metric g_00 = t^2
-        t, x, y, z = sp.symbols('t x y z', real=True)
+        t, x, y, z = sp.symbols("t x y z", real=True)
 
-        g = sp.Matrix([
-            [t**2, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        g = sp.Matrix([[t**2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
         metric = GeneralMetric(g)
 
         christoffel = metric.christoffel_symbols
 
         # Should have non-zero components
-        is_zero = all(christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4))
+        is_zero = all(
+            christoffel[i, j, k] == 0
+            for i in range(4)
+            for j in range(4)
+            for k in range(4)
+        )
         assert not is_zero
 
 
@@ -345,12 +346,14 @@ class TestMetricValidation:
 
     def test_asymmetric_metric(self):
         """Test error for asymmetric metric tensor."""
-        asymmetric = np.array([
-            [1, 1, 0, 0],
-            [0, -1, 0, 0],  # Should be [1, -1, 0, 0] for symmetry
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        asymmetric = np.array(
+            [
+                [1, 1, 0, 0],
+                [0, -1, 0, 0],  # Should be [1, -1, 0, 0] for symmetry
+                [0, 0, -1, 0],
+                [0, 0, 0, -1],
+            ]
+        )
 
         with pytest.raises(MetricError):
             metric = GeneralMetric(asymmetric)
@@ -360,12 +363,14 @@ class TestMetricValidation:
         """Test warning for nearly singular metric."""
         # Create nearly singular metric
         epsilon = 1e-16
-        singular = np.array([
-            [1, 0, 0, 0],
-            [0, epsilon, 0, 0],  # Very small eigenvalue
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        singular = np.array(
+            [
+                [1, 0, 0, 0],
+                [0, epsilon, 0, 0],  # Very small eigenvalue
+                [0, 0, -1, 0],
+                [0, 0, 0, -1],
+            ]
+        )
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -376,12 +381,14 @@ class TestMetricValidation:
 
     def test_determinant_warning(self):
         """Test warning for positive determinant (unusual for spacetime)."""
-        positive_det = np.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],  # Positive - unusual for spacetime metric
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ])
+        positive_det = np.array(
+            [
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],  # Positive - unusual for spacetime metric
+                [0, 0, 1, 0],
+                [0, 0, 0, 1],
+            ]
+        )
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -410,19 +417,13 @@ class TestPerformanceAndAccuracy:
     def test_numerical_vs_symbolic_consistency(self):
         """Test consistency between numerical and symbolic computations."""
         # Use a simple symbolic metric that can be evaluated numerically
-        g_symbolic = sp.Matrix([
-            [2, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ])
+        g_symbolic = sp.Matrix(
+            [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]]
+        )
 
-        g_numerical = np.array([
-            [2, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, -1]
-        ], dtype=float)
+        g_numerical = np.array(
+            [[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]], dtype=float
+        )
 
         metric_sym = GeneralMetric(g_symbolic)
         metric_num = GeneralMetric(g_numerical)
@@ -432,7 +433,12 @@ class TestPerformanceAndAccuracy:
         christoffel_num = metric_num.christoffel_symbols
 
         # Both should give zero for constant metrics
-        sym_is_zero = all(christoffel_sym[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4))
+        sym_is_zero = all(
+            christoffel_sym[i, j, k] == 0
+            for i in range(4)
+            for j in range(4)
+            for k in range(4)
+        )
         assert sym_is_zero
         assert np.allclose(christoffel_num, 0.0)
 

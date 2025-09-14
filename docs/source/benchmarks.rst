@@ -21,4 +21,3 @@ Use ``uv run`` to execute modules directly:
 
 Outputs may include console diagnostics and plots. Prefer saving figures via
 ``israel_stewart.utils.visualization`` and data via ``israel_stewart.utils.io``.
-

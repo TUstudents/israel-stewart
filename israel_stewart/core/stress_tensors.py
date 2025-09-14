@@ -32,9 +32,7 @@ class StressEnergyTensor(TensorField):
     """
 
     def __init__(
-        self,
-        components: np.ndarray | sp.Matrix,
-        metric: Optional['MetricBase'] = None
+        self, components: np.ndarray | sp.Matrix, metric: Optional["MetricBase"] = None
     ):
         """
         Initialize stress-energy tensor.
@@ -47,7 +45,9 @@ class StressEnergyTensor(TensorField):
             components = np.array(components)
 
         if components.shape != (4, 4):
-            raise ValueError(f"Stress-energy tensor must be 4x4, got shape {components.shape}")
+            raise ValueError(
+                f"Stress-energy tensor must be 4x4, got shape {components.shape}"
+            )
 
         super().__init__(components, "mu nu", metric)
 
@@ -70,13 +70,19 @@ class StressEnergyTensor(TensorField):
 
         # Contract: ρ = u_μ u_ν T^μν
         if isinstance(self.components, np.ndarray):
-            result = np.einsum('i,j,ij->', u_cov.components, u_cov.components, self.components)
+            result = np.einsum(
+                "i,j,ij->", u_cov.components, u_cov.components, self.components
+            )
         else:
             # SymPy computation
             result = 0
             for mu in range(4):
                 for nu in range(4):
-                    result += u_cov.components[mu] * u_cov.components[nu] * self.components[mu, nu]
+                    result += (
+                        u_cov.components[mu]
+                        * u_cov.components[nu]
+                        * self.components[mu, nu]
+                    )
 
         return result
 
@@ -98,7 +104,7 @@ class StressEnergyTensor(TensorField):
 
         # Contract: j^μ = -u_ν T^μν
         if isinstance(self.components, np.ndarray):
-            momentum = -np.einsum('j,ij->i', u_cov.components, self.components)
+            momentum = -np.einsum("j,ij->i", u_cov.components, self.components)
         else:
             momentum = sp.zeros(4, 1)
             for mu in range(4):
@@ -107,7 +113,7 @@ class StressEnergyTensor(TensorField):
 
         return FourVector(momentum, False, self.metric)
 
-    def pressure_tensor(self, four_velocity: FourVector) -> 'TensorField':
+    def pressure_tensor(self, four_velocity: FourVector) -> "TensorField":
         """
         Extract spatial pressure tensor P^μν = Δ^μα Δ^νβ T_αβ.
 
@@ -132,8 +138,9 @@ class StressEnergyTensor(TensorField):
 
         # Contract: P^μν = Δ^μα Δ^νβ T_αβ
         if isinstance(self.components, np.ndarray):
-            pressure = np.einsum('ma,nb,ab->mn',
-                               delta.components, delta.components, T_down.components)
+            pressure = np.einsum(
+                "ma,nb,ab->mn", delta.components, delta.components, T_down.components
+            )
         else:
             # SymPy version - simplified
             pressure = delta.components * T_down.components * delta.components
@@ -146,8 +153,8 @@ class StressEnergyTensor(TensorField):
         energy_density: float | sp.Expr,
         pressure: float | sp.Expr,
         four_velocity: FourVector,
-        metric: Optional['MetricBase'] = None
-    ) -> 'StressEnergyTensor':
+        metric: Optional["MetricBase"] = None,
+    ) -> "StressEnergyTensor":
         """
         Construct perfect fluid stress-energy tensor.
 
@@ -172,12 +179,13 @@ class StressEnergyTensor(TensorField):
         u_outer = np.outer(four_velocity.components, four_velocity.components)
 
         # Perfect fluid form: T^μν = (ρ + p) u^μ u^ν + p g^μν
-        perfect_fluid = ((energy_density + pressure) * u_outer +
-                        pressure * g_inv)
+        perfect_fluid = (energy_density + pressure) * u_outer + pressure * g_inv
 
         return cls(perfect_fluid, metric)
 
-    def add_viscous_corrections(self, viscous_tensor: 'ViscousStressTensor') -> 'StressEnergyTensor':
+    def add_viscous_corrections(
+        self, viscous_tensor: "ViscousStressTensor"
+    ) -> "StressEnergyTensor":
         """
         Add viscous corrections to stress-energy tensor.
 
@@ -190,7 +198,9 @@ class StressEnergyTensor(TensorField):
         total_components = self.components + viscous_tensor.components
         return StressEnergyTensor(total_components, self.metric)
 
-    def conservation_check(self, coordinates: list[np.ndarray] | None = None) -> np.ndarray | sp.Matrix:
+    def conservation_check(
+        self, coordinates: list[np.ndarray] | None = None
+    ) -> np.ndarray | sp.Matrix:
         """
         Check energy-momentum conservation ∇_μ T^μν = 0.
 
@@ -229,7 +239,7 @@ class StressEnergyTensor(TensorField):
         g_down = self.metric.components
 
         if isinstance(self.components, np.ndarray):
-            return np.einsum('mn,mn->', g_down, self.components)
+            return np.einsum("mn,mn->", g_down, self.components)
         else:
             trace_result = 0
             for mu in range(4):
@@ -273,7 +283,9 @@ class StressEnergyTensor(TensorField):
             return np.all(eigenvals >= -tolerance)
         else:
             # SymPy case - symbolic check
-            return all(eigenval >= -tolerance for eigenval in eigenvals if eigenval.is_real)
+            return all(
+                eigenval >= -tolerance for eigenval in eigenvals if eigenval.is_real
+            )
 
 
 class ViscousStressTensor(TensorField):
@@ -285,9 +297,7 @@ class ViscousStressTensor(TensorField):
     """
 
     def __init__(
-        self,
-        components: np.ndarray | sp.Matrix,
-        metric: Optional['MetricBase'] = None
+        self, components: np.ndarray | sp.Matrix, metric: Optional["MetricBase"] = None
     ):
         """
         Initialize viscous stress tensor.
@@ -300,7 +310,9 @@ class ViscousStressTensor(TensorField):
             components = np.array(components)
 
         if components.shape != (4, 4):
-            raise ValueError(f"Viscous stress tensor must be 4x4, got shape {components.shape}")
+            raise ValueError(
+                f"Viscous stress tensor must be 4x4, got shape {components.shape}"
+            )
 
         super().__init__(components, "mu nu", metric)
 
@@ -316,7 +328,7 @@ class ViscousStressTensor(TensorField):
                 warnings.warn("Viscous stress tensor should be symmetric", stacklevel=2)
 
     @monitor_performance("shear_extraction")
-    def shear_part(self, four_velocity: FourVector) -> 'ViscousStressTensor':
+    def shear_part(self, four_velocity: FourVector) -> "ViscousStressTensor":
         """
         Extract shear viscous part (traceless spatial component).
 
@@ -341,17 +353,18 @@ class ViscousStressTensor(TensorField):
 
         # Spatial projection
         if isinstance(self.components, np.ndarray):
-            projected = np.einsum('ma,nb,ab->mn',
-                                delta.components, delta.components, pi_down.components)
+            projected = np.einsum(
+                "ma,nb,ab->mn", delta.components, delta.components, pi_down.components
+            )
 
             # Remove trace: shear = projected - (1/3) * trace * delta
-            trace = np.einsum('ab,ab', delta.components, pi_down.components)
-            shear = projected - (1.0/3.0) * trace * delta.components
+            trace = np.einsum("ab,ab", delta.components, pi_down.components)
+            shear = projected - (1.0 / 3.0) * trace * delta.components
         else:
             # SymPy version
             projected = delta.components * pi_down.components * delta.components
             trace = (delta.components * pi_down.components).trace()
-            shear = projected - (sp.Rational(1,3) * trace * delta.components)
+            shear = projected - (sp.Rational(1, 3) * trace * delta.components)
 
         return ViscousStressTensor(shear, self.metric)
 
@@ -379,9 +392,13 @@ class ViscousStressTensor(TensorField):
         pi_down = self.lower_index(0).lower_index(1)
 
         if isinstance(self.components, np.ndarray):
-            bulk = -(1.0/3.0) * np.einsum('mn,mn', delta.components, pi_down.components)
+            bulk = -(1.0 / 3.0) * np.einsum(
+                "mn,mn", delta.components, pi_down.components
+            )
         else:
-            bulk = -(sp.Rational(1,3) * (delta.components * pi_down.components).trace())
+            bulk = -(
+                sp.Rational(1, 3) * (delta.components * pi_down.components).trace()
+            )
 
         return bulk
 
@@ -402,7 +419,7 @@ class ViscousStressTensor(TensorField):
 
         # Heat flux: q^μ = -u_ν π^μν
         if isinstance(self.components, np.ndarray):
-            heat_flux = -np.einsum('j,ij->i', u_cov.components, self.components)
+            heat_flux = -np.einsum("j,ij->i", u_cov.components, self.components)
         else:
             heat_flux = sp.zeros(4, 1)
             for mu in range(4):
@@ -420,8 +437,8 @@ class ViscousStressTensor(TensorField):
         four_velocity: FourVector,
         velocity_gradient: TensorField,
         temperature_gradient: FourVector,
-        metric: Optional['MetricBase'] = None
-    ) -> 'ViscousStressTensor':
+        metric: Optional["MetricBase"] = None,
+    ) -> "ViscousStressTensor":
         """
         Construct viscous tensor from transport coefficients.
 
@@ -474,17 +491,24 @@ class ViscousStressTensor(TensorField):
 
         # Bulk viscous part: -ζ Δ^μν (∇_α u^α)
         # Approximate divergence from velocity gradient trace
-        divergence = velocity_gradient.trace() if hasattr(velocity_gradient, 'trace') else 0.0
+        divergence = (
+            velocity_gradient.trace() if hasattr(velocity_gradient, "trace") else 0.0
+        )
         bulk_part = -bulk_viscosity * divergence * delta.components
 
         # Heat conduction part: thermal conductivity effects
         # Simplified: q^μ = -κ ∇^μ T (projected)
         temp_grad_projected = proj_op.project_vector_perpendicular(temperature_gradient)
         if isinstance(temp_grad_projected.components, np.ndarray):
-            heat_part = -thermal_conductivity * np.outer(temp_grad_projected.components,
-                                                        temp_grad_projected.components)
+            heat_part = -thermal_conductivity * np.outer(
+                temp_grad_projected.components, temp_grad_projected.components
+            )
         else:
-            heat_part = -thermal_conductivity * temp_grad_projected.components * temp_grad_projected.components.T
+            heat_part = (
+                -thermal_conductivity
+                * temp_grad_projected.components
+                * temp_grad_projected.components.T
+            )
 
         # Total viscous tensor
         total_viscous = shear_part + bulk_part + heat_part
@@ -496,8 +520,8 @@ class ViscousStressTensor(TensorField):
         relaxation_time: float | sp.Expr,
         four_velocity: FourVector,
         coordinates: list[np.ndarray],
-        transport_coefficients: dict[str, float | sp.Expr]
-    ) -> 'ViscousStressTensor':
+        transport_coefficients: dict[str, float | sp.Expr],
+    ) -> "ViscousStressTensor":
         """
         Evolve viscous tensor according to Israel-Stewart equations.
 
@@ -521,22 +545,26 @@ class ViscousStressTensor(TensorField):
 
         # Material derivative D = u^μ ∇_μ
         cov_deriv = CovariantDerivative(self.metric)
-        material_derivative = cov_deriv.material_derivative(self, four_velocity, coordinates)
+        material_derivative = cov_deriv.material_derivative(
+            self, four_velocity, coordinates
+        )
 
         # First-order source terms (Navier-Stokes)
-        transport_coefficients.get('shear_viscosity', 0.0)
-        transport_coefficients.get('bulk_viscosity', 0.0)
+        transport_coefficients.get("shear_viscosity", 0.0)
+        transport_coefficients.get("bulk_viscosity", 0.0)
 
         # Simplified source term construction
         # In full implementation, would need velocity gradient and proper σ^μν
         source_term = np.zeros_like(self.components)  # Placeholder
 
         # Israel-Stewart evolution: τ D π^μν + π^μν = S^μν
-        evolved_components = (source_term - material_derivative) / (1.0 + relaxation_time)
+        evolved_components = (source_term - material_derivative) / (
+            1.0 + relaxation_time
+        )
 
         return ViscousStressTensor(evolved_components, self.metric)
 
-    def causality_check(self, sound_speed: float | sp.Expr = 1.0/3.0) -> bool:
+    def causality_check(self, sound_speed: float | sp.Expr = 1.0 / 3.0) -> bool:
         """
         Check causality constraints for viscous tensor.
 
@@ -551,7 +579,11 @@ class ViscousStressTensor(TensorField):
         # Simplified causality check
         # Full implementation would check eigenvalue structure and characteristic speeds
 
-        eigenvals = np.linalg.eigvals(self.components) if isinstance(self.components, np.ndarray) else None
+        eigenvals = (
+            np.linalg.eigvals(self.components)
+            if isinstance(self.components, np.ndarray)
+            else None
+        )
 
         if eigenvals is not None:
             # Check that viscous effects don't lead to superluminal speeds

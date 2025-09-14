@@ -16,16 +16,19 @@ import sympy as sp
 
 class MetricError(Exception):
     """Base exception for metric-related errors."""
+
     pass
 
 
 class SingularMetricError(MetricError):
     """Exception raised when metric tensor is singular."""
+
     pass
 
 
 class CoordinateError(MetricError):
     """Exception raised for coordinate system issues."""
+
     pass
 
 
@@ -45,9 +48,11 @@ class MetricBase(ABC):
         Args:
             coordinates: List of coordinate names [t, x, y, z] or None for default
         """
-        self.coordinates = coordinates or ['t', 'x', 'y', 'z']
+        self.coordinates = coordinates or ["t", "x", "y", "z"]
         if len(self.coordinates) != 4:
-            raise CoordinateError(f"Must have exactly 4 coordinates, got {len(self.coordinates)}")
+            raise CoordinateError(
+                f"Must have exactly 4 coordinates, got {len(self.coordinates)}"
+            )
 
         # Cache for expensive computations
         self._inverse_cache = None
@@ -90,15 +95,16 @@ class MetricBase(ABC):
                 # Check condition number for numerical stability
                 cond_num = np.linalg.cond(self.components)
                 if cond_num > 1e12:
-                    warnings.warn(f"Metric is poorly conditioned (cond={cond_num:.2e})", stacklevel=2)
+                    warnings.warn(
+                        f"Metric is poorly conditioned (cond={cond_num:.2e})",
+                        stacklevel=2,
+                    )
 
                 inv_metric = np.linalg.inv(self.components)
 
                 # Verify inversion accuracy
                 identity_check = np.allclose(
-                    np.dot(self.components, inv_metric),
-                    np.eye(4),
-                    rtol=1e-12
+                    np.dot(self.components, inv_metric), np.eye(4), rtol=1e-12
                 )
                 if not identity_check:
                     warnings.warn("Metric inversion may be inaccurate", stacklevel=2)
@@ -114,7 +120,9 @@ class MetricBase(ABC):
             except sp.NonInvertibleMatrixError as e:
                 raise SingularMetricError(f"Cannot invert symbolic metric tensor: {e}")
         else:
-            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
+            raise TypeError(
+                f"Unsupported metric component type: {type(self.components)}"
+            )
 
     @cached_property
     def determinant(self) -> float | sp.Expr:
@@ -132,7 +140,9 @@ class MetricBase(ABC):
         elif isinstance(self.components, sp.Matrix):
             return self.components.det()
         else:
-            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
+            raise TypeError(
+                f"Unsupported metric component type: {type(self.components)}"
+            )
 
     @cached_property
     def christoffel_symbols(self) -> np.ndarray | sp.Array:
@@ -150,9 +160,13 @@ class MetricBase(ABC):
         elif isinstance(self.components, sp.Matrix):
             return self._compute_christoffel_symbolic()
         else:
-            raise TypeError(f"Unsupported metric component type: {type(self.components)}")
+            raise TypeError(
+                f"Unsupported metric component type: {type(self.components)}"
+            )
 
-    def christoffel_symbols_numerical(self, coordinates: list[np.ndarray]) -> np.ndarray:
+    def christoffel_symbols_numerical(
+        self, coordinates: list[np.ndarray]
+    ) -> np.ndarray:
         """Compute numerical Christoffel symbols with explicit coordinate arrays.
 
         Args:
@@ -162,7 +176,9 @@ class MetricBase(ABC):
             Christoffel symbols Γ^λ_μν with shape (*grid_shape, 4, 4, 4)
         """
         if len(coordinates) != 4:
-            raise CoordinateError(f"Need exactly 4 coordinate arrays, got {len(coordinates)}")
+            raise CoordinateError(
+                f"Need exactly 4 coordinate arrays, got {len(coordinates)}"
+            )
         return self._compute_christoffel_numerical(coordinates)
 
     def christoffel_symbols_from_grid(self, grid) -> np.ndarray:
@@ -175,20 +191,24 @@ class MetricBase(ABC):
             Christoffel symbols Γ^λ_μν with shape (*grid.shape, 4, 4, 4)
         """
         # Extract coordinate arrays from grid
-        if hasattr(grid, 'coordinates') and isinstance(grid.coordinates, dict):
+        if hasattr(grid, "coordinates") and isinstance(grid.coordinates, dict):
             coord_names = grid.coordinate_names
             coordinates = [grid.coordinates[name] for name in coord_names]
         else:
             # Create coordinate arrays from grid ranges
-            t_coords = np.linspace(grid.time_range[0], grid.time_range[1], grid.grid_points[0])
+            t_coords = np.linspace(
+                grid.time_range[0], grid.time_range[1], grid.grid_points[0]
+            )
             coordinates = [t_coords]
             for i, (x_min, x_max) in enumerate(grid.spatial_ranges):
-                x_coords = np.linspace(x_min, x_max, grid.grid_points[i+1])
+                x_coords = np.linspace(x_min, x_max, grid.grid_points[i + 1])
                 coordinates.append(x_coords)
 
         return self._compute_christoffel_numerical(coordinates)
 
-    def _compute_christoffel_numerical(self, coordinates: list[np.ndarray] | None = None) -> np.ndarray:
+    def _compute_christoffel_numerical(
+        self, coordinates: list[np.ndarray] | None = None
+    ) -> np.ndarray:
         """Compute Christoffel symbols for numerical metrics.
 
         Args:
@@ -206,13 +226,15 @@ class MetricBase(ABC):
             warnings.warn(
                 "Cannot compute numerical Christoffel symbols without coordinate arrays. "
                 "Returning zeros - use symbolic metric or provide coordinates.",
-                stacklevel=3
+                stacklevel=3,
             )
             return np.zeros((4, 4, 4))
 
         return self._compute_christoffel_finite_difference(coordinates)
 
-    def _compute_christoffel_finite_difference(self, coordinates: list[np.ndarray]) -> np.ndarray:
+    def _compute_christoffel_finite_difference(
+        self, coordinates: list[np.ndarray]
+    ) -> np.ndarray:
         """
         Compute Christoffel symbols using finite differences.
 
@@ -226,7 +248,9 @@ class MetricBase(ABC):
             Christoffel symbols with shape (4, 4, 4)
         """
         if len(coordinates) != 4:
-            raise CoordinateError(f"Need exactly 4 coordinate arrays, got {len(coordinates)}")
+            raise CoordinateError(
+                f"Need exactly 4 coordinate arrays, got {len(coordinates)}"
+            )
 
         # Get metric components and inverse
         g = self.components
@@ -237,7 +261,9 @@ class MetricBase(ABC):
             # Constant metric - expand to coordinate grid shape
             coord_shape = tuple(len(coord) for coord in coordinates)
             g = np.broadcast_to(g[None, None, None, None, :, :], (*coord_shape, 4, 4))
-            g_inv = np.broadcast_to(g_inv[None, None, None, None, :, :], (*coord_shape, 4, 4))
+            g_inv = np.broadcast_to(
+                g_inv[None, None, None, None, :, :], (*coord_shape, 4, 4)
+            )
 
         # Initialize Christoffel array
         grid_shape = g.shape[:-2]  # Remove last two indices (μ, ν)
@@ -260,12 +286,15 @@ class MetricBase(ABC):
                         term3 = metric_derivs[..., rho, mu, nu]
 
                         # Γ^λ_μν += (1/2) g^λρ (∂_μ g_ρν + ∂_ν g_μρ - ∂_ρ g_μν)
-                        christoffel[..., lam, mu, nu] += (0.5 * g_inv[..., lam, rho] *
-                                                        (term1 + term2 - term3))
+                        christoffel[..., lam, mu, nu] += (
+                            0.5 * g_inv[..., lam, rho] * (term1 + term2 - term3)
+                        )
 
         return christoffel
 
-    def _compute_metric_derivatives(self, metric: np.ndarray, coordinates: list[np.ndarray]) -> np.ndarray:
+    def _compute_metric_derivatives(
+        self, metric: np.ndarray, coordinates: list[np.ndarray]
+    ) -> np.ndarray:
         """
         Compute partial derivatives of metric tensor using finite differences.
 
@@ -277,7 +306,9 @@ class MetricBase(ABC):
             Metric derivatives with shape (*grid_shape, 4, 4, 4) where indices are [derivative_direction, μ, ν] for ∂_{derivative_direction} g_μν
         """
         grid_shape = metric.shape[:-2]
-        derivs = np.zeros((*grid_shape, 4, 4, 4))  # Shape: (*grid, direction, μ, ν) for ∂_direction g_μν
+        derivs = np.zeros(
+            (*grid_shape, 4, 4, 4)
+        )  # Shape: (*grid, direction, μ, ν) for ∂_direction g_μν
 
         # For each coordinate direction
         for direction in range(4):
@@ -292,7 +323,9 @@ class MetricBase(ABC):
                 if direction == 0:  # Time derivative
                     for mu in range(4):
                         for nu in range(4):
-                            grad_components = np.gradient(metric[:, mu, nu], coord_array)
+                            grad_components = np.gradient(
+                                metric[:, mu, nu], coord_array
+                            )
                             derivs[:, direction, mu, nu] = grad_components
 
             elif len(grid_shape) == 4:  # Full 4D grid
@@ -301,7 +334,9 @@ class MetricBase(ABC):
                 for mu in range(4):
                     for nu in range(4):
                         # Use numpy gradient for finite differences
-                        grad_components = np.gradient(metric[..., mu, nu], coord_array, axis=axis)
+                        grad_components = np.gradient(
+                            metric[..., mu, nu], coord_array, axis=axis
+                        )
                         derivs[..., direction, mu, nu] = grad_components
 
             else:
@@ -310,7 +345,9 @@ class MetricBase(ABC):
                     axis = direction
                     for mu in range(4):
                         for nu in range(4):
-                            grad_components = np.gradient(metric[..., mu, nu], coord_array, axis=axis)
+                            grad_components = np.gradient(
+                                metric[..., mu, nu], coord_array, axis=axis
+                            )
                             derivs[..., direction, mu, nu] = grad_components
                 else:
                     # Derivative direction beyond grid dimensions - derivatives are zero
@@ -326,7 +363,9 @@ class MetricBase(ABC):
             all_symbols.update(comp.free_symbols)
 
         # Initialize Christoffel components list
-        christoffel_components = [[[0 for _ in range(4)] for _ in range(4)] for _ in range(4)]
+        christoffel_components = [
+            [[0 for _ in range(4)] for _ in range(4)] for _ in range(4)
+        ]
 
         if not all_symbols:
             # Constant metric has zero Christoffel symbols
@@ -352,7 +391,7 @@ class MetricBase(ABC):
 
         # Ensure we have exactly 4 coordinates
         while len(coords) < 4:
-            coords.append(sp.Symbol(f'x{len(coords)}'))
+            coords.append(sp.Symbol(f"x{len(coords)}"))
 
         # Full symbolic computation for coordinate-dependent metrics
         g_inv = self.inverse
@@ -362,10 +401,14 @@ class MetricBase(ABC):
                 for nu in range(4):
                     christoffel_sum = 0
                     for rho in range(4):
-                        christoffel_sum += sp.Rational(1, 2) * g_inv[lam, rho] * (
-                            sp.diff(self.components[rho, nu], coords[mu]) +
-                            sp.diff(self.components[mu, rho], coords[nu]) -
-                            sp.diff(self.components[mu, nu], coords[rho])
+                        christoffel_sum += (
+                            sp.Rational(1, 2)
+                            * g_inv[lam, rho]
+                            * (
+                                sp.diff(self.components[rho, nu], coords[mu])
+                                + sp.diff(self.components[mu, rho], coords[nu])
+                                - sp.diff(self.components[mu, nu], coords[rho])
+                            )
                         )
                     christoffel_components[lam][mu][nu] = christoffel_sum
 
@@ -402,10 +445,16 @@ class MetricBase(ABC):
             return np.allclose(christoffel, 0.0, atol=1e-15)
         else:
             # Check if all components are zero
-            return all(christoffel[i, j, k] == 0 for i in range(4) for j in range(4) for k in range(4))
+            return all(
+                christoffel[i, j, k] == 0
+                for i in range(4)
+                for j in range(4)
+                for k in range(4)
+            )
 
-    def raise_index(self, tensor_components: np.ndarray | sp.Matrix,
-                   index_position: int) -> np.ndarray | sp.Matrix:
+    def raise_index(
+        self, tensor_components: np.ndarray | sp.Matrix, index_position: int
+    ) -> np.ndarray | sp.Matrix:
         """
         Raise a tensor index using the inverse metric.
 
@@ -418,12 +467,12 @@ class MetricBase(ABC):
         """
         if isinstance(tensor_components, np.ndarray):
             if tensor_components.ndim == 1:  # Vector
-                return np.einsum('ij,j->i', self.inverse, tensor_components)
+                return np.einsum("ij,j->i", self.inverse, tensor_components)
             elif tensor_components.ndim == 2:  # Rank-2 tensor
                 if index_position == 0:
-                    return np.einsum('ij,jk->ik', self.inverse, tensor_components)
+                    return np.einsum("ij,jk->ik", self.inverse, tensor_components)
                 elif index_position == 1:
-                    return np.einsum('ij,ki->kj', self.inverse, tensor_components)
+                    return np.einsum("ij,ki->kj", self.inverse, tensor_components)
         elif isinstance(tensor_components, sp.Matrix):
             if tensor_components.shape[1] == 1:  # Vector
                 return self.inverse * tensor_components
@@ -433,10 +482,13 @@ class MetricBase(ABC):
                 elif index_position == 1:
                     return tensor_components * self.inverse.T
 
-        raise NotImplementedError(f"Index raising not implemented for rank > 2 or position {index_position}")
+        raise NotImplementedError(
+            f"Index raising not implemented for rank > 2 or position {index_position}"
+        )
 
-    def lower_index(self, tensor_components: np.ndarray | sp.Matrix,
-                   index_position: int) -> np.ndarray | sp.Matrix:
+    def lower_index(
+        self, tensor_components: np.ndarray | sp.Matrix, index_position: int
+    ) -> np.ndarray | sp.Matrix:
         """
         Lower a tensor index using the metric.
 
@@ -449,12 +501,12 @@ class MetricBase(ABC):
         """
         if isinstance(tensor_components, np.ndarray):
             if tensor_components.ndim == 1:  # Vector
-                return np.einsum('ij,j->i', self.components, tensor_components)
+                return np.einsum("ij,j->i", self.components, tensor_components)
             elif tensor_components.ndim == 2:  # Rank-2 tensor
                 if index_position == 0:
-                    return np.einsum('ij,jk->ik', self.components, tensor_components)
+                    return np.einsum("ij,jk->ik", self.components, tensor_components)
                 elif index_position == 1:
-                    return np.einsum('ij,ki->kj', self.components, tensor_components)
+                    return np.einsum("ij,ki->kj", self.components, tensor_components)
         elif isinstance(tensor_components, sp.Matrix):
             if tensor_components.shape[1] == 1:  # Vector
                 return self.components * tensor_components
@@ -464,10 +516,13 @@ class MetricBase(ABC):
                 elif index_position == 1:
                     return tensor_components * self.components.T
 
-        raise NotImplementedError(f"Index lowering not implemented for rank > 2 or position {index_position}")
+        raise NotImplementedError(
+            f"Index lowering not implemented for rank > 2 or position {index_position}"
+        )
 
-    def inner_product(self, vector1: np.ndarray | sp.Matrix,
-                     vector2: np.ndarray | sp.Matrix) -> float | sp.Expr:
+    def inner_product(
+        self, vector1: np.ndarray | sp.Matrix, vector2: np.ndarray | sp.Matrix
+    ) -> float | sp.Expr:
         """
         Compute inner product of two vectors: g_�� u^� v^�.
 
@@ -479,13 +534,15 @@ class MetricBase(ABC):
             Scalar inner product
         """
         if isinstance(vector1, np.ndarray) and isinstance(vector2, np.ndarray):
-            return np.einsum('ij,i,j', self.components, vector1, vector2)
+            return np.einsum("ij,i,j", self.components, vector1, vector2)
         elif isinstance(vector1, sp.Matrix) and isinstance(vector2, sp.Matrix):
             return (vector1.T * self.components * vector2)[0]
         else:
             raise TypeError("Both vectors must be same type (numpy or sympy)")
 
-    def line_element_squared(self, coordinate_differentials: np.ndarray | sp.Matrix) -> float | sp.Expr:
+    def line_element_squared(
+        self, coordinate_differentials: np.ndarray | sp.Matrix
+    ) -> float | sp.Expr:
         """
         Compute line element squared: ds� = g_�� dx^� dx^�.
 
@@ -521,7 +578,9 @@ class MetricBase(ABC):
         try:
             det = self.determinant
             if isinstance(det, (int, float)) and det >= 0:
-                warnings.warn("Metric determinant is non-negative - check signature", stacklevel=2)
+                warnings.warn(
+                    "Metric determinant is non-negative - check signature", stacklevel=2
+                )
         except:
             pass  # Skip check for complex symbolic expressions
 
@@ -550,7 +609,9 @@ class MinkowskiMetric(MetricBase):
     Standard for special relativity and particle physics.
     """
 
-    def __init__(self, signature: str = "mostly_plus", coordinates: list[str] | None = None):
+    def __init__(
+        self, signature: str = "mostly_plus", coordinates: list[str] | None = None
+    ):
         """
         Initialize Minkowski metric.
 
@@ -566,7 +627,9 @@ class MinkowskiMetric(MetricBase):
         elif signature == "mostly_minus":
             self._diag = np.array([1.0, -1.0, -1.0, -1.0])
         else:
-            raise ValueError(f"Unknown signature: {signature}. Use 'mostly_plus' or 'mostly_minus'")
+            raise ValueError(
+                f"Unknown signature: {signature}. Use 'mostly_plus' or 'mostly_minus'"
+            )
 
     @property
     def components(self) -> np.ndarray:
@@ -606,7 +669,7 @@ class MinkowskiMetric(MetricBase):
         if self.signature_type == "mostly_plus":
             return norm_squared < -tolerance  # ds� < 0 is timelike
         else:
-            return norm_squared > tolerance   # ds� > 0 is timelike
+            return norm_squared > tolerance  # ds� > 0 is timelike
 
     def is_spacelike(self, vector: np.ndarray, tolerance: float = 1e-10) -> bool:
         """
@@ -621,7 +684,7 @@ class MinkowskiMetric(MetricBase):
         """
         norm_squared = self.inner_product(vector, vector)
         if self.signature_type == "mostly_plus":
-            return norm_squared > tolerance   # ds� > 0 is spacelike
+            return norm_squared > tolerance  # ds� > 0 is spacelike
         else:
             return norm_squared < -tolerance  # ds� < 0 is spacelike
 
@@ -647,8 +710,11 @@ class GeneralMetric(MetricBase):
     Accepts arbitrary metric components and computes all derived quantities.
     """
 
-    def __init__(self, metric_components: np.ndarray | sp.Matrix,
-                 coordinates: list[str] | None = None):
+    def __init__(
+        self,
+        metric_components: np.ndarray | sp.Matrix,
+        coordinates: list[str] | None = None,
+    ):
         """
         Initialize general metric.
 
@@ -662,7 +728,9 @@ class GeneralMetric(MetricBase):
             metric_components = np.array(metric_components)
 
         if metric_components.shape != (4, 4):
-            raise CoordinateError(f"Metric must be 4x4, got shape {metric_components.shape}")
+            raise CoordinateError(
+                f"Metric must be 4x4, got shape {metric_components.shape}"
+            )
 
         self._components = metric_components
 
@@ -694,20 +762,20 @@ class MilneMetric(MetricBase):
         Args:
             coordinates: Coordinate names (default: ['tau', 'eta', 'x', 'y'])
         """
-        default_coords = ['tau', 'eta', 'x', 'y']
+        default_coords = ["tau", "eta", "x", "y"]
         super().__init__(coordinates or default_coords)
 
     @property
     def components(self) -> sp.Matrix:
         """Return Milne metric components as symbolic matrix."""
-        tau = sp.Symbol('tau', positive=True)
+        tau = sp.Symbol("tau", positive=True)
 
         # Milne metric: diag(1, -τ², -1, -1)
         metric = sp.zeros(4, 4)
-        metric[0, 0] = 1           # dτ²
-        metric[1, 1] = -tau**2     # -τ²dη²
-        metric[2, 2] = -1          # -dx²
-        metric[3, 3] = -1          # -dy²
+        metric[0, 0] = 1  # dτ²
+        metric[1, 1] = -(tau**2)  # -τ²dη²
+        metric[2, 2] = -1  # -dx²
+        metric[3, 3] = -1  # -dy²
 
         return metric
 
@@ -731,7 +799,7 @@ class BJorkenMetric(MilneMetric):
 
     def __init__(self):
         """Initialize Bjorken flow metric."""
-        super().__init__(['tau', 'eta', 'x', 'y'])
+        super().__init__(["tau", "eta", "x", "y"])
 
 
 class FLRWMetric(MetricBase):
@@ -741,7 +809,7 @@ class FLRWMetric(MetricBase):
     Line element: ds² = dt² - a(t)²[dr²/(1-kr²) + r²dθ² + r²sin²θdφ²]
     """
 
-    def __init__(self, curvature_param: float = 0, scale_factor_func: str = 't'):
+    def __init__(self, curvature_param: float = 0, scale_factor_func: str = "t"):
         """
         Initialize FLRW metric.
 
@@ -749,26 +817,26 @@ class FLRWMetric(MetricBase):
             curvature_param: Spatial curvature parameter k (0, +1, -1)
             scale_factor_func: Scale factor a(t) as function of time
         """
-        super().__init__(['t', 'r', 'theta', 'phi'])
+        super().__init__(["t", "r", "theta", "phi"])
         self.k = curvature_param
         self.scale_factor_func = scale_factor_func
 
     @property
     def components(self) -> sp.Matrix:
         """Return FLRW metric components."""
-        t, r, theta = sp.symbols('t r theta', real=True)
+        t, r, theta = sp.symbols("t r theta", real=True)
 
         # Scale factor a(t) - for now, simple power law
-        if self.scale_factor_func == 't':
+        if self.scale_factor_func == "t":
             a = t  # Simple case: a(t) = t
         else:
-            a = sp.Symbol('a', positive=True)  # Generic scale factor
+            a = sp.Symbol("a", positive=True)  # Generic scale factor
 
         metric = sp.zeros(4, 4)
-        metric[0, 0] = 1                              # dt²
-        metric[1, 1] = -a**2 / (1 - self.k * r**2)   # -a²dr²/(1-kr²)
-        metric[2, 2] = -a**2 * r**2                   # -a²r²dθ²
-        metric[3, 3] = -a**2 * r**2 * sp.sin(theta)**2  # -a²r²sin²θdφ²
+        metric[0, 0] = 1  # dt²
+        metric[1, 1] = -(a**2) / (1 - self.k * r**2)  # -a²dr²/(1-kr²)
+        metric[2, 2] = -(a**2) * r**2  # -a²r²dθ²
+        metric[3, 3] = -(a**2) * r**2 * sp.sin(theta) ** 2  # -a²r²sin²θdφ²
 
         return metric
 
@@ -797,22 +865,22 @@ class SchwarzschildMetric(MetricBase):
         Args:
             schwarzschild_radius: Schwarzschild radius rs = 2GM/c²
         """
-        super().__init__(['t', 'r', 'theta', 'phi'])
+        super().__init__(["t", "r", "theta", "phi"])
         self.rs = schwarzschild_radius
 
     @property
     def components(self) -> sp.Matrix:
         """Return Schwarzschild metric components."""
-        r, theta = sp.symbols('r theta', real=True, positive=True)
-        rs = sp.Symbol('rs', positive=True)
+        r, theta = sp.symbols("r theta", real=True, positive=True)
+        rs = sp.Symbol("rs", positive=True)
 
-        f = 1 - rs/r  # Schwarzschild function
+        f = 1 - rs / r  # Schwarzschild function
 
         metric = sp.zeros(4, 4)
-        metric[0, 0] = f           # (1-rs/r)dt²
-        metric[1, 1] = -1/f        # -dr²/(1-rs/r)
-        metric[2, 2] = -r**2       # -r²dθ²
-        metric[3, 3] = -r**2 * sp.sin(theta)**2  # -r²sin²θdφ²
+        metric[0, 0] = f  # (1-rs/r)dt²
+        metric[1, 1] = -1 / f  # -dr²/(1-rs/r)
+        metric[2, 2] = -(r**2)  # -r²dθ²
+        metric[3, 3] = -(r**2) * sp.sin(theta) ** 2  # -r²sin²θdφ²
 
         return metric
 

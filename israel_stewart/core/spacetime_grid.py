@@ -5,7 +5,6 @@ This module provides coordinate grids, boundary conditions, and spatial
 discretization utilities for relativistic hydrodynamics calculations.
 """
 
-
 # Forward reference for metrics
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional
@@ -34,7 +33,7 @@ class SpacetimeGrid:
         time_range: tuple[float, float],
         spatial_ranges: list[tuple[float, float]],
         grid_points: tuple[int, int, int, int],
-        metric: Optional['MetricBase'] = None
+        metric: Optional["MetricBase"] = None,
     ):
         """
         Initialize spacetime grid.
@@ -72,7 +71,7 @@ class SpacetimeGrid:
 
     def _validate_grid_parameters(self) -> None:
         """Validate grid initialization parameters."""
-        valid_systems = ['cartesian', 'spherical', 'cylindrical', 'milne']
+        valid_systems = ["cartesian", "spherical", "cylindrical", "milne"]
         if self.coordinate_system not in valid_systems:
             raise ValueError(f"Coordinate system must be one of {valid_systems}")
 
@@ -80,7 +79,9 @@ class SpacetimeGrid:
             raise ValueError("Must provide exactly 3 spatial coordinate ranges")
 
         if len(self.grid_points) != 4:
-            raise ValueError("Must provide exactly 4 grid point counts (Nt, Nx, Ny, Nz)")
+            raise ValueError(
+                "Must provide exactly 4 grid point counts (Nt, Nx, Ny, Nz)"
+            )
 
         if any(n < 2 for n in self.grid_points):
             raise ValueError("All grid dimensions must have at least 2 points")
@@ -90,21 +91,23 @@ class SpacetimeGrid:
         coords = {}
 
         # Time coordinate - use appropriate name for coordinate system
-        if self.coordinate_system == 'milne':
-            time_name = 'tau'
+        if self.coordinate_system == "milne":
+            time_name = "tau"
         else:
-            time_name = 't'
-        coords[time_name] = np.linspace(self.time_range[0], self.time_range[1], self.grid_points[0])
+            time_name = "t"
+        coords[time_name] = np.linspace(
+            self.time_range[0], self.time_range[1], self.grid_points[0]
+        )
 
         # Spatial coordinates depend on coordinate system
-        if self.coordinate_system == 'cartesian':
-            coord_names = ['x', 'y', 'z']
-        elif self.coordinate_system == 'spherical':
-            coord_names = ['r', 'theta', 'phi']
-        elif self.coordinate_system == 'cylindrical':
-            coord_names = ['rho', 'phi', 'z']
-        elif self.coordinate_system == 'milne':
-            coord_names = ['eta', 'x', 'y']  # tau is time-like
+        if self.coordinate_system == "cartesian":
+            coord_names = ["x", "y", "z"]
+        elif self.coordinate_system == "spherical":
+            coord_names = ["r", "theta", "phi"]
+        elif self.coordinate_system == "cylindrical":
+            coord_names = ["rho", "phi", "z"]
+        elif self.coordinate_system == "milne":
+            coord_names = ["eta", "x", "y"]  # tau is time-like
 
         for i, name in enumerate(coord_names):
             range_i = self.spatial_ranges[i]
@@ -116,16 +119,16 @@ class SpacetimeGrid:
     @property
     def coordinate_names(self) -> list[str]:
         """Get list of coordinate names."""
-        if self.coordinate_system == 'cartesian':
-            return ['t', 'x', 'y', 'z']
-        elif self.coordinate_system == 'spherical':
-            return ['t', 'r', 'theta', 'phi']
-        elif self.coordinate_system == 'cylindrical':
-            return ['t', 'rho', 'phi', 'z']
-        elif self.coordinate_system == 'milne':
-            return ['tau', 'eta', 'x', 'y']
+        if self.coordinate_system == "cartesian":
+            return ["t", "x", "y", "z"]
+        elif self.coordinate_system == "spherical":
+            return ["t", "r", "theta", "phi"]
+        elif self.coordinate_system == "cylindrical":
+            return ["t", "rho", "phi", "z"]
+        elif self.coordinate_system == "milne":
+            return ["tau", "eta", "x", "y"]
 
-    def meshgrid(self, indexing: str = 'ij') -> tuple[np.ndarray, ...]:
+    def meshgrid(self, indexing: str = "ij") -> tuple[np.ndarray, ...]:
         """
         Create coordinate meshgrids for the full 4D spacetime.
 
@@ -189,7 +192,9 @@ class SpacetimeGrid:
             Gradient array
         """
         if field.shape != self.shape:
-            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
+            raise ValueError(
+                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
+            )
 
         coord_name = self.coordinate_names[axis]
         spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
@@ -208,7 +213,9 @@ class SpacetimeGrid:
         """
         expected_shape = (*self.shape, 4)
         if vector_field.shape != expected_shape:
-            raise ValueError(f"Vector field shape {vector_field.shape} doesn't match expected {expected_shape}")
+            raise ValueError(
+                f"Vector field shape {vector_field.shape} doesn't match expected {expected_shape}"
+            )
 
         divergence = np.zeros(self.shape)
 
@@ -229,7 +236,9 @@ class SpacetimeGrid:
             Laplacian field
         """
         if field.shape != self.shape:
-            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
+            raise ValueError(
+                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
+            )
 
         laplacian = np.zeros_like(field)
 
@@ -239,12 +248,16 @@ class SpacetimeGrid:
             spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
 
             # Second derivative using central differences
-            second_deriv = np.gradient(np.gradient(field, spacing, axis=axis), spacing, axis=axis)
+            second_deriv = np.gradient(
+                np.gradient(field, spacing, axis=axis), spacing, axis=axis
+            )
             laplacian += second_deriv
 
         return laplacian
 
-    def interpolate(self, field: np.ndarray, coords: np.ndarray, method: str = 'linear') -> float:
+    def interpolate(
+        self, field: np.ndarray, coords: np.ndarray, method: str = "linear"
+    ) -> float:
         """
         Interpolate field value at arbitrary coordinates.
 
@@ -259,7 +272,9 @@ class SpacetimeGrid:
         from scipy.interpolate import RegularGridInterpolator
 
         if field.shape != self.shape:
-            raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
+            raise ValueError(
+                f"Field shape {field.shape} doesn't match grid shape {self.shape}"
+            )
 
         # Create interpolator
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
@@ -268,9 +283,7 @@ class SpacetimeGrid:
         return interpolator(coords)
 
     def apply_boundary_conditions(
-        self,
-        field: np.ndarray,
-        boundary_conditions: dict[str, str]
+        self, field: np.ndarray, boundary_conditions: dict[str, str]
     ) -> np.ndarray:
         """
         Apply boundary conditions to field.
@@ -286,13 +299,13 @@ class SpacetimeGrid:
         field_bc = field.copy()
 
         for boundary, condition in boundary_conditions.items():
-            if condition == 'periodic':
+            if condition == "periodic":
                 field_bc = self._apply_periodic_bc(field_bc, boundary)
-            elif condition == 'reflecting':
+            elif condition == "reflecting":
                 field_bc = self._apply_reflecting_bc(field_bc, boundary)
-            elif condition == 'absorbing':
+            elif condition == "absorbing":
                 field_bc = self._apply_absorbing_bc(field_bc, boundary)
-            elif condition == 'fixed':
+            elif condition == "fixed":
                 field_bc = self._apply_fixed_bc(field_bc, boundary)
             else:
                 raise ValueError(f"Unknown boundary condition: {condition}")
@@ -328,14 +341,12 @@ class SpacetimeGrid:
         """
         if self.metric is None:
             # Flat spacetime volume element
-            if self.coordinate_system == 'cartesian':
+            if self.coordinate_system == "cartesian":
                 return np.ones(self.shape)
-            elif self.coordinate_system == 'spherical':
+            elif self.coordinate_system == "spherical":
                 # d⁴x = dt dr r dθ r sin(θ) dφ = r² sin(θ) dt dr dθ dφ
                 r_mesh, theta_mesh = np.meshgrid(
-                    self.coordinates['r'],
-                    self.coordinates['theta'],
-                    indexing='ij'
+                    self.coordinates["r"], self.coordinates["theta"], indexing="ij"
                 )
                 volume_elem = r_mesh**2 * np.sin(theta_mesh)
                 # Broadcast to full 4D grid
@@ -348,10 +359,7 @@ class SpacetimeGrid:
             metric_determinant = self.metric.determinant
             return np.sqrt(-metric_determinant)
 
-    def coordinate_transformation_jacobian(
-        self,
-        target_system: str
-    ) -> np.ndarray:
+    def coordinate_transformation_jacobian(self, target_system: str) -> np.ndarray:
         """
         Compute Jacobian for coordinate transformation.
 
@@ -366,10 +374,8 @@ class SpacetimeGrid:
         return np.eye(4)
 
     def create_subgrid(
-        self,
-        time_slice: slice | None = None,
-        spatial_slices: list[slice] | None = None
-    ) -> 'SpacetimeGrid':
+        self, time_slice: slice | None = None, spatial_slices: list[slice] | None = None
+    ) -> "SpacetimeGrid":
         """
         Create subgrid from current grid.
 
@@ -385,15 +391,19 @@ class SpacetimeGrid:
         raise NotImplementedError("Subgrid creation not yet implemented")
 
     def __str__(self) -> str:
-        return (f"SpacetimeGrid({self.coordinate_system}, "
-                f"shape={self.shape}, "
-                f"total_points={self.total_points})")
+        return (
+            f"SpacetimeGrid({self.coordinate_system}, "
+            f"shape={self.shape}, "
+            f"total_points={self.total_points})"
+        )
 
     def __repr__(self) -> str:
-        return (f"SpacetimeGrid(coordinate_system='{self.coordinate_system}', "
-                f"time_range={self.time_range}, "
-                f"spatial_ranges={self.spatial_ranges}, "
-                f"grid_points={self.grid_points})")
+        return (
+            f"SpacetimeGrid(coordinate_system='{self.coordinate_system}', "
+            f"time_range={self.time_range}, "
+            f"spatial_ranges={self.spatial_ranges}, "
+            f"grid_points={self.grid_points})"
+        )
 
 
 class AdaptiveMeshRefinement:
@@ -424,7 +434,9 @@ class AdaptiveMeshRefinement:
         """
         self.refinement_criteria.append(criterion)
 
-    def refine_grid(self, field: np.ndarray, refinement_factor: int = 2) -> dict[str, Any]:
+    def refine_grid(
+        self, field: np.ndarray, refinement_factor: int = 2
+    ) -> dict[str, Any]:
         """
         Refine grid based on field gradients and criteria.
 
@@ -436,14 +448,17 @@ class AdaptiveMeshRefinement:
             Dictionary with refined grid information
         """
         # Placeholder implementation
-        return {"refined_grid": self.base_grid, "refinement_map": np.zeros(self.base_grid.shape)}
+        return {
+            "refined_grid": self.base_grid,
+            "refinement_map": np.zeros(self.base_grid.shape),
+        }
 
 
 # Utility functions for common grid operations
 def create_cartesian_grid(
     time_range: tuple[float, float],
     spatial_extent: float,
-    grid_points: tuple[int, int, int, int]
+    grid_points: tuple[int, int, int, int],
 ) -> SpacetimeGrid:
     """
     Create symmetric Cartesian grid.
@@ -456,15 +471,15 @@ def create_cartesian_grid(
     Returns:
         Cartesian SpacetimeGrid
     """
-    spatial_ranges = [(-spatial_extent/2, spatial_extent/2) for _ in range(3)]
-    return SpacetimeGrid('cartesian', time_range, spatial_ranges, grid_points)
+    spatial_ranges = [(-spatial_extent / 2, spatial_extent / 2) for _ in range(3)]
+    return SpacetimeGrid("cartesian", time_range, spatial_ranges, grid_points)
 
 
 def create_milne_grid(
     tau_range: tuple[float, float],
     eta_range: tuple[float, float],
     transverse_extent: float,
-    grid_points: tuple[int, int, int, int]
+    grid_points: tuple[int, int, int, int],
 ) -> SpacetimeGrid:
     """
     Create Milne coordinate grid for boost-invariant systems.
@@ -480,7 +495,7 @@ def create_milne_grid(
     """
     spatial_ranges = [
         eta_range,
-        (-transverse_extent/2, transverse_extent/2),
-        (-transverse_extent/2, transverse_extent/2)
+        (-transverse_extent / 2, transverse_extent / 2),
+        (-transverse_extent / 2, transverse_extent / 2),
     ]
-    return SpacetimeGrid('milne', tau_range, spatial_ranges, grid_points)
+    return SpacetimeGrid("milne", tau_range, spatial_ranges, grid_points)

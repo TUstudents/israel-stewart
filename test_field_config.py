@@ -14,6 +14,7 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
 def test_spacetime_grid():
     """Test SpacetimeGrid functionality."""
     print("Testing SpacetimeGrid...")
@@ -23,9 +24,7 @@ def test_spacetime_grid():
 
         # Create simple Cartesian grid
         grid = create_cartesian_grid(
-            time_range=(0.0, 1.0),
-            spatial_extent=2.0,
-            grid_points=(10, 8, 8, 8)
+            time_range=(0.0, 1.0), spatial_extent=2.0, grid_points=(10, 8, 8, 8)
         )
 
         print(f"✅ Grid created: {grid}")
@@ -38,7 +37,9 @@ def test_spacetime_grid():
         print(f"   Coordinates at center: {coords_at_center}")
 
         # Test gradients
-        test_field = np.sin(np.linspace(0, np.pi, grid.total_points)).reshape(grid.shape)
+        test_field = np.sin(np.linspace(0, np.pi, grid.total_points)).reshape(
+            grid.shape
+        )
         gradient_t = grid.gradient(test_field, axis=0)
         print(f"   Gradient shape: {gradient_t.shape}")
 
@@ -47,6 +48,7 @@ def test_spacetime_grid():
     except Exception as e:
         print(f"❌ SpacetimeGrid test failed: {e}")
         return False
+
 
 def test_field_configuration():
     """Test ISFieldConfiguration functionality."""
@@ -59,11 +61,12 @@ def test_field_configuration():
         grid = create_cartesian_grid(
             time_range=(0.0, 1.0),
             spatial_extent=1.0,
-            grid_points=(5, 4, 4, 4)  # Small grid for testing
+            grid_points=(5, 4, 4, 4),  # Small grid for testing
         )
 
         # Set metric for proper tensor operations
         from israel_stewart.core import MinkowskiMetric
+
         grid.metric = MinkowskiMetric()
 
         config = ISFieldConfiguration(grid)
@@ -114,13 +117,15 @@ def test_field_configuration():
         charges = config.compute_conserved_charges()
         print(f"   Conserved charges computed: {list(charges.keys())}")
 
-        return validation['overall_valid']
+        return validation["overall_valid"]
 
     except Exception as e:
         print(f"❌ ISFieldConfiguration test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 def test_integration_with_tensors():
     """Test integration with tensor framework."""
@@ -138,7 +143,7 @@ def test_integration_with_tensors():
         grid = create_cartesian_grid(
             time_range=(0.0, 1.0),
             spatial_extent=1.0,
-            grid_points=(3, 3, 3, 3)  # Very small for testing
+            grid_points=(3, 3, 3, 3),  # Very small for testing
         )
 
         # Set metric
@@ -171,7 +176,7 @@ def test_integration_with_tensors():
 
         # Validate final state
         validation = config.validate_field_configuration()
-        overall_valid = validation['overall_valid']
+        overall_valid = validation["overall_valid"]
 
         print(f"   ✅ Integration test {'passed' if overall_valid else 'failed'}")
 
@@ -180,8 +185,10 @@ def test_integration_with_tensors():
     except Exception as e:
         print(f"❌ Integration test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 def test_performance():
     """Test performance with larger grids."""
@@ -201,11 +208,12 @@ def test_performance():
         grid = create_cartesian_grid(
             time_range=(0.0, 2.0),
             spatial_extent=4.0,
-            grid_points=(20, 16, 16, 16)  # ~80k grid points
+            grid_points=(20, 16, 16, 16),  # ~80k grid points
         )
 
         # Set metric for proper tensor operations
         from israel_stewart.core import MinkowskiMetric
+
         grid.metric = MinkowskiMetric()
 
         config = ISFieldConfiguration(grid)
@@ -218,6 +226,7 @@ def test_performance():
 
         # Apply constraints (this should be monitored)
         import time
+
         start_time = time.time()
         config.apply_constraints()
         constraint_time = time.time() - start_time
@@ -241,9 +250,11 @@ def test_performance():
 
         # Get performance report
         report = performance_report()
-        if report['operation_counts']:
-            print(f"   Performance monitoring captured {len(report['operation_counts'])} operations")
-            for op, count in report['operation_counts'].items():
+        if report["operation_counts"]:
+            print(
+                f"   Performance monitoring captured {len(report['operation_counts'])} operations"
+            )
+            for op, count in report["operation_counts"].items():
                 print(f"     {op}: {count} calls")
 
         return True
@@ -251,6 +262,7 @@ def test_performance():
     except Exception as e:
         print(f"❌ Performance test failed: {e}")
         return False
+
 
 def main():
     """Run all tests."""
@@ -261,7 +273,7 @@ def main():
         test_spacetime_grid,
         test_field_configuration,
         test_integration_with_tensors,
-        test_performance
+        test_performance,
     ]
 
     results = []
@@ -280,7 +292,7 @@ def main():
         "SpacetimeGrid",
         "ISFieldConfiguration",
         "Tensor Integration",
-        "Performance"
+        "Performance",
     ]
 
     for name, result in zip(test_names, results, strict=False):
@@ -288,9 +300,12 @@ def main():
         print(f"  {status} {name}")
 
     overall_success = all(results)
-    print(f"\nOverall: {'✅ ALL TESTS PASSED' if overall_success else '❌ SOME TESTS FAILED'}")
+    print(
+        f"\nOverall: {'✅ ALL TESTS PASSED' if overall_success else '❌ SOME TESTS FAILED'}"
+    )
 
     return overall_success
+
 
 if __name__ == "__main__":
     success = main()

@@ -70,10 +70,10 @@ class TestStressEnergyTensor:
         fields = ISFieldConfiguration(grid)
 
         # Initialize with simple values
-        fields.rho[:] = 1.0         # Energy density
-        fields.pressure[:] = 0.3    # Pressure
-        fields.Pi[:] = 0.1          # Bulk viscosity
-        fields.u_mu[..., 0] = 1.0   # Rest frame
+        fields.rho[:] = 1.0  # Energy density
+        fields.pressure[:] = 0.3  # Pressure
+        fields.Pi[:] = 0.1  # Bulk viscosity
+        fields.u_mu[..., 0] = 1.0  # Rest frame
 
         # Add some shear stress and heat flux
         fields.pi_munu[..., 1, 2] = 0.05
@@ -175,7 +175,7 @@ class TestSpatialProjector:
 
         # Set fluid moving in x-direction
         gamma = 2.0
-        v_x = np.sqrt(1 - 1/gamma**2)
+        v_x = np.sqrt(1 - 1 / gamma**2)
         fields.u_mu[..., 0] = gamma
         fields.u_mu[..., 1] = gamma * v_x
 
@@ -189,7 +189,7 @@ class TestSpatialProjector:
         u_lower[..., 0] *= -1  # Lower time component
 
         # Check orthogonality: u_μ Δ^μν = 0
-        u_contract = np.einsum('...i,...ij->...j', u_lower, Delta)
+        u_contract = np.einsum("...i,...ij->...j", u_lower, Delta)
         np.testing.assert_allclose(u_contract, 0.0, atol=1e-10)
 
 
@@ -290,16 +290,16 @@ class TestEvolutionEquations:
         evolution = conservation.evolution_equations()
 
         # Check keys
-        assert 'drho_dt' in evolution
-        assert 'dmom_dt' in evolution
+        assert "drho_dt" in evolution
+        assert "dmom_dt" in evolution
 
         # Check shapes
-        assert evolution['drho_dt'].shape == fields.grid.shape
-        assert evolution['dmom_dt'].shape == (*fields.grid.shape, 3)
+        assert evolution["drho_dt"].shape == fields.grid.shape
+        assert evolution["dmom_dt"].shape == (*fields.grid.shape, 3)
 
         # Uniform fields should have zero time derivatives
-        np.testing.assert_allclose(evolution['drho_dt'], 0.0, atol=1e-15)
-        np.testing.assert_allclose(evolution['dmom_dt'], 0.0, atol=1e-15)
+        np.testing.assert_allclose(evolution["drho_dt"], 0.0, atol=1e-15)
+        np.testing.assert_allclose(evolution["dmom_dt"], 0.0, atol=1e-15)
 
     def test_evolution_with_pressure_gradient(self):
         """Test evolution with pressure gradients."""
@@ -316,7 +316,7 @@ class TestEvolutionEquations:
         evolution = conservation.evolution_equations()
 
         # Should have non-zero momentum evolution due to pressure gradient
-        assert np.max(np.abs(evolution['dmom_dt'])) > 0
+        assert np.max(np.abs(evolution["dmom_dt"])) > 0
 
 
 class TestParticleConservation:
@@ -369,9 +369,9 @@ class TestConservationValidation:
         conservation = ConservationLaws(fields)
         validation = conservation.validate_conservation()
 
-        assert validation['energy_momentum_conserved'] is True
-        assert validation['particle_number_conserved'] is True
-        assert validation['all_conserved'] is True
+        assert validation["energy_momentum_conserved"] is True
+        assert validation["particle_number_conserved"] is True
+        assert validation["all_conserved"] is True
 
     def test_validation_violated_conservation(self):
         """Test validation with violated conservation."""
@@ -388,8 +388,8 @@ class TestConservationValidation:
         conservation = ConservationLaws(fields)
         validation = conservation.validate_conservation(tolerance=1e-10)
 
-        assert validation['energy_momentum_conserved'] is False
-        assert validation['all_conserved'] is False
+        assert validation["energy_momentum_conserved"] is False
+        assert validation["all_conserved"] is False
 
     def test_validation_custom_tolerance(self):
         """Test validation with custom tolerance."""
@@ -408,8 +408,8 @@ class TestConservationValidation:
         # Test that validation works with different tolerances
         validation_result = conservation.validate_conservation(tolerance=1e-3)
         assert isinstance(validation_result, dict)
-        assert 'energy_momentum_conserved' in validation_result
-        assert 'all_conserved' in validation_result
+        assert "energy_momentum_conserved" in validation_result
+        assert "all_conserved" in validation_result
 
 
 class TestEdgeCases:
@@ -471,7 +471,7 @@ class TestIntegrationWithGrid:
         coords = conservation._get_coordinate_arrays()
 
         assert len(coords) == 4
-        assert grid.coordinate_names == ['t', 'x', 'y', 'z']
+        assert grid.coordinate_names == ["t", "x", "y", "z"]
 
     def test_milne_grid_integration(self):
         """Test with Milne coordinates."""
@@ -487,7 +487,7 @@ class TestIntegrationWithGrid:
         # Check coordinate names (may vary by implementation)
         coord_names = grid.coordinate_names
         assert len(coord_names) == 4
-        assert 'tau' in coord_names or 't' in coord_names  # Allow flexibility
+        assert "tau" in coord_names or "t" in coord_names  # Allow flexibility
 
 
 @pytest.mark.parametrize("grid_size", [(3, 3, 3, 3), (4, 5, 6, 7)])
@@ -506,11 +506,7 @@ def test_different_grid_sizes(grid_size):
     assert T.shape == expected_shape
 
 
-@pytest.mark.parametrize("rho,pressure", [
-    (1.0, 0.3),
-    (2.5, 0.8),
-    (0.1, 0.03)
-])
+@pytest.mark.parametrize("rho,pressure", [(1.0, 0.3), (2.5, 0.8), (0.1, 0.03)])
 def test_different_thermodynamic_states(rho, pressure):
     """Test with different thermodynamic conditions."""
     grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))

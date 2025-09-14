@@ -27,4 +27,3 @@ Testing & Linting
    uv run pytest -q
    uv run ruff check .
    uv run mypy israel_stewart
-

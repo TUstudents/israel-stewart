@@ -36,7 +36,7 @@ class FourVector(TensorField):
         self,
         components: np.ndarray | sp.Matrix | list[float],
         is_covariant: bool = False,
-        metric: Optional['MetricBase'] = None
+        metric: Optional["MetricBase"] = None,
     ):
         """
         Initialize four-vector.
@@ -82,7 +82,7 @@ class FourVector(TensorField):
         return self.components[3]
 
     @monitor_performance("four_vector_dot")
-    def dot(self, other: 'FourVector') -> float | sp.Expr:
+    def dot(self, other: "FourVector") -> float | sp.Expr:
         """
         Lorentz-invariant dot product.
 
@@ -97,7 +97,9 @@ class FourVector(TensorField):
 
         # Ensure one vector is covariant, one contravariant
         if self.indices[0][0] == other.indices[0][0]:  # Same type
-            other_converted = other.lower_index(0) if not self.indices[0][0] else other.raise_index(0)
+            other_converted = (
+                other.lower_index(0) if not self.indices[0][0] else other.raise_index(0)
+            )
         else:
             other_converted = other
 
@@ -130,7 +132,7 @@ class FourVector(TensorField):
             return sp.sqrt(sp.Abs(mag_sq))
 
     @monitor_performance("four_vector_normalize")
-    def normalize(self) -> 'FourVector':
+    def normalize(self) -> "FourVector":
         """
         Normalize four-vector to unit magnitude.
 
@@ -163,7 +165,7 @@ class FourVector(TensorField):
         mag_sq = self.magnitude_squared()
 
         # Check metric signature to determine timelike condition
-        signature = getattr(self.metric, 'signature', (-1, 1, 1, 1))
+        signature = getattr(self.metric, "signature", (-1, 1, 1, 1))
         if signature[0] < 0:  # Mostly-plus signature
             timelike_condition = mag_sq < -tolerance
         else:  # Mostly-minus signature
@@ -172,7 +174,11 @@ class FourVector(TensorField):
         if isinstance(mag_sq, np.ndarray):
             return bool(timelike_condition)
         else:
-            return bool(float(mag_sq) < -tolerance if signature[0] < 0 else float(mag_sq) > tolerance)
+            return bool(
+                float(mag_sq) < -tolerance
+                if signature[0] < 0
+                else float(mag_sq) > tolerance
+            )
 
     def is_spacelike(self, tolerance: float = 1e-10) -> bool:
         """
@@ -192,7 +198,7 @@ class FourVector(TensorField):
         mag_sq = self.magnitude_squared()
 
         # Check metric signature to determine spacelike condition
-        signature = getattr(self.metric, 'signature', (-1, 1, 1, 1))
+        signature = getattr(self.metric, "signature", (-1, 1, 1, 1))
         if signature[0] < 0:  # Mostly-plus signature
             spacelike_condition = mag_sq > tolerance
         else:  # Mostly-minus signature
@@ -201,7 +207,11 @@ class FourVector(TensorField):
         if isinstance(mag_sq, np.ndarray):
             return bool(spacelike_condition)
         else:
-            return bool(float(mag_sq) > tolerance if signature[0] < 0 else float(mag_sq) < -tolerance)
+            return bool(
+                float(mag_sq) > tolerance
+                if signature[0] < 0
+                else float(mag_sq) < -tolerance
+            )
 
     def is_null(self, tolerance: float = 1e-10) -> bool:
         """
@@ -220,7 +230,7 @@ class FourVector(TensorField):
             return abs(float(mag_sq)) < tolerance
 
     @monitor_performance("lorentz_boost")
-    def boost(self, velocity: np.ndarray | list[float]) -> 'FourVector':
+    def boost(self, velocity: np.ndarray | list[float]) -> "FourVector":
         """
         Apply Lorentz boost transformation.
 
@@ -239,7 +249,9 @@ class FourVector(TensorField):
         # Compute boost parameters
         v_squared = np.dot(velocity, velocity)
         if v_squared >= 1.0:
-            raise ValueError("Velocity must be less than speed of light (in units where c=1)")
+            raise ValueError(
+                "Velocity must be less than speed of light (in units where c=1)"
+            )
 
         gamma = 1.0 / np.sqrt(1.0 - v_squared)
 
@@ -255,11 +267,7 @@ class FourVector(TensorField):
 
         return FourVector(boosted_components, self.indices[0][0], self.metric)
 
-    def _lorentz_boost_matrix(
-        self,
-        velocity: np.ndarray,
-        gamma: float
-    ) -> np.ndarray:
+    def _lorentz_boost_matrix(self, velocity: np.ndarray, gamma: float) -> np.ndarray:
         """
         Construct Lorentz boost matrix.
 
@@ -309,9 +317,8 @@ class FourVector(TensorField):
 
     @staticmethod
     def from_three_velocity(
-        three_velocity: np.ndarray | list[float],
-        metric: Optional['MetricBase'] = None
-    ) -> 'FourVector':
+        three_velocity: np.ndarray | list[float], metric: Optional["MetricBase"] = None
+    ) -> "FourVector":
         """
         Construct four-velocity from three-velocity.
 
@@ -339,12 +346,12 @@ class FourVector(TensorField):
         return FourVector(four_velocity_components, False, metric)
 
     @staticmethod
-    def zero_vector(metric: Optional['MetricBase'] = None) -> 'FourVector':
+    def zero_vector(metric: Optional["MetricBase"] = None) -> "FourVector":
         """Create zero four-vector."""
         return FourVector(np.zeros(4), False, metric)
 
     @staticmethod
-    def time_vector(metric: Optional['MetricBase'] = None) -> 'FourVector':
+    def time_vector(metric: Optional["MetricBase"] = None) -> "FourVector":
         """Create unit time vector (1, 0, 0, 0)."""
         components = np.array([1.0, 0.0, 0.0, 0.0])
         return FourVector(components, False, metric)
@@ -352,8 +359,8 @@ class FourVector(TensorField):
     @staticmethod
     def spatial_vector(
         spatial_components: np.ndarray | list[float],
-        metric: Optional['MetricBase'] = None
-    ) -> 'FourVector':
+        metric: Optional["MetricBase"] = None,
+    ) -> "FourVector":
         """
         Create spatial four-vector (0, x, y, z).
 
@@ -427,7 +434,9 @@ class FourVector(TensorField):
         gamma = self.lorentz_factor()
         return gamma * rest_mass  # c=1 in natural units
 
-    def relativistic_momentum_magnitude(self, rest_mass: float | sp.Expr = 1.0) -> float | sp.Expr:
+    def relativistic_momentum_magnitude(
+        self, rest_mass: float | sp.Expr = 1.0
+    ) -> float | sp.Expr:
         """
         Compute magnitude of relativistic momentum |p⃗| = γm|v⃗|.
 
@@ -443,6 +452,6 @@ class FourVector(TensorField):
         if isinstance(three_vel, np.ndarray):
             v_mag = np.sqrt(np.dot(three_vel, three_vel))
         else:
-            v_mag = sp.sqrt(sum(three_vel[i]**2 for i in range(3)))
+            v_mag = sp.sqrt(sum(three_vel[i] ** 2 for i in range(3)))
 
         return gamma * rest_mass * v_mag

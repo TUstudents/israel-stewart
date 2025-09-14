@@ -11,5 +11,5 @@ This module contains the fundamental physics equations:
 from .conservation import ConservationLaws
 
 __all__ = [
-    'ConservationLaws',
+    "ConservationLaws",
 ]

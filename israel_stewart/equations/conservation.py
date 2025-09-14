@@ -34,8 +34,11 @@ class ConservationLaws:
     and compute conservation law equations for hydrodynamic evolution.
     """
 
-    def __init__(self, fields: ISFieldConfiguration,
-                 coefficients: Optional['TransportCoefficients'] = None):
+    def __init__(
+        self,
+        fields: ISFieldConfiguration,
+        coefficients: Optional["TransportCoefficients"] = None,
+    ):
         """
         Initialize conservation laws.
 
@@ -52,6 +55,7 @@ class ConservationLaws:
         else:
             # Use Minkowski metric for covariant derivatives
             from ..core.metrics import MinkowskiMetric
+
             minkowski = MinkowskiMetric()
             self.covariant_derivative = CovariantDerivative(minkowski)
 
@@ -71,21 +75,19 @@ class ConservationLaws:
         T_total = np.zeros((*grid_shape, 4, 4))
 
         # Perfect fluid part: ρu^μu^ν
-        T_perfect = optimized_einsum('...,...i,...j->...ij',
-                                   f.rho, f.u_mu, f.u_mu)
+        T_perfect = optimized_einsum("...,...i,...j->...ij", f.rho, f.u_mu, f.u_mu)
 
         # Pressure term with projector Δ^μν = g^μν + u^μu^ν/c²
         Delta = self._spatial_projector()
         pressure_total = f.pressure + f.Pi  # p + bulk viscosity Π
-        T_pressure = optimized_einsum('...,...ij->...ij',
-                                     pressure_total, Delta)
+        T_pressure = optimized_einsum("...,...ij->...ij", pressure_total, Delta)
 
         # Shear stress contribution π^μν
         T_shear = f.pi_munu.copy()
 
         # Heat flux contribution: q^μu^ν + q^νu^μ (symmetric)
-        T_heat_1 = optimized_einsum('...i,...j->...ij', f.q_mu, f.u_mu)
-        T_heat_2 = optimized_einsum('...j,...i->...ij', f.q_mu, f.u_mu)
+        T_heat_1 = optimized_einsum("...i,...j->...ij", f.q_mu, f.u_mu)
+        T_heat_2 = optimized_einsum("...j,...i->...ij", f.q_mu, f.u_mu)
         T_heat = T_heat_1 + T_heat_2
 
         # Combine all contributions
@@ -166,10 +168,7 @@ class ConservationLaws:
         # Momentum conservation: ∂_t (ρu^j) = -∇·T^ij = -div_T[j] for j=1,2,3
         dmom_dt = -div_T[..., 1:4]
 
-        return {
-            'drho_dt': drho_dt,
-            'dmom_dt': dmom_dt
-        }
+        return {"drho_dt": drho_dt, "dmom_dt": dmom_dt}
 
     def _spatial_projector(self) -> np.ndarray:
         """
@@ -197,7 +196,7 @@ class ConservationLaws:
             g_inv = np.broadcast_to(metric_components, (*grid_shape, 4, 4)).copy()
 
         # Four-velocity outer product: u^μu^ν
-        u_outer = optimized_einsum('...i,...j->...ij', u, u)
+        u_outer = optimized_einsum("...i,...j->...ij", u, u)
 
         # Spatial projector: Δ^μν = g^μν + u^μu^ν (note sign convention)
         Delta = g_inv + u_outer
@@ -214,24 +213,26 @@ class ConservationLaws:
         grid = self.fields.grid
 
         # For SpacetimeGrid, use the coordinates attribute
-        if hasattr(grid, 'coordinates') and isinstance(grid.coordinates, dict):
+        if hasattr(grid, "coordinates") and isinstance(grid.coordinates, dict):
             # Extract coordinate arrays in order [t, x, y, z]
             coord_names = grid.coordinate_names
             return [grid.coordinates[name] for name in coord_names]
         else:
             # Construct coordinate arrays from grid ranges
-            t_coords = np.linspace(grid.time_range[0], grid.time_range[1],
-                                  grid.grid_points[0])
+            t_coords = np.linspace(
+                grid.time_range[0], grid.time_range[1], grid.grid_points[0]
+            )
 
             coord_arrays = [t_coords]
             for i, (x_min, x_max) in enumerate(grid.spatial_ranges):
-                x_coords = np.linspace(x_min, x_max, grid.grid_points[i+1])
+                x_coords = np.linspace(x_min, x_max, grid.grid_points[i + 1])
                 coord_arrays.append(x_coords)
 
             return coord_arrays
 
-    def _partial_derivative(self, field: np.ndarray, direction: int,
-                          coords: list) -> np.ndarray:
+    def _partial_derivative(
+        self, field: np.ndarray, direction: int, coords: list
+    ) -> np.ndarray:
         """
         Compute partial derivative ∂_μ field using finite differences.
 
@@ -332,18 +333,22 @@ class ConservationLaws:
         energy_conserved = np.allclose(div_T[..., 0], 0.0, atol=tolerance)
         momentum_conserved = np.allclose(div_T[..., 1:4], 0.0, atol=tolerance)
 
-        validation['energy_momentum_conserved'] = energy_conserved and momentum_conserved
+        validation["energy_momentum_conserved"] = (
+            energy_conserved and momentum_conserved
+        )
 
         # Check particle number conservation
         div_N = self.particle_number_conservation()
         particle_conserved = np.allclose(div_N, 0.0, atol=tolerance)
-        validation['particle_number_conserved'] = particle_conserved
+        validation["particle_number_conserved"] = particle_conserved
 
         # Overall validation
-        validation['all_conserved'] = all(validation.values())
+        validation["all_conserved"] = all(validation.values())
 
-        if not validation['all_conserved']:
-            warnings.warn("Conservation laws not satisfied within tolerance", stacklevel=2)
+        if not validation["all_conserved"]:
+            warnings.warn(
+                "Conservation laws not satisfied within tolerance", stacklevel=2
+            )
 
         return validation
 
@@ -351,6 +356,7 @@ class ConservationLaws:
         return f"ConservationLaws(grid_shape={self.fields.grid.shape})"
 
     def __repr__(self) -> str:
-        return (f"ConservationLaws(fields={self.fields!r}, "
-                f"coefficients={self.coeffs!r})")
-
+        return (
+            f"ConservationLaws(fields={self.fields!r}, "
+            f"coefficients={self.coeffs!r})"
+        )

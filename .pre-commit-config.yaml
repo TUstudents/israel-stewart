@@ -1,0 +1,157 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # Ruff - Fast Python linter and formatter (replaces flake8, isort, black, pyupgrade)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.8
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff (lint)
+        description: Run ruff linter
+        args: [--fix]
+        types_or: [python, pyi]
+      # Run the formatter
+      - id: ruff-format
+        name: ruff (format)
+        description: Run ruff formatter
+        types_or: [python, pyi]
+
+  # MyPy - Static type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        name: mypy (type check)
+        description: Run mypy static type checker
+        additional_dependencies:
+          # Add type stubs for dependencies
+          - types-setuptools
+          - numpy
+          - matplotlib
+          - scipy
+          # Note: sympy has its own type annotations, but not complete
+        args: [--config-file=pyproject.toml]
+        exclude: ^tests/
+        # Only run on modified files for speed
+        stages: [pre-commit]
+
+  # Built-in pre-commit hooks for general quality
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # File formatting and cleanup
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        description: Remove trailing whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+        name: fix end of files
+        description: Ensure files end with a newline
+      - id: mixed-line-ending
+        name: normalize line endings
+        description: Replace mixed line endings with LF
+        args: [--fix=lf]
+
+      # Syntax validation
+      - id: check-yaml
+        name: check yaml
+        description: Validate YAML file syntax
+        args: [--allow-multiple-documents]
+      - id: check-toml
+        name: check toml
+        description: Validate TOML file syntax
+      - id: check-json
+        name: check json
+        description: Validate JSON file syntax
+
+      # Git-specific checks
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        description: Check for merge conflict markers
+      - id: check-case-conflict
+        name: check for case conflicts
+        description: Check for case-sensitive filename conflicts
+      - id: check-vcs-permalinks
+        name: check vcs permalinks
+        description: Check that VCS URLs are permalinks
+
+      # Security and size checks
+      - id: check-added-large-files
+        name: check for added large files
+        description: Prevent adding files larger than 500kB
+        args: [--maxkb=500]
+      - id: check-executables-have-shebangs
+        name: check that executables have shebangs
+        description: Ensure executable scripts have shebangs
+      - id: check-shebang-scripts-are-executable
+        name: check that scripts with shebangs are executable
+        description: Ensure files with shebangs are executable
+
+      # Python-specific checks
+      - id: check-ast
+        name: check python ast
+        description: Check Python syntax by parsing AST
+      - id: debug-statements
+        name: debug statements (Python)
+        description: Check for debugger imports and breakpoints
+      - id: name-tests-test
+        name: tests should match naming convention
+        description: Ensure test files follow naming convention
+        args: [--pytest-test-first]
+        files: ^tests/.*\.py$
+
+  # Additional Python quality checks
+  - repo: https://github.com/pycqa/bandit
+    rev: '1.7.9'
+    hooks:
+      - id: bandit
+        name: bandit (security)
+        description: Run bandit security linter
+        args: [-c, pyproject.toml, -ll]  # Low-low severity, use config from pyproject.toml
+        exclude: ^tests/
+
+  # Local hooks
+  - repo: local
+    hooks:
+      - id: generate-mind-map
+        name: generate mind map
+        description: Auto-generate Mind Map section in mind-map.md
+        entry: uv run python tools/generate_mind_map.py --output mind-map.md
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # Documentation checks (license insertion disabled for existing codebase)
+  # - repo: https://github.com/Lucas-C/pre-commit-hooks
+  #   rev: v1.5.5
+  #   hooks:
+  #     - id: insert-license
+  #       name: insert license
+  #       description: Add license header to Python files
+  #       files: \.py$
+  #       args:
+  #         - --license-filepath
+  #         - LICENSE_HEADER.txt
+  #         - --comment-style
+  #         - "#"
+  #       exclude: ^(tests/|__pycache__/|\.git/)
+
+# Global configuration
+ci:
+  # Skip these hooks in CI (they're run by other CI jobs)
+  skip: [mypy]
+  # Don't run on these branches
+  skip_on_branches: [main, master]
+  # Auto-update frequency
+  autoupdate_schedule: monthly
+  # Commit message for auto-updates
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+
+# Global settings
+default_stages: [pre-commit]
+fail_fast: false  # Run all hooks even if one fails
+minimum_pre_commit_version: "3.0.0"

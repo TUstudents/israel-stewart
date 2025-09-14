@@ -39,29 +39,39 @@ from .transformations import CoordinateTransformation, LorentzTransformation
 # Re-export everything for backwards compatibility
 __all__ = [
     # Base tensor classes
-    'TensorField', 'FourVector',
-
+    "TensorField",
+    "FourVector",
     # Physics tensor classes
-    'StressEnergyTensor', 'ViscousStressTensor',
-
+    "StressEnergyTensor",
+    "ViscousStressTensor",
     # Operations and derivatives
-    'CovariantDerivative', 'ProjectionOperator',
-
+    "CovariantDerivative",
+    "ProjectionOperator",
     # Transformations
-    'LorentzTransformation', 'CoordinateTransformation',
-
+    "LorentzTransformation",
+    "CoordinateTransformation",
     # Utilities and validation
-    'is_numpy_array', 'is_sympy_matrix', 'ensure_compatible_types',
-    'convert_to_sympy', 'convert_to_numpy', 'validate_tensor_dimensions',
-    'validate_index_compatibility', 'validate_einsum_string', 'optimized_einsum',
-
+    "is_numpy_array",
+    "is_sympy_matrix",
+    "ensure_compatible_types",
+    "convert_to_sympy",
+    "convert_to_numpy",
+    "validate_tensor_dimensions",
+    "validate_index_compatibility",
+    "validate_einsum_string",
+    "optimized_einsum",
     # Exception classes
-    'TensorValidationError', 'PhysicsError', 'RelativisticError',
-
+    "TensorValidationError",
+    "PhysicsError",
+    "RelativisticError",
     # Constants
-    'DEFAULT_TOLERANCE', 'STRICT_TOLERANCE', 'LOOSE_TOLERANCE',
-
+    "DEFAULT_TOLERANCE",
+    "STRICT_TOLERANCE",
+    "LOOSE_TOLERANCE",
     # Performance monitoring
-    'PerformanceMonitor', 'get_performance_monitor', 'monitor_performance',
-    'performance_report', 'reset_performance_stats'
+    "PerformanceMonitor",
+    "get_performance_monitor",
+    "monitor_performance",
+    "performance_report",
+    "reset_performance_stats",
 ]

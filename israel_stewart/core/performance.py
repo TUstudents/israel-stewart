@@ -39,6 +39,7 @@ class PerformanceMonitor:
         Returns:
             Decorator function
         """
+
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
@@ -53,26 +54,42 @@ class PerformanceMonitor:
                 self.timing_data[operation_name].append(elapsed)
 
                 # Update operation count
-                self.operation_counts[operation_name] = self.operation_counts.get(operation_name, 0) + 1
+                self.operation_counts[operation_name] = (
+                    self.operation_counts.get(operation_name, 0) + 1
+                )
 
                 # Issue performance warnings if needed
                 self._check_performance_warnings(operation_name, elapsed)
 
                 return result
+
             return wrapper
+
         return decorator
 
-    def _check_performance_warnings(self, operation_name: str, elapsed_time: float) -> None:
+    def _check_performance_warnings(
+        self, operation_name: str, elapsed_time: float
+    ) -> None:
         """Check if performance warnings should be issued."""
         # Warn about slow operations (>1 second)
-        if elapsed_time > 1.0 and not self.warnings_issued.get(f"{operation_name}_slow", False):
-            warnings.warn(f"Operation {operation_name} took {elapsed_time:.2f}s - consider optimization", stacklevel=2)
+        if elapsed_time > 1.0 and not self.warnings_issued.get(
+            f"{operation_name}_slow", False
+        ):
+            warnings.warn(
+                f"Operation {operation_name} took {elapsed_time:.2f}s - consider optimization",
+                stacklevel=2,
+            )
             self.warnings_issued[f"{operation_name}_slow"] = True
 
         # Warn about very frequent operations (>1000 calls)
         call_count = self.operation_counts.get(operation_name, 0)
-        if call_count > 1000 and not self.warnings_issued.get(f"{operation_name}_frequent", False):
-            warnings.warn(f"Operation {operation_name} called {call_count} times - consider caching", stacklevel=2)
+        if call_count > 1000 and not self.warnings_issued.get(
+            f"{operation_name}_frequent", False
+        ):
+            warnings.warn(
+                f"Operation {operation_name} called {call_count} times - consider caching",
+                stacklevel=2,
+            )
             self.warnings_issued[f"{operation_name}_frequent"] = True
 
     def get_performance_report(self) -> dict[str, Any]:
@@ -83,26 +100,26 @@ class PerformanceMonitor:
             Dictionary with performance statistics
         """
         report = {
-            'operation_counts': self.operation_counts.copy(),
-            'timing_statistics': {},
-            'recommendations': []
+            "operation_counts": self.operation_counts.copy(),
+            "timing_statistics": {},
+            "recommendations": [],
         }
 
         # Compute timing statistics
         for op_name, times in self.timing_data.items():
             if times:
                 times_array = np.array(times)
-                report['timing_statistics'][op_name] = {
-                    'mean_time': float(np.mean(times_array)),
-                    'std_time': float(np.std(times_array)),
-                    'min_time': float(np.min(times_array)),
-                    'max_time': float(np.max(times_array)),
-                    'total_time': float(np.sum(times_array)),
-                    'call_count': len(times)
+                report["timing_statistics"][op_name] = {
+                    "mean_time": float(np.mean(times_array)),
+                    "std_time": float(np.std(times_array)),
+                    "min_time": float(np.min(times_array)),
+                    "max_time": float(np.max(times_array)),
+                    "total_time": float(np.sum(times_array)),
+                    "call_count": len(times),
                 }
 
         # Generate recommendations
-        report['recommendations'] = self._generate_recommendations()
+        report["recommendations"] = self._generate_recommendations()
 
         return report
 
@@ -113,14 +130,18 @@ class PerformanceMonitor:
         # Check for frequently called operations
         for op_name, count in self.operation_counts.items():
             if count > 100:
-                recommendations.append(f"Consider caching results for frequently called operation: {op_name} ({count} calls)")
+                recommendations.append(
+                    f"Consider caching results for frequently called operation: {op_name} ({count} calls)"
+                )
 
         # Check for slow operations
         for op_name, times in self.timing_data.items():
             if times:
                 mean_time = np.mean(times)
                 if mean_time > 0.1:
-                    recommendations.append(f"Slow operation detected: {op_name} (avg {mean_time:.3f}s)")
+                    recommendations.append(
+                        f"Slow operation detected: {op_name} (avg {mean_time:.3f}s)"
+                    )
 
         return recommendations
 
@@ -189,9 +210,11 @@ def suggest_einsum_optimization(einsum_string: str, *tensor_shapes) -> str | Non
         dummy_arrays = [np.zeros(shape) for shape in tensor_shapes]
 
         # Get optimized path
-        path_info = opt_einsum.contract_path(einsum_string, *dummy_arrays, optimize='optimal')
+        path_info = opt_einsum.contract_path(
+            einsum_string, *dummy_arrays, optimize="optimal"
+        )
 
-        if len(path_info) > 1 and hasattr(path_info[1], 'largest_intermediate'):
+        if len(path_info) > 1 and hasattr(path_info[1], "largest_intermediate"):
             return f"Use opt_einsum for {einsum_string} - reduces memory by factor of {path_info[1].largest_intermediate:.1e}"
 
     except (ImportError, Exception):
@@ -200,7 +223,9 @@ def suggest_einsum_optimization(einsum_string: str, *tensor_shapes) -> str | Non
     return None
 
 
-def check_tensor_cache_efficiency(cache_hits: int, cache_misses: int, cache_name: str = "tensor_cache") -> None:
+def check_tensor_cache_efficiency(
+    cache_hits: int, cache_misses: int, cache_name: str = "tensor_cache"
+) -> None:
     """
     Check cache efficiency and issue warnings if needed.
 
@@ -213,5 +238,8 @@ def check_tensor_cache_efficiency(cache_hits: int, cache_misses: int, cache_name
     if total_requests > 100:  # Only check efficiency after reasonable sample size
         hit_rate = cache_hits / total_requests
         if hit_rate < 0.5:  # Less than 50% hit rate
-            warnings.warn(f"Low cache efficiency for {cache_name}: {hit_rate:.1%} hit rate "
-                         f"({cache_hits} hits, {cache_misses} misses)", stacklevel=2)
+            warnings.warn(
+                f"Low cache efficiency for {cache_name}: {hit_rate:.1%} hit rate "
+                f"({cache_hits} hits, {cache_misses} misses)",
+                stacklevel=2,
+            )

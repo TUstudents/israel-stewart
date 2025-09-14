@@ -5,17 +5,14 @@ Comprehensive tests covering all aspects of the relaxation equation implementati
 including numerical evolution, stability analysis, and physics validation.
 """
 
-import pytest
-import numpy as np
 import warnings
-from typing import Dict, Any
 
-from israel_stewart.core.fields import (
-    TransportCoefficients,
-    ISFieldConfiguration
-)
+import numpy as np
+import pytest
+
+from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
+from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
-from israel_stewart.core.metrics import MinkowskiMetric, MilneMetric
 from israel_stewart.equations.relaxation import ISRelaxationEquations
 
 
@@ -25,9 +22,7 @@ class TestTransportCoefficientsEnhanced:
     def test_basic_initialization(self):
         """Test basic transport coefficient initialization."""
         coeffs = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05,
-            thermal_conductivity=0.02
+            shear_viscosity=0.1, bulk_viscosity=0.05, thermal_conductivity=0.02
         )
 
         assert coeffs.shear_viscosity == 0.1
@@ -50,7 +45,7 @@ class TestTransportCoefficientsEnhanced:
             xi_1=0.3,
             xi_2=-0.1,
             tau_pi_pi=0.05,
-            tau_pi_omega=0.02
+            tau_pi_omega=0.02,
         )
 
         assert coeffs.lambda_pi_pi == 0.2
@@ -83,7 +78,7 @@ class TestTransportCoefficientsEnhanced:
 
             TransportCoefficients(
                 shear_viscosity=0.1,
-                lambda_pi_pi=15.0  # Large coupling
+                lambda_pi_pi=15.0,  # Large coupling
             )
 
             assert len(w) > 0
@@ -92,10 +87,7 @@ class TestTransportCoefficientsEnhanced:
     def test_temperature_dependence_enhanced(self):
         """Test temperature dependence with second-order coefficients."""
         coeffs = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05,
-            lambda_pi_pi=0.2,
-            xi_1=0.3
+            shear_viscosity=0.1, bulk_viscosity=0.05, lambda_pi_pi=0.2, xi_1=0.3
         )
 
         T = 2.0
@@ -123,7 +115,7 @@ class TestISFieldConfigurationEnhanced:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4)
+            grid_points=(4, 4, 4, 4),
         )
         config = ISFieldConfiguration(grid)
         return config
@@ -155,9 +147,9 @@ class TestISFieldConfigurationEnhanced:
         grid_size = np.prod(config.grid.shape)
 
         expected_count = (
-            1 * grid_size +      # Π
-            16 * grid_size +     # π^μν (4×4 tensor)
-            4 * grid_size        # q^μ (4-vector)
+            1 * grid_size  # Π
+            + 16 * grid_size  # π^μν (4×4 tensor)
+            + 4 * grid_size  # q^μ (4-vector)
         )
 
         assert config.dissipative_field_count == expected_count
@@ -183,7 +175,7 @@ class TestISRelaxationEquations:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4)
+            grid_points=(4, 4, 4, 4),
         )
         metric = MinkowskiMetric()
 
@@ -198,7 +190,7 @@ class TestISRelaxationEquations:
             lambda_pi_pi=0.1,
             lambda_pi_Pi=0.05,
             xi_1=0.2,
-            tau_pi_pi=0.02
+            tau_pi_pi=0.02,
         )
 
         relaxation = ISRelaxationEquations(grid, metric, coeffs)
@@ -215,9 +207,9 @@ class TestISRelaxationEquations:
         assert relaxation.coeffs.shear_viscosity == 0.1
 
         # Check symbolic equations are built
-        assert 'bulk' in relaxation.symbolic_eqs
-        assert 'shear_00' in relaxation.symbolic_eqs
-        assert 'heat_0' in relaxation.symbolic_eqs
+        assert "bulk" in relaxation.symbolic_eqs
+        assert "shear_00" in relaxation.symbolic_eqs
+        assert "heat_0" in relaxation.symbolic_eqs
 
     def test_relaxation_rhs_computation(self, setup_relaxation_system):
         """Test relaxation equation RHS computation."""
@@ -250,7 +242,7 @@ class TestISRelaxationEquations:
         fields.Pi.fill(0.1)  # Positive bulk pressure
         theta = np.ones(grid.shape) * 0.5  # Expansion
 
-        dPi_dt = relaxation._bulk_rhs(fields.Pi, fields.pi_munu, theta)
+        relaxation._bulk_rhs(fields.Pi, fields.pi_munu, theta)
 
         # Check relaxation: should be negative (decaying toward equilibrium)
         linear_part = -fields.Pi / relaxation.coeffs.bulk_relaxation_time
@@ -275,8 +267,13 @@ class TestISRelaxationEquations:
         nabla_T = np.ones((*grid.shape, 4)) * 0.2
 
         dpi_dt = relaxation._shear_rhs(
-            fields.pi_munu, fields.Pi, fields.q_mu,
-            theta, sigma_munu, omega_munu, nabla_T
+            fields.pi_munu,
+            fields.Pi,
+            fields.q_mu,
+            theta,
+            sigma_munu,
+            omega_munu,
+            nabla_T,
         )
 
         # Check output shape
@@ -308,7 +305,7 @@ class TestISRelaxationEquations:
 
         # Evolve
         dt = 0.01
-        relaxation.evolve_relaxation(fields, dt, method='explicit')
+        relaxation.evolve_relaxation(fields, dt, method="explicit")
 
         # Fields should change
         assert not np.allclose(fields.Pi, Pi_initial)
@@ -340,7 +337,7 @@ class TestISRelaxationEquations:
 
         # Evolve with larger timestep (tests stiffness handling)
         dt = 0.1
-        relaxation.evolve_relaxation(fields, dt, method='implicit')
+        relaxation.evolve_relaxation(fields, dt, method="implicit")
 
         # Should handle stiff equations better than explicit
         assert np.all(np.isfinite(fields.Pi))
@@ -364,7 +361,7 @@ class TestISRelaxationEquations:
 
         # Evolve
         dt = 0.05
-        relaxation.evolve_relaxation(fields, dt, method='exponential')
+        relaxation.evolve_relaxation(fields, dt, method="exponential")
 
         # Check evolution occurred
         dissipative_final = fields.to_dissipative_vector()
@@ -385,19 +382,19 @@ class TestISRelaxationEquations:
         stability = relaxation.stability_analysis(fields)
 
         # Check required keys
-        assert 'relaxation_times' in stability
-        assert 'characteristic_values' in stability
-        assert 'stiffness_ratio' in stability
-        assert 'recommended_dt' in stability
-        assert 'is_stiff' in stability
+        assert "relaxation_times" in stability
+        assert "characteristic_values" in stability
+        assert "stiffness_ratio" in stability
+        assert "recommended_dt" in stability
+        assert "is_stiff" in stability
 
         # Validate values
-        assert stability['relaxation_times']['tau_pi'] == 0.5
-        assert stability['relaxation_times']['tau_Pi'] == 0.3
-        assert stability['relaxation_times']['tau_q'] == 0.4
+        assert stability["relaxation_times"]["tau_pi"] == 0.5
+        assert stability["relaxation_times"]["tau_Pi"] == 0.3
+        assert stability["relaxation_times"]["tau_q"] == 0.4
 
-        assert stability['recommended_dt'] > 0
-        assert isinstance(stability['is_stiff'], bool)
+        assert stability["recommended_dt"] > 0
+        assert isinstance(stability["is_stiff"], bool)
 
     def test_performance_monitoring(self, setup_relaxation_system):
         """Test performance monitoring."""
@@ -405,7 +402,7 @@ class TestISRelaxationEquations:
 
         # Initially no performance data
         report = relaxation.performance_report()
-        assert 'No evolution steps' in report['message']
+        assert "No evolution steps" in report["message"]
 
         # Setup fields for evolution
         fields.rho.fill(1.0)
@@ -419,10 +416,10 @@ class TestISRelaxationEquations:
 
         # Check performance report
         report = relaxation.performance_report()
-        assert report['evolution_count'] == 3
-        assert report['total_time'] > 0
-        assert report['average_time_per_step'] > 0
-        assert 'performance_rating' in report
+        assert report["evolution_count"] == 3
+        assert report["total_time"] > 0
+        assert report["average_time_per_step"] > 0
+        assert "performance_rating" in report
 
 
 class TestRelaxationPhysics:
@@ -434,7 +431,7 @@ class TestRelaxationPhysics:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4)
+            grid_points=(4, 4, 4, 4),
         )
         metric = MinkowskiMetric()
 
@@ -444,7 +441,7 @@ class TestRelaxationPhysics:
             thermal_conductivity=0.02,
             shear_relaxation_time=0.1,  # Fast relaxation
             bulk_relaxation_time=0.1,
-            heat_relaxation_time=0.1
+            heat_relaxation_time=0.1,
         )
 
         relaxation = ISRelaxationEquations(grid, metric, coeffs)
@@ -486,7 +483,7 @@ class TestRelaxationPhysics:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4)
+            grid_points=(4, 4, 4, 4),
         )
         metric = MinkowskiMetric()
 
@@ -495,7 +492,7 @@ class TestRelaxationPhysics:
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
             shear_relaxation_time=0.5,
-            bulk_relaxation_time=0.3
+            bulk_relaxation_time=0.3,
         )
 
         # Case 2: With second-order couplings
@@ -505,7 +502,7 @@ class TestRelaxationPhysics:
             shear_relaxation_time=0.5,
             bulk_relaxation_time=0.3,
             lambda_pi_Pi=0.2,  # Shear-bulk coupling
-            xi_1=0.3           # Bulk nonlinearity
+            xi_1=0.3,  # Bulk nonlinearity
         )
 
         relaxation1 = ISRelaxationEquations(grid, metric, coeffs1)
@@ -539,14 +536,11 @@ class TestRelaxationPhysics:
             coordinate_system="milne",
             time_range=(0.1, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4)
+            grid_points=(4, 4, 4, 4),
         )
         metric = MilneMetric()
 
-        coeffs = TransportCoefficients(
-            shear_viscosity=0.1,
-            shear_relaxation_time=0.5
-        )
+        coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
 
         relaxation = ISRelaxationEquations(grid, metric, coeffs)
         fields = ISFieldConfiguration(grid)
@@ -576,7 +570,7 @@ class TestRelaxationPerformance:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(8, 8, 8, 8)
+            grid_points=(8, 8, 8, 8),
         )
         metric = MinkowskiMetric()
 
@@ -584,7 +578,7 @@ class TestRelaxationPerformance:
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
             shear_relaxation_time=0.5,
-            bulk_relaxation_time=0.3
+            bulk_relaxation_time=0.3,
         )
 
         relaxation = ISRelaxationEquations(grid, metric, coeffs)
@@ -597,6 +591,7 @@ class TestRelaxationPerformance:
         fields.u_mu[..., 0] = 1.0
 
         import time
+
         start = time.time()
 
         # Run evolution steps
@@ -611,7 +606,7 @@ class TestRelaxationPerformance:
 
         # Check performance report
         report = relaxation.performance_report()
-        assert report['evolution_count'] == 10
+        assert report["evolution_count"] == 10
 
 
 if __name__ == "__main__":

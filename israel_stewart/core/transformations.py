@@ -30,7 +30,7 @@ class LorentzTransformation:
     for tensor fields in curved spacetime.
     """
 
-    def __init__(self, metric: Optional['MetricBase'] = None):
+    def __init__(self, metric: Optional["MetricBase"] = None):
         """
         Initialize Lorentz transformation handler.
 
@@ -75,7 +75,9 @@ class LorentzTransformation:
             factor = (gamma - 1.0) / v_squared
             for i in range(3):
                 for j in range(3):
-                    boost[i + 1, j + 1] = (1.0 if i == j else 0.0) + factor * velocity[i] * velocity[j]
+                    boost[i + 1, j + 1] = (1.0 if i == j else 0.0) + factor * velocity[
+                        i
+                    ] * velocity[j]
 
         return boost
 
@@ -105,9 +107,9 @@ class LorentzTransformation:
         sin_angle = np.sin(angle)
 
         # 3x3 rotation matrix using Rodrigues formula
-        K = np.array([[0, -axis[2], axis[1]],
-                      [axis[2], 0, -axis[0]],
-                      [-axis[1], axis[0], 0]])  # Skew-symmetric matrix
+        K = np.array(
+            [[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]]
+        )  # Skew-symmetric matrix
 
         rotation_3d = np.eye(3) + sin_angle * K + (1 - cos_angle) * np.dot(K, K)
 
@@ -118,7 +120,9 @@ class LorentzTransformation:
         return rotation_4d
 
     @monitor_performance("vector_transformation")
-    def transform_vector(self, vector: FourVector, transformation: np.ndarray) -> FourVector:
+    def transform_vector(
+        self, vector: FourVector, transformation: np.ndarray
+    ) -> FourVector:
         """
         Apply Lorentz transformation to four-vector: V'^μ = Λ^μ_ν V^ν.
 
@@ -134,7 +138,9 @@ class LorentzTransformation:
 
         # Apply transformation
         if isinstance(vector.components, np.ndarray):
-            transformed_components = optimized_einsum('mn,n->m', transformation, vector.components)
+            transformed_components = optimized_einsum(
+                "mn,n->m", transformation, vector.components
+            )
         else:
             transformation_sp = sp.Matrix(transformation)
             transformed_components = transformation_sp * vector.components
@@ -142,7 +148,9 @@ class LorentzTransformation:
         return FourVector(transformed_components, vector.indices[0][0], self.metric)
 
     @monitor_performance("tensor_transformation")
-    def transform_tensor(self, tensor: TensorField, transformation: np.ndarray) -> TensorField:
+    def transform_tensor(
+        self, tensor: TensorField, transformation: np.ndarray
+    ) -> TensorField:
         """
         Apply Lorentz transformation to rank-2 tensor: T'^μν = Λ^μ_α Λ^ν_β T^αβ.
 
@@ -154,7 +162,9 @@ class LorentzTransformation:
             Transformed tensor
         """
         if tensor.rank != 2:
-            raise NotImplementedError("Transformation only implemented for rank-2 tensors")
+            raise NotImplementedError(
+                "Transformation only implemented for rank-2 tensors"
+            )
 
         if transformation.shape != (4, 4):
             raise ValueError("Transformation matrix must be 4x4")
@@ -165,24 +175,49 @@ class LorentzTransformation:
 
         if isinstance(tensor.components, np.ndarray):
             # Determine transformation based on index types
-            if not tensor.indices[0][0] and not tensor.indices[1][0]:  # Both contravariant
-                transformed = optimized_einsum('ma,nb,ab->mn', transformation, transformation, tensor.components)
+            if (
+                not tensor.indices[0][0] and not tensor.indices[1][0]
+            ):  # Both contravariant
+                transformed = optimized_einsum(
+                    "ma,nb,ab->mn", transformation, transformation, tensor.components
+                )
             elif tensor.indices[0][0] and tensor.indices[1][0]:  # Both covariant
-                transformed = optimized_einsum('am,bn,mn->ab', inv_transformation, inv_transformation, tensor.components)
+                transformed = optimized_einsum(
+                    "am,bn,mn->ab",
+                    inv_transformation,
+                    inv_transformation,
+                    tensor.components,
+                )
             else:  # Mixed indices
                 if not tensor.indices[0][0]:  # First contravariant, second covariant
-                    transformed = optimized_einsum('ma,nb,ab->mn', transformation, inv_transformation, tensor.components)
+                    transformed = optimized_einsum(
+                        "ma,nb,ab->mn",
+                        transformation,
+                        inv_transformation,
+                        tensor.components,
+                    )
                 else:  # First covariant, second contravariant
-                    transformed = optimized_einsum('am,nb,mn->ab', inv_transformation, transformation, tensor.components)
+                    transformed = optimized_einsum(
+                        "am,nb,mn->ab",
+                        inv_transformation,
+                        transformation,
+                        tensor.components,
+                    )
         else:
             # SymPy version - simplified
             transformation_sp = sp.Matrix(transformation)
-            if not tensor.indices[0][0] and not tensor.indices[1][0]:  # Both contravariant
-                transformed = transformation_sp * tensor.components * transformation_sp.T
+            if (
+                not tensor.indices[0][0] and not tensor.indices[1][0]
+            ):  # Both contravariant
+                transformed = (
+                    transformation_sp * tensor.components * transformation_sp.T
+                )
             else:
                 # More complex transformation for mixed/covariant indices
                 inv_transformation_sp = sp.Matrix(inv_transformation)
-                transformed = inv_transformation_sp * tensor.components * inv_transformation_sp.T
+                transformed = (
+                    inv_transformation_sp * tensor.components * inv_transformation_sp.T
+                )
 
         return TensorField(transformed, tensor._index_string(), self.metric)
 
@@ -211,7 +246,7 @@ class LorentzTransformation:
         Returns:
             Composed transformation (transform2 ∘ transform1)
         """
-        return optimized_einsum('ij,jk->ik', transform2, transform1)
+        return optimized_einsum("ij,jk->ik", transform2, transform1)
 
     def boost_to_rest_frame(self, four_velocity: FourVector) -> np.ndarray:
         """
@@ -231,7 +266,9 @@ class LorentzTransformation:
 
         # Three-velocity: v^i = u^i / u^0 for timelike vectors
         if not four_velocity.is_timelike():
-            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+            raise PhysicsError(
+                "Can only extract three-velocity from timelike four-velocity"
+            )
 
         three_velocity = four_velocity.spatial_components / gamma
 
@@ -255,7 +292,9 @@ class LorentzTransformation:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
         if not four_velocity.is_timelike():
-            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+            raise PhysicsError(
+                "Can only extract three-velocity from timelike four-velocity"
+            )
 
         three_velocity = four_velocity.spatial_components / gamma
 
@@ -264,8 +303,7 @@ class LorentzTransformation:
 
     @staticmethod
     def thomas_wigner_rotation(
-        velocity1: np.ndarray,
-        velocity2: np.ndarray
+        velocity1: np.ndarray, velocity2: np.ndarray
     ) -> np.ndarray:
         """
         Compute Thomas-Wigner rotation for successive boosts.
@@ -324,21 +362,20 @@ class LorentzTransformation:
         if self.metric is None:
             # Use Minkowski metric for validation
             minkowski = np.diag([-1, 1, 1, 1])
-            preserved_metric = optimized_einsum('ij,jk,kl->il',
-                                              transformation.T, minkowski, transformation)
+            preserved_metric = optimized_einsum(
+                "ij,jk,kl->il", transformation.T, minkowski, transformation
+            )
             return np.allclose(preserved_metric, minkowski, rtol=1e-10)
         else:
             # Use provided metric
             metric_components = self.metric.components
-            preserved_metric = optimized_einsum('ij,jk,kl->il',
-                                              transformation.T, metric_components, transformation)
+            preserved_metric = optimized_einsum(
+                "ij,jk,kl->il", transformation.T, metric_components, transformation
+            )
             return np.allclose(preserved_metric, metric_components, rtol=1e-10)
 
     def active_vs_passive_transformation(
-        self,
-        tensor: TensorField,
-        transformation: np.ndarray,
-        active: bool = True
+        self, tensor: TensorField, transformation: np.ndarray, active: bool = True
     ) -> TensorField:
         """
         Apply active or passive transformation to tensor.
@@ -371,7 +408,7 @@ class CoordinateTransformation:
     and provides Jacobian matrices for tensor transformations.
     """
 
-    def __init__(self, metric: 'MetricBase'):
+    def __init__(self, metric: "MetricBase"):
         """
         Initialize coordinate transformation handler.
 
@@ -381,9 +418,7 @@ class CoordinateTransformation:
         self.metric = metric
 
     def jacobian_matrix(
-        self,
-        old_coordinates: list[sp.Symbol],
-        new_coordinates: list[sp.Expr]
+        self, old_coordinates: list[sp.Symbol], new_coordinates: list[sp.Expr]
     ) -> sp.Matrix:
         """
         Compute Jacobian matrix ∂x'^μ/∂x^ν for coordinate transformation.
@@ -406,10 +441,7 @@ class CoordinateTransformation:
 
         return jacobian
 
-    def inverse_jacobian(
-        self,
-        jacobian: sp.Matrix
-    ) -> sp.Matrix:
+    def inverse_jacobian(self, jacobian: sp.Matrix) -> sp.Matrix:
         """
         Compute inverse Jacobian matrix.
 
@@ -421,11 +453,7 @@ class CoordinateTransformation:
         """
         return jacobian.inv()
 
-    def transform_metric(
-        self,
-        jacobian: sp.Matrix,
-        old_metric: sp.Matrix
-    ) -> sp.Matrix:
+    def transform_metric(self, jacobian: sp.Matrix, old_metric: sp.Matrix) -> sp.Matrix:
         """
         Transform metric tensor: g'_μν = (∂x^α/∂x'^μ)(∂x^β/∂x'^ν) g_αβ.
 
@@ -452,20 +480,20 @@ class CoordinateTransformation:
             Dictionary with coordinate transformation expressions
         """
         # Define coordinate symbols
-        t, x, y, z = sp.symbols('t x y z', real=True)
+        t, x, y, z = sp.symbols("t x y z", real=True)
 
         # Spherical coordinates
         r = sp.sqrt(x**2 + y**2 + z**2)
         theta = sp.acos(z / r)  # Polar angle
-        phi = sp.atan2(y, x)    # Azimuthal angle
+        phi = sp.atan2(y, x)  # Azimuthal angle
 
         return {
-            't_new': t,
-            'r': r,
-            'theta': theta,
-            'phi': phi,
-            'coordinates': [t, r, theta, phi],
-            'old_coordinates': [t, x, y, z]
+            "t_new": t,
+            "r": r,
+            "theta": theta,
+            "phi": phi,
+            "coordinates": [t, r, theta, phi],
+            "old_coordinates": [t, x, y, z],
         }
 
     @staticmethod
@@ -477,20 +505,20 @@ class CoordinateTransformation:
             Dictionary with coordinate transformation expressions
         """
         # Define coordinate symbols
-        t, x, y, z = sp.symbols('t x y z', real=True)
+        t, x, y, z = sp.symbols("t x y z", real=True)
 
         # Cylindrical coordinates
         rho = sp.sqrt(x**2 + y**2)  # Radial distance in xy-plane
-        phi = sp.atan2(y, x)        # Azimuthal angle
-        z_cyl = z                   # Height (unchanged)
+        phi = sp.atan2(y, x)  # Azimuthal angle
+        z_cyl = z  # Height (unchanged)
 
         return {
-            't_new': t,
-            'rho': rho,
-            'phi': phi,
-            'z': z_cyl,
-            'coordinates': [t, rho, phi, z_cyl],
-            'old_coordinates': [t, x, y, z]
+            "t_new": t,
+            "rho": rho,
+            "phi": phi,
+            "z": z_cyl,
+            "coordinates": [t, rho, phi, z_cyl],
+            "old_coordinates": [t, x, y, z],
         }
 
     @staticmethod
@@ -504,28 +532,28 @@ class CoordinateTransformation:
             Dictionary with coordinate transformation expressions
         """
         # Define coordinate symbols
-        t, x, y, z = sp.symbols('t x y z', real=True)
+        t, x, y, z = sp.symbols("t x y z", real=True)
 
         # Milne coordinates: τ = √(t² - x²), η = (1/2)ln((t+x)/(t-x))
-        tau = sp.sqrt(t**2 - x**2)        # Proper time
+        tau = sp.sqrt(t**2 - x**2)  # Proper time
         eta = sp.Rational(1, 2) * sp.log((t + x) / (t - x))  # Rapidity
-        y_milne = y                       # Transverse coordinates unchanged
+        y_milne = y  # Transverse coordinates unchanged
         z_milne = z
 
         return {
-            'tau': tau,
-            'eta': eta,
-            'y': y_milne,
-            'z': z_milne,
-            'coordinates': [tau, eta, y_milne, z_milne],
-            'old_coordinates': [t, x, y, z]
+            "tau": tau,
+            "eta": eta,
+            "y": y_milne,
+            "z": z_milne,
+            "coordinates": [tau, eta, y_milne, z_milne],
+            "old_coordinates": [t, x, y, z],
         }
 
     def numerical_jacobian(
         self,
         transformation_func: callable,
         coordinates: np.ndarray,
-        epsilon: float = 1e-8
+        epsilon: float = 1e-8,
     ) -> np.ndarray:
         """
         Compute numerical Jacobian matrix for coordinate transformation.

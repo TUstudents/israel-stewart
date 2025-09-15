@@ -309,7 +309,9 @@ class TestEvolutionEquations:
         # Create pressure gradient
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
         fields.rho[:] = 1.0
-        fields.pressure[:] = (0.3 + 0.1 * x_mesh).reshape(fields.pressure.shape)  # Pressure gradient in x
+        fields.pressure[:] = (0.3 + 0.1 * x_mesh).reshape(
+            fields.pressure.shape
+        )  # Pressure gradient in x
         fields.u_mu[..., 0] = 1.0
 
         conservation = ConservationLaws(fields)
@@ -398,7 +400,9 @@ class TestConservationValidation:
 
         # Create large gradients that definitely violate conservation
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
-        fields.rho[:] = (1.0 + 0.5 * x_mesh).reshape(fields.rho.shape)  # Large gradient for reliable detection
+        fields.rho[:] = (1.0 + 0.5 * x_mesh).reshape(
+            fields.rho.shape
+        )  # Large gradient for reliable detection
         fields.pressure[:] = (0.3 + 0.2 * y_mesh).reshape(fields.pressure.shape)
         fields.n[:] = 0.5
         fields.u_mu[..., 0] = 1.0

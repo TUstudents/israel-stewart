@@ -59,7 +59,7 @@ class TensorField:
 
     def _validate_components(self, components: np.ndarray | sp.Matrix) -> np.ndarray | sp.Matrix:
         """Validate and standardize tensor components."""
-        if isinstance(components, (list, tuple)):
+        if isinstance(components, list | tuple):
             components = np.array(components)
 
         if is_numpy_array(components):

@@ -111,6 +111,47 @@ class SpacetimeGrid:
 
         return coords
 
+    def _create_spectral_coordinates(self) -> None:
+        """
+        Create coordinate arrays optimized for spectral methods.
+
+        Replaces the default coordinate arrays with ones that use proper
+        spectral spacing: dx = L/N instead of L/(N-1). This ensures
+        periodicity and FFT compatibility.
+        """
+        coords = {}
+
+        # Time coordinate - keep standard spacing for time evolution
+        if self.coordinate_system == "milne":
+            time_name = "tau"
+        else:
+            time_name = "t"
+        coords[time_name] = np.linspace(self.time_range[0], self.time_range[1], self.grid_points[0])
+
+        # Spatial coordinates with spectral spacing
+        if self.coordinate_system == "cartesian":
+            coord_names = ["x", "y", "z"]
+        elif self.coordinate_system == "spherical":
+            coord_names = ["r", "theta", "phi"]
+        elif self.coordinate_system == "cylindrical":
+            coord_names = ["rho", "phi", "z"]
+        elif self.coordinate_system == "milne":
+            coord_names = ["eta", "x", "y"]
+
+        for i, name in enumerate(coord_names):
+            range_i = self.spatial_ranges[i]
+            n_points = self.grid_points[i + 1]
+            # Spectral spacing: dx = L/N, points at [0, dx, 2*dx, ..., (N-1)*dx]
+            extent = range_i[1] - range_i[0]
+            dx = extent / n_points
+            coords[name] = range_i[0] + np.arange(n_points) * dx
+
+        # Update coordinates and recompute spacing
+        self.coordinates = coords
+        self.spatial_spacing = [
+            (r[1] - r[0]) / n for r, n in zip(self.spatial_ranges, self.grid_points[1:], strict=False)
+        ]
+
     @property
     def coordinate_names(self) -> list[str]:
         """Get list of coordinate names."""
@@ -300,9 +341,96 @@ class SpacetimeGrid:
         return field_bc
 
     def _apply_periodic_bc(self, field: np.ndarray, boundary: str) -> np.ndarray:
-        """Apply periodic boundary conditions."""
-        # Implementation depends on which boundary (x_min, x_max, etc.)
-        return field
+        """Apply periodic boundary conditions.
+
+        Args:
+            field: Field array to apply boundary conditions to
+            boundary: Boundary specification (e.g., 'x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max')
+
+        Returns:
+            Field with periodic boundary conditions applied
+        """
+        field_bc = field.copy()
+
+        # Parse boundary specification
+        parts = boundary.split('_')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid boundary specification: {boundary}")
+
+        coord_name, side = parts
+
+        # Map coordinate names to axis indices
+        coord_to_axis = {
+            't': 0, 'time': 0, 'tau': 0,
+            'x': 1,
+            'y': 2, 'r': 1, 'rho': 1, 'eta': 1,
+            'z': 3, 'theta': 2, 'phi': 2
+        }
+
+        if coord_name not in coord_to_axis:
+            raise ValueError(f"Unknown coordinate: {coord_name}")
+
+        axis = coord_to_axis[coord_name]
+
+        # Apply periodic boundary condition
+        if side == 'min':
+            # Set minimum boundary to match maximum boundary
+            if axis == 0:  # time
+                field_bc[0, ...] = field_bc[-1, ...]
+            elif axis == 1:  # x
+                field_bc[:, 0, ...] = field_bc[:, -1, ...]
+            elif axis == 2:  # y
+                field_bc[:, :, 0, :] = field_bc[:, :, -1, :]
+            elif axis == 3:  # z
+                field_bc[:, :, :, 0] = field_bc[:, :, :, -1]
+        elif side == 'max':
+            # Set maximum boundary to match minimum boundary
+            if axis == 0:  # time
+                field_bc[-1, ...] = field_bc[0, ...]
+            elif axis == 1:  # x
+                field_bc[:, -1, ...] = field_bc[:, 0, ...]
+            elif axis == 2:  # y
+                field_bc[:, :, -1, :] = field_bc[:, :, 0, :]
+            elif axis == 3:  # z
+                field_bc[:, :, :, -1] = field_bc[:, :, :, 0]
+        else:
+            raise ValueError(f"Invalid boundary side: {side}")
+
+        return field_bc
+
+    def apply_periodic_bc_all_spatial(self, field: np.ndarray) -> np.ndarray:
+        """
+        Apply periodic boundary conditions to all spatial dimensions.
+
+        Convenience method for spectral methods that require periodic
+        boundary conditions in all spatial directions.
+
+        Args:
+            field: Field array to apply boundary conditions to
+
+        Returns:
+            Field with periodic boundary conditions applied to all spatial dimensions
+        """
+        field_bc = field.copy()
+
+        # Get spatial coordinate names
+        if self.coordinate_system == "cartesian":
+            spatial_coords = ["x", "y", "z"]
+        elif self.coordinate_system == "spherical":
+            spatial_coords = ["r", "theta", "phi"]
+        elif self.coordinate_system == "cylindrical":
+            spatial_coords = ["rho", "phi", "z"]
+        elif self.coordinate_system == "milne":
+            spatial_coords = ["eta", "x", "y"]
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
+
+        # Apply periodic boundary conditions to all spatial directions
+        for coord in spatial_coords:
+            field_bc = self._apply_periodic_bc(field_bc, f"{coord}_min")
+            field_bc = self._apply_periodic_bc(field_bc, f"{coord}_max")
+
+        return field_bc
 
     def _apply_reflecting_bc(self, field: np.ndarray, boundary: str) -> np.ndarray:
         """Apply reflecting boundary conditions."""
@@ -484,3 +612,34 @@ def create_milne_grid(
         (-transverse_extent / 2, transverse_extent / 2),
     ]
     return SpacetimeGrid("milne", tau_range, spatial_ranges, grid_points)
+
+
+def create_spectral_cartesian_grid(
+    time_range: tuple[float, float],
+    spatial_extent: float,
+    grid_points: tuple[int, int, int, int],
+) -> SpacetimeGrid:
+    """
+    Create Cartesian grid optimized for spectral methods.
+
+    Uses proper spacing for periodic boundary conditions: dx = L/N instead of L/(N-1).
+    This ensures that the grid points are [0, dx, 2*dx, ..., (N-1)*dx] which is
+    periodic on [0, L) and compatible with FFT-based spectral methods.
+
+    Args:
+        time_range: (t_min, t_max)
+        spatial_extent: Spatial size (symmetric around origin)
+        grid_points: (Nt, Nx, Ny, Nz)
+
+    Returns:
+        Cartesian SpacetimeGrid optimized for spectral methods
+    """
+    # For spectral methods, we need periodic grids with spacing L/N
+    # Override the coordinate creation to use proper spectral spacing
+    spatial_ranges = [(-spatial_extent / 2, spatial_extent / 2) for _ in range(3)]
+    grid = SpacetimeGrid("cartesian", time_range, spatial_ranges, grid_points)
+
+    # Override coordinates for spectral compatibility
+    grid._create_spectral_coordinates()
+
+    return grid

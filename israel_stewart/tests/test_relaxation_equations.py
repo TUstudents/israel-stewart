@@ -154,7 +154,9 @@ class TestISFieldConfigurationEnhanced:
 
         assert config.dissipative_field_count == expected_count
 
-    def test_dissipative_vector_size_validation(self, setup_field_config: ISFieldConfiguration) -> None:
+    def test_dissipative_vector_size_validation(
+        self, setup_field_config: ISFieldConfiguration
+    ) -> None:
         """Test validation of dissipative vector sizes."""
         config = setup_field_config
 

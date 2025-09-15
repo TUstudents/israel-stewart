@@ -81,7 +81,7 @@ class MetricBase(ABC):
     @cached_property
     def inverse(self) -> np.ndarray | sp.Matrix:
         """
-        Compute inverse metric tensor g^��.
+        Compute inverse metric tensor g^{μν}.
 
         Returns:
             Inverse metric components
@@ -124,7 +124,7 @@ class MetricBase(ABC):
     @cached_property
     def determinant(self) -> float | sp.Expr:
         """
-        Compute metric determinant det(g_��).
+        Compute metric determinant det(g_{μν}).
 
         Returns:
             Determinant value
@@ -142,13 +142,13 @@ class MetricBase(ABC):
     @cached_property
     def christoffel_symbols(self) -> np.ndarray | sp.Array:
         """
-        Compute Christoffel symbols �^�_��.
+        Compute Christoffel symbols Γ^λ_{μν}.
 
         Using the formula:
-        �^�_�� = (1/2) g^�� (_� g_�� + _� g_�� - _� g_��)
+        Γ^λ_{μν} = (1/2) g^{λρ} (∂_μ g_{ρν} + ∂_ν g_{μρ} − ∂_ρ g_{μν})
 
         Returns:
-            Array of shape (4, 4, 4) with components �^�_��
+            Array of shape (4, 4, 4) with components Γ^λ_{μν}
         """
         if isinstance(self.components, np.ndarray):
             return self._compute_christoffel_numerical()
@@ -496,7 +496,7 @@ class MetricBase(ABC):
         self, vector1: np.ndarray | sp.Matrix, vector2: np.ndarray | sp.Matrix
     ) -> float | sp.Expr:
         """
-        Compute inner product of two vectors: g_�� u^� v^�.
+        Compute inner product of two vectors: g_{μν} u^μ v^ν.
 
         Args:
             vector1: First four-vector
@@ -516,7 +516,7 @@ class MetricBase(ABC):
         self, coordinate_differentials: np.ndarray | sp.Matrix
     ) -> float | sp.Expr:
         """
-        Compute line element squared: ds� = g_�� dx^� dx^�.
+        Compute line element squared: ds² = g_{μν} dx^μ dx^ν.
 
         Args:
             coordinate_differentials: Four-vector of coordinate differentials
@@ -549,7 +549,7 @@ class MetricBase(ABC):
         # Check signature (rough check for physical metrics)
         try:
             det = self.determinant
-            if isinstance(det, (int, float)) and det >= 0:
+            if isinstance(det, int | float) and det >= 0:
                 warnings.warn("Metric determinant is non-negative - check signature", stacklevel=2)
         except:
             pass  # Skip check for complex symbolic expressions
@@ -633,9 +633,9 @@ class MinkowskiMetric(MetricBase):
         """
         norm_squared = self.inner_product(vector, vector)
         if self.signature_type == "mostly_plus":
-            return norm_squared < -tolerance  # ds� < 0 is timelike
+            return norm_squared < -tolerance  # ds² < 0 is timelike
         else:
-            return norm_squared > tolerance  # ds� > 0 is timelike
+            return norm_squared > tolerance  # ds² > 0 is timelike
 
     def is_spacelike(self, vector: np.ndarray, tolerance: float = 1e-10) -> bool:
         """
@@ -650,9 +650,9 @@ class MinkowskiMetric(MetricBase):
         """
         norm_squared = self.inner_product(vector, vector)
         if self.signature_type == "mostly_plus":
-            return norm_squared > tolerance  # ds� > 0 is spacelike
+            return norm_squared > tolerance  # ds² > 0 is spacelike
         else:
-            return norm_squared < -tolerance  # ds� < 0 is spacelike
+            return norm_squared < -tolerance  # ds² < 0 is spacelike
 
     def is_null(self, vector: np.ndarray, tolerance: float = 1e-10) -> bool:
         """
@@ -690,7 +690,7 @@ class GeneralMetric(MetricBase):
         """
         super().__init__(coordinates)
 
-        if isinstance(metric_components, (list, tuple)):
+        if isinstance(metric_components, list | tuple):
             metric_components = np.array(metric_components)
 
         if metric_components.shape != (4, 4):

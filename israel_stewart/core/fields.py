@@ -52,7 +52,7 @@ class ThermodynamicState:
         Initialize thermodynamic state.
 
         Args:
-            energy_density: Energy density � (� in some notations)
+            energy_density: Energy density ρ (ε in some notations)
             pressure: Pressure p
             temperature: Temperature T (optional)
             particle_density: Particle number density n (optional)
@@ -91,27 +91,27 @@ class ThermodynamicState:
 
     def _validate_thermodynamic_consistency(self) -> None:
         """Check basic thermodynamic consistency conditions."""
-        # Speed of sound should be subluminal: cs� = dp/d� d 1
+        # Speed of sound should be subluminal: c_s² = dp/dρ ≤ c²
         if hasattr(self, "sound_speed_squared"):
             if self.sound_speed_squared > C_LIGHT**2:
                 raise FieldValidationError(
-                    f"Sound speed squared {self.sound_speed_squared} exceeds c�"
+                    f"Sound speed squared {self.sound_speed_squared} exceeds c²"
                 )
 
     @property
     def enthalpy_density(self) -> float:
-        """Enthalpy density w = � + p."""
+        """Enthalpy density w = ρ + p."""
         return self.energy_density + self.pressure
 
     @property
     def sound_speed_squared(self) -> float:
         """
-        Speed of sound squared cs� = dp/d�.
+        Speed of sound squared c_s² = dp/dρ.
 
-        For ideal gas: cs� = �p/� where � is adiabatic index.
+        For ideal gas: c_s² = γ p/ρ where γ is adiabatic index.
         Placeholder implementation returns conformal value.
         """
-        # Conformal fluid: cs� = 1/3
+        # Conformal fluid: c_s² = 1/3
         return 1.0 / 3.0
 
     def equation_of_state(self, eos_type: str = "ideal") -> dict[str, float]:
@@ -125,7 +125,7 @@ class ThermodynamicState:
             Dictionary of derived quantities
         """
         if eos_type == "ideal":
-            # Ideal gas: p = �/3 (radiation-dominated)
+            # Ideal gas: p = ρ/3 (radiation-dominated)
             if abs(self.pressure - self.energy_density / 3.0) > 1e-10:
                 import warnings
 
@@ -138,7 +138,7 @@ class ThermodynamicState:
             }
 
         elif eos_type == "bag_model":
-            # MIT bag model: p = �/3 - B
+            # MIT bag model: p = ρ/3 − B
             bag_constant = 0.2  # Placeholder value
             return {
                 "bag_constant": bag_constant,
@@ -150,7 +150,7 @@ class ThermodynamicState:
             raise ValueError(f"Unknown equation of state: {eos_type}")
 
     def __str__(self) -> str:
-        return f"ThermodynamicState(�={self.energy_density:.3e}, p={self.pressure:.3e})"
+        return f"ThermodynamicState(ρ={self.energy_density:.3e}, p={self.pressure:.3e})"
 
     def __repr__(self) -> str:
         return (
@@ -234,7 +234,7 @@ class FluidVelocityField:
 
     @property
     def lorentz_factor(self) -> float:
-        """Lorentz factor � = u^0."""
+        """Lorentz factor γ = u^0."""
         return float(abs(self.four_velocity.time_component))
 
     def boost_to_rest_frame(self) -> "FluidVelocityField":
@@ -249,7 +249,7 @@ class FluidVelocityField:
 
     def __str__(self) -> str:
         v = self.three_velocity
-        return f"FluidVelocityField(�={self.lorentz_factor:.3f}, v=[{v[0]:.3f}, {v[1]:.3f}, {v[2]:.3f}])"
+        return f"FluidVelocityField(γ={self.lorentz_factor:.3f}, v=[{v[0]:.3f}, {v[1]:.3f}, {v[2]:.3f}])"
 
 
 class TransportCoefficients:
@@ -397,7 +397,7 @@ class TransportCoefficients:
 
     @property
     def viscosity_ratio(self) -> float:
-        """Bulk to shear viscosity ratio �/�."""
+        """Bulk to shear viscosity ratio ζ/η."""
         if self.shear_viscosity == 0:
             return float("inf") if self.bulk_viscosity > 0 else 0.0
         return self.bulk_viscosity / self.shear_viscosity
@@ -406,7 +406,7 @@ class TransportCoefficients:
         """
         Estimate relaxation times from thermodynamic state.
 
-        Uses kinetic theory estimates: � ~ �/(� + p)
+        Uses kinetic theory estimates: τ ∝ η/(ρ + p)
         """
         enthalpy = thermodynamic_state.enthalpy_density
 
@@ -440,7 +440,7 @@ class TransportCoefficients:
             return self
 
         elif model == "kinetic_theory":
-            # Kinetic theory: �  T^(1/2) for massive particles
+            # Kinetic theory: η ∝ T^{1/2} for massive particles
             temp_factor = np.sqrt(temperature)
 
             return TransportCoefficients(
@@ -468,7 +468,7 @@ class TransportCoefficients:
             raise ValueError(f"Unknown temperature dependence model: {model}")
 
     def __str__(self) -> str:
-        return f"TransportCoefficients(�={self.shear_viscosity:.3e}, �={self.bulk_viscosity:.3e})"
+        return f"TransportCoefficients(η={self.shear_viscosity:.3e}, ζ={self.bulk_viscosity:.3e})"
 
 
 class HydrodynamicState:
@@ -516,9 +516,9 @@ class HydrodynamicState:
 
     def stress_energy_tensor(self, metric: "MetricBase") -> StressEnergyTensor:
         """
-        Construct total stress-energy tensor T^��.
+        Construct total stress–energy tensor T^{μν}.
 
-        T^�� = (� + p) u^� u^� + p g^�� + �^��
+        T^{μν} = (ρ + p) u^μ u^ν + p g^{μν} + π^{μν}
 
         Args:
             metric: Spacetime metric
@@ -531,10 +531,10 @@ class HydrodynamicState:
         p = self.thermodynamic.pressure
         u = self.velocity.four_velocity
 
-        # u^� u^� term
+        # u^μ u^ν term
         u_outer = np.outer(u.components, u.components)
 
-        # Perfect fluid: T^��_perfect = (� + p) u^� u^� + p g^��
+        # Perfect fluid: T^{μν}_perfect = (ρ + p) u^μ u^ν + p g^{μν}
         perfect_fluid_components = (rho + p) * u_outer + p * metric.inverse
         perfect_fluid = StressEnergyTensor(perfect_fluid_components, metric)
 
@@ -548,7 +548,7 @@ class HydrodynamicState:
         """
         Compute energy-momentum conservation source terms.
 
-        _� T^�� = 0 (conservation)
+        ∇_μ T^{μν} = 0 (conservation)
 
         Returns:
             Source tensor for energy-momentum equations
@@ -911,7 +911,9 @@ class ISFieldConfiguration:
             Stress-energy tensor at each grid point with shape (*grid.shape, 4, 4)
         """
         if not self._constraints_enforced:
-            warnings.warn("Computing stress-energy tensor without enforcing constraints", stacklevel=2)
+            warnings.warn(
+                "Computing stress-energy tensor without enforcing constraints", stacklevel=2
+            )
 
         T_total = np.zeros((*self.grid.shape, 4, 4))
 

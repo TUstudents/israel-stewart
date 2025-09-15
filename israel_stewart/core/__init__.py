@@ -183,7 +183,7 @@ def create_perfect_fluid_state(
     Create perfect fluid hydrodynamic state.
 
     Args:
-        energy_density: Energy density �
+        energy_density: Energy density ρ
         pressure: Pressure p
         three_velocity: 3-velocity [vx, vy, vz] (default: at rest)
         metric: Spacetime metric (default: Minkowski)

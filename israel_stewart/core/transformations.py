@@ -6,7 +6,8 @@ coordinate transformations for tensor fields in curved spacetime.
 """
 
 # Forward reference for metrics
-from typing import TYPE_CHECKING, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import sympy as sp
@@ -282,7 +283,9 @@ class LorentzTransformation:
         return self.boost_matrix(three_velocity)
 
     @staticmethod
-    def thomas_wigner_rotation(velocity1: np.ndarray | list[float], velocity2: np.ndarray | list[float]) -> np.ndarray:
+    def thomas_wigner_rotation(
+        velocity1: np.ndarray | list[float], velocity2: np.ndarray | list[float]
+    ) -> np.ndarray:
         """
         Compute Thomas-Wigner rotation for successive boosts.
 

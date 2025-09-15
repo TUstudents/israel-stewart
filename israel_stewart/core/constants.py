@@ -12,19 +12,19 @@ import numpy as np
 # Speed of light (set to 1 in natural units)
 C_LIGHT = 1.0
 
-# Planck's constant (reduced,  = h/2�, set to 1 in natural units)
+# Planck’s constant (reduced, ħ = h/2π, set to 1 in natural units)
 HBAR = 1.0
 
 # Boltzmann constant (set to 1 in natural units)
 BOLTZMANN_K = 1.0
 
-# Natural units system (c =  = kB = 1)
+# Natural units system (c = ħ = k_B = 1)
 NATURAL_UNITS = {"c": C_LIGHT, "hbar": HBAR, "k_B": BOLTZMANN_K, "system": "natural"}
 
 # SI units (for dimensional analysis and conversion)
 SI_CONSTANTS = {
     "c": 2.99792458e8,  # m/s
-    "hbar": 1.054571817e-34,  # J�s
+    "hbar": 1.054571817e-34,  # J·s
     "k_B": 1.380649e-23,  # J/K
     "system": "SI",
 }
@@ -133,7 +133,7 @@ def validate_relativistic_velocity(
 
 def compute_lorentz_factor(velocity: np.ndarray) -> float:
     """
-    Compute Lorentz factor � = 1/(1 - v�/c�).
+    Compute Lorentz factor γ = 1/√(1 − v²/c²).
 
     Args:
         velocity: 3-velocity array
@@ -190,12 +190,15 @@ def validate_transport_coefficient(coefficient: float, name: str) -> bool:
 # Common unit conversions (from natural units)
 def natural_to_si_energy(energy_natural: float) -> float:
     """Convert energy from natural units to SI (Joules)."""
-    return energy_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / 1.0  # c
+    return (
+        energy_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / 1.0
+    )  # c
 
 
 def natural_to_si_temperature(temp_natural: float) -> float:
     """Convert temperature from natural units to SI (Kelvin)."""
     return temp_natural / cast(float, SI_CONSTANTS["k_B"])
+
 
 def natural_to_si_time(time_natural: float) -> float:
     """Convert time from natural units to SI (seconds)."""
@@ -204,7 +207,12 @@ def natural_to_si_time(time_natural: float) -> float:
 
 def natural_to_si_length(length_natural: float) -> float:
     """Convert length from natural units to SI (meters)."""
-    return length_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / natural_to_si_energy(1.0)
+    return (
+        length_natural
+        * cast(float, SI_CONSTANTS["hbar"])
+        * cast(float, SI_CONSTANTS["c"])
+        / natural_to_si_energy(1.0)
+    )
 
 
 # Dimensionless combinations for Israel-Stewart hydrodynamics
@@ -212,7 +220,7 @@ def reynolds_number_estimate(
     viscosity: float, density: float, velocity: float, length_scale: float
 ) -> float:
     """
-    Estimate Reynolds number Re = �vL/�.
+    Estimate Reynolds number Re = ρ v L / η.
 
     Args:
         viscosity: Shear viscosity
@@ -230,7 +238,7 @@ def reynolds_number_estimate(
 
 def knudsen_number_estimate(mean_free_path: float, length_scale: float) -> float:
     """
-    Estimate Knudsen number Kn = �/L.
+    Estimate Knudsen number Kn = λ/L.
 
     Args:
         mean_free_path: Particle mean free path

@@ -55,7 +55,7 @@ class SpectralISolver:
         # IMPORTANT: For spectral methods, we need proper periodic spacing: dx = L/N
         # SpacetimeGrid uses dx = L/(N-1) which breaks periodicity
         # Override with correct spectral spacing
-        if hasattr(grid, 'spatial_ranges'):
+        if hasattr(grid, "spatial_ranges"):
             # Calculate proper spectral spacing: L/N instead of L/(N-1)
             spatial_extents = [r[1] - r[0] for r in grid.spatial_ranges]
             self.dx = spatial_extents[0] / self.nx

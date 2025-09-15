@@ -144,12 +144,13 @@ class SpacetimeGrid:
             # Spectral spacing: dx = L/N, points at [0, dx, 2*dx, ..., (N-1)*dx]
             extent = range_i[1] - range_i[0]
             dx = extent / n_points
-            coords[name] = range_i[0] + np.arange(n_points) * dx
+            coords[name] = range_i[0] + np.arange(n_points, dtype=np.float64) * dx
 
         # Update coordinates and recompute spacing
         self.coordinates = coords
         self.spatial_spacing = [
-            (r[1] - r[0]) / n for r, n in zip(self.spatial_ranges, self.grid_points[1:], strict=False)
+            (r[1] - r[0]) / n
+            for r, n in zip(self.spatial_ranges, self.grid_points[1:], strict=False)
         ]
 
     @property
@@ -177,7 +178,7 @@ class SpacetimeGrid:
             Tuple of 4D coordinate arrays
         """
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
-        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[arg-type]
+        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[call-overload,no-any-return]
 
     def coordinate_at_index(self, indices: tuple[int, int, int, int]) -> np.ndarray:
         """
@@ -353,7 +354,7 @@ class SpacetimeGrid:
         field_bc = field.copy()
 
         # Parse boundary specification
-        parts = boundary.split('_')
+        parts = boundary.split("_")
         if len(parts) != 2:
             raise ValueError(f"Invalid boundary specification: {boundary}")
 
@@ -361,10 +362,17 @@ class SpacetimeGrid:
 
         # Map coordinate names to axis indices
         coord_to_axis = {
-            't': 0, 'time': 0, 'tau': 0,
-            'x': 1,
-            'y': 2, 'r': 1, 'rho': 1, 'eta': 1,
-            'z': 3, 'theta': 2, 'phi': 2
+            "t": 0,
+            "time": 0,
+            "tau": 0,
+            "x": 1,
+            "y": 2,
+            "r": 1,
+            "rho": 1,
+            "eta": 1,
+            "z": 3,
+            "theta": 2,
+            "phi": 2,
         }
 
         if coord_name not in coord_to_axis:
@@ -373,7 +381,7 @@ class SpacetimeGrid:
         axis = coord_to_axis[coord_name]
 
         # Apply periodic boundary condition
-        if side == 'min':
+        if side == "min":
             # Set minimum boundary to match maximum boundary
             if axis == 0:  # time
                 field_bc[0, ...] = field_bc[-1, ...]
@@ -383,7 +391,7 @@ class SpacetimeGrid:
                 field_bc[:, :, 0, :] = field_bc[:, :, -1, :]
             elif axis == 3:  # z
                 field_bc[:, :, :, 0] = field_bc[:, :, :, -1]
-        elif side == 'max':
+        elif side == "max":
             # Set maximum boundary to match minimum boundary
             if axis == 0:  # time
                 field_bc[-1, ...] = field_bc[0, ...]

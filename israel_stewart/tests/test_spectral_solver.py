@@ -10,7 +10,7 @@ import pytest
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
-from israel_stewart.solvers.spectral import SpectralISolver, SpectralISHydrodynamics
+from israel_stewart.solvers.spectral import SpectralISHydrodynamics, SpectralISolver
 
 
 class TestSpectralISolver:
@@ -22,7 +22,7 @@ class TestSpectralISolver:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 32, 32, 32),  # 32^3 spatial grid for FFT efficiency
         )
 
@@ -33,7 +33,7 @@ class TestSpectralISolver:
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
             shear_relaxation_time=0.5,
-            bulk_relaxation_time=0.3
+            bulk_relaxation_time=0.3,
         )
 
         solver = SpectralISolver(grid, fields, coeffs)
@@ -103,7 +103,7 @@ class TestSpectralISolver:
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
 
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 
         # Test 1: Simple trigonometric function with known derivatives
         # f(x,y,z) = sin(x) + cos(y) + sin(z)
@@ -161,7 +161,7 @@ class TestSpectralISolver:
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
 
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 
         # Vector field: v = (sin(x), cos(y), sin(z))
         vector_field = np.zeros((32, 32, 32, 3))
@@ -187,7 +187,7 @@ class TestSpectralISolver:
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
 
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 
         # Test 1: Simple trigonometric function
         # f(x,y,z) = sin(x) + cos(y) + sin(z)
@@ -197,7 +197,7 @@ class TestSpectralISolver:
 
         spectral_laplacian_1 = solver.laplacian(test_field_1)
 
-            # Validate accuracy (should be excellent with corrected spectral method)
+        # Validate accuracy (should be excellent with corrected spectral method)
         assert np.allclose(spectral_laplacian_1, analytical_laplacian_1, rtol=1e-12, atol=1e-12)
 
         # Test 2: Simpler function that should work better with current grid
@@ -296,11 +296,11 @@ class TestSpectralISolver:
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
 
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 
         # Test function that should be exactly periodic
         # f(x,y,z) = sin(x) + cos(2*y) + sin(3*z)
-        test_field = np.sin(X) + np.cos(2*Y) + np.sin(3*Z)
+        test_field = np.sin(X) + np.cos(2 * Y) + np.sin(3 * Z)
 
         # Compute derivatives
         grad_x, grad_y, grad_z = solver.spatial_gradient(test_field)
@@ -318,7 +318,7 @@ class TestSpectralISolver:
         assert np.allclose(grad_x, grad_analytical_x, rtol=1e-12, atol=1e-12)
 
         # Test that the method properly handles higher frequency components
-        laplacian_analytical = -(np.sin(X) + 4*np.cos(2*Y) + 9*np.sin(3*Z))
+        laplacian_analytical = -(np.sin(X) + 4 * np.cos(2 * Y) + 9 * np.sin(3 * Z))
         assert np.allclose(laplacian, laplacian_analytical, rtol=1e-12, atol=1e-12)
 
     def test_wave_vector_validation(self, setup_spectral_solver: tuple) -> None:
@@ -348,7 +348,7 @@ class TestSpectralISolver:
         x = np.arange(32) * solver.dx
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 
         # Test function: f(x) = sin(2*x) (constant in y,z)
         # Analytical derivative: df/dx = 2*cos(2*x)
@@ -392,7 +392,7 @@ class TestSpectralISHydrodynamics:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 16, 16, 16),  # Smaller grid for faster tests
         )
 
@@ -409,7 +409,7 @@ class TestSpectralISHydrodynamics:
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
             shear_relaxation_time=0.5,
-            bulk_relaxation_time=0.3
+            bulk_relaxation_time=0.3,
         )
 
         hydro_solver = SpectralISHydrodynamics(grid, fields, coeffs)
@@ -477,15 +477,15 @@ class TestSpectralISHydrodynamics:
         fields_copy = hydro_solver._copy_fields()
 
         # Check that all required fields are copied
-        assert 'rho' in fields_copy
-        assert 'Pi' in fields_copy
-        assert 'pi_munu' in fields_copy
-        assert 'q_mu' in fields_copy
-        assert 'u_mu' in fields_copy
+        assert "rho" in fields_copy
+        assert "Pi" in fields_copy
+        assert "pi_munu" in fields_copy
+        assert "q_mu" in fields_copy
+        assert "u_mu" in fields_copy
 
         # Check that copies are independent
         fields.rho[0, 0, 0, 0] += 1.0
-        assert fields_copy['rho'][0, 0, 0, 0] != fields.rho[0, 0, 0, 0]
+        assert fields_copy["rho"][0, 0, 0, 0] != fields.rho[0, 0, 0, 0]
 
 
 class TestSpectralPerformance:
@@ -497,7 +497,7 @@ class TestSpectralPerformance:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, grid_size, grid_size, grid_size),
         )
 
@@ -509,6 +509,7 @@ class TestSpectralPerformance:
 
         # Time derivative computation
         import time
+
         start_time = time.time()
 
         for _ in range(10):
@@ -525,7 +526,7 @@ class TestSpectralPerformance:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 32, 32, 32),
         )
 
@@ -587,15 +588,15 @@ class TestSpectralValidation:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 32, 32, 32),
         )
 
         fields = ISFieldConfiguration(grid)
 
         # Set up sound wave perturbation
-        x = np.linspace(0, 2*np.pi, 32, endpoint=False)
-        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
         # Small density perturbation
         amplitude = 0.01

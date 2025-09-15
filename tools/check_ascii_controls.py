@@ -8,11 +8,11 @@ This also catches ANSI ESC (0x1B) sequences and stray CRs.
 
 Usage: python tools/check_ascii_controls.py <files...>
 """
+
 from __future__ import annotations
 
 import pathlib
 import sys
-
 
 DISALLOWED = set(range(0x00, 0x09)) | {0x0B, 0x0C, 0x0D} | set(range(0x0E, 0x20)) | {0x7F}
 
@@ -61,11 +61,12 @@ def main(argv: list[str]) -> int:
         sys.stderr.write("Disallowed ASCII control characters found:\n")
         for msg in problems:
             sys.stderr.write(msg + "\n")
-        sys.stderr.write("Remove control chars; use LF (0x0A) line endings and spaces for indentation.\n")
+        sys.stderr.write(
+            "Remove control chars; use LF (0x0A) line endings and spaces for indentation.\n"
+        )
         return 1
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-

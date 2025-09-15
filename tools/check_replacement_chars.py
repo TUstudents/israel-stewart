@@ -6,12 +6,13 @@ or are not valid UTF-8.
 Usage (pre-commit passes filenames):
     python tools/check_replacement_chars.py file1 file2 ...
 """
+
 from __future__ import annotations
 
 import pathlib
 import sys
 
-REPLACEMENT_CHAR = "\uFFFD"
+REPLACEMENT_CHAR = "\ufffd"
 
 
 def check_file(path: pathlib.Path) -> list[str]:
@@ -32,7 +33,7 @@ def check_file(path: pathlib.Path) -> list[str]:
         # Report each line containing U+FFFD
         for lineno, line in enumerate(text.splitlines(), start=1):
             if REPLACEMENT_CHAR in line:
-                issues.append(f"{path}:{lineno}: contains U+FFFD (�)")
+                issues.append(f"{path}:{lineno}: contains U+FFFD ({REPLACEMENT_CHAR})")
     return issues
 
 
@@ -59,4 +60,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-

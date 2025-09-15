@@ -177,7 +177,7 @@ class FluidVelocityField:
         Initialize velocity field.
 
         Args:
-            four_velocity: Four-velocity u^� (if provided)
+            four_velocity: Four-velocity u^μ (if provided)
             three_velocity: Three-velocity v^i (alternative input)
             metric: Spacetime metric
         """
@@ -203,7 +203,7 @@ class FluidVelocityField:
         expected_norm = -1.0 if signature[0] < 0 else 1.0
         if abs(norm_sq - expected_norm) > 1e-10:
             raise FieldValidationError(
-                f"Four-velocity not normalized: u�u = {norm_sq}, expected {expected_norm}"
+                f"Four-velocity not normalized: u·u = {norm_sq}, expected {expected_norm}"
             )
 
     def _construct_four_velocity_from_three(self, three_velocity: np.ndarray) -> FourVector:
@@ -216,7 +216,7 @@ class FluidVelocityField:
         # Compute Lorentz factor
         gamma = compute_lorentz_factor(three_velocity)
 
-        # Four-velocity: u^� = �(1, v�)
+        # Four-velocity: u^μ = γ(1, v^i)
         four_components = np.zeros(4)
         four_components[0] = gamma
         four_components[1:4] = gamma * three_velocity

@@ -199,7 +199,7 @@ class ISRelaxationEquations:
             shear_contribution = self.coeffs.lambda_Pi_pi * pi_trace * theta
             nonlinear += shear_contribution
 
-        return linear + first_order + nonlinear
+        return linear + first_order + nonlinear  # type: ignore[no-any-return]
 
     def _shear_rhs(
         self,
@@ -267,7 +267,7 @@ class ISRelaxationEquations:
             )
             nonlinear += vorticity_term
 
-        return linear + first_order + nonlinear
+        return linear + first_order + nonlinear  # type: ignore[no-any-return]
 
     def _heat_rhs(
         self,
@@ -303,7 +303,7 @@ class ISRelaxationEquations:
                     shear_heat_term = np.sum(pi_munu[..., mu, :] * nabla_T, axis=-1)
                     nonlinear[..., mu] += self.coeffs.lambda_q_pi * shear_heat_term
 
-        return linear + first_order + nonlinear
+        return linear + first_order + nonlinear  # type: ignore[no-any-return]
 
     def _compute_expansion_scalar(self, u_mu: np.ndarray) -> np.ndarray:
         """Compute expansion scalar theta = nabla dot u."""

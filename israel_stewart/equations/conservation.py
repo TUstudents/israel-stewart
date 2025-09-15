@@ -94,7 +94,7 @@ class ConservationLaws:
         # Combine all contributions
         T_total = T_perfect + T_pressure + T_shear + T_heat
 
-        return T_total  # type: ignore[no-any-return]
+        return T_total
 
     @monitor_performance("divergence_T")
     def divergence_T(self) -> np.ndarray:
@@ -194,7 +194,7 @@ class ConservationLaws:
         else:
             # General metric
             metric_components = self.fields.grid.metric.inverse
-            g_inv = np.broadcast_to(metric_components, (*grid_shape, 4, 4)).copy()  # type: ignore[assignment]
+            g_inv = np.broadcast_to(metric_components, (*grid_shape, 4, 4)).copy()
 
         # Four-velocity outer product: u^μu^ν
         u_outer = optimized_einsum("...i,...j->...ij", u, u)

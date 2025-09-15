@@ -152,6 +152,10 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 show_error_codes = true
+exclude = [
+    "israel_stewart/tests/",
+    "tests/",
+]
 
 [[tool.mypy.overrides]]
 module = [

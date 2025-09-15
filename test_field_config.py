@@ -15,7 +15,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def test_spacetime_grid():
+def test_spacetime_grid() -> bool:
     """Test SpacetimeGrid functionality."""
     print("Testing SpacetimeGrid...")
 
@@ -48,7 +48,7 @@ def test_spacetime_grid():
         return False
 
 
-def test_field_configuration():
+def test_field_configuration() -> bool:
     """Test ISFieldConfiguration functionality."""
     print("\nTesting ISFieldConfiguration...")
 
@@ -125,7 +125,7 @@ def test_field_configuration():
         return False
 
 
-def test_integration_with_tensors():
+def test_integration_with_tensors() -> bool:
     """Test integration with tensor framework."""
     print("\nTesting tensor framework integration...")
 
@@ -188,7 +188,7 @@ def test_integration_with_tensors():
         return False
 
 
-def test_performance():
+def test_performance() -> bool:
     """Test performance with larger grids."""
     print("\nTesting performance...")
 
@@ -262,7 +262,7 @@ def test_performance():
         return False
 
 
-def main():
+def main() -> bool:
     """Run all tests."""
     print("Israel-Stewart Field Configuration Test Suite")
     print("=" * 50)
@@ -274,7 +274,7 @@ def main():
         test_performance,
     ]
 
-    results = []
+    results: list[bool] = []
     for test in tests:
         try:
             result = test()

@@ -252,12 +252,24 @@ class FourVector(TensorField):
         # Build boost matrix
         boost_matrix = self._lorentz_boost_matrix(velocity, gamma)
 
+        # Check if vector is covariant or contravariant
+        is_covariant = self.indices[0][0]  # True for covariant, False for contravariant
+
+        # Apply correct transformation based on vector type
+        if is_covariant:
+            # Covariant vectors transform with inverse-transpose: u'_μ = (Λ^-1)_μ^ν u_ν = Λ_ν^μ u_ν
+            # This preserves the duality relationship: if u_μ = η_μν u^ν, then u'_μ = η_μν u'^ν
+            transform_matrix = np.linalg.inv(boost_matrix)
+        else:
+            # Contravariant vectors transform with standard matrix: u'^μ = Λ^μ_ν u^ν
+            transform_matrix = boost_matrix
+
         # Apply transformation
         if isinstance(self.components, np.ndarray):
-            boosted_components = np.dot(boost_matrix, self.components)
+            boosted_components = np.dot(transform_matrix, self.components)
         else:
-            boost_matrix_sp = sp.Matrix(boost_matrix)
-            boosted_components = boost_matrix_sp * self.components
+            transform_matrix_sp = sp.Matrix(transform_matrix)
+            boosted_components = transform_matrix_sp * self.components
 
         return FourVector(boosted_components, self.indices[0][0], self.metric)
 

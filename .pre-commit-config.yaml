@@ -34,7 +34,7 @@ repos:
           - scipy
           # Note: sympy has its own type annotations, but not complete
         args: [--config-file=pyproject.toml]
-        exclude: ^tests/
+        exclude: ^israel_stewart/tests/
         # Only run on modified files for speed
         stages: [pre-commit]
 
@@ -118,7 +118,7 @@ repos:
       - id: forbid-ascii-control-chars
         name: forbid ASCII control characters (except TAB/LF)
         description: Fail if files contain ASCII control chars (0x00-0x1F,0x7F) except TAB and LF
-        entry: python tools/check_ascii_controls.py
+        entry: uv run python tools/check_ascii_controls.py
         language: system
         pass_filenames: true
         types: [text]
@@ -126,7 +126,7 @@ repos:
       - id: forbid-unicode-replacement-char
         name: forbid Unicode replacement character (U+FFFD) and non-UTF-8
         description: Fail if files contain U+FFFD or are not valid UTF-8
-        entry: python tools/check_replacement_chars.py
+        entry: uv run python tools/check_replacement_chars.py
         language: system
         pass_filenames: true
         types: [text]

@@ -7,7 +7,7 @@ discretization utilities for relativistic hydrodynamics calculations.
 
 # Forward reference for metrics
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 
@@ -122,6 +122,8 @@ class SpacetimeGrid:
             return ["t", "rho", "phi", "z"]
         elif self.coordinate_system == "milne":
             return ["tau", "eta", "x", "y"]
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
     def meshgrid(self, indexing: str = "ij") -> tuple[np.ndarray, ...]:
         """
@@ -134,7 +136,7 @@ class SpacetimeGrid:
             Tuple of 4D coordinate arrays
         """
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
-        return np.meshgrid(*coord_arrays, indexing=indexing)
+        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[arg-type]
 
     def coordinate_at_index(self, indices: tuple[int, int, int, int]) -> np.ndarray:
         """
@@ -172,7 +174,7 @@ class SpacetimeGrid:
             idx = np.argmin(np.abs(coord_array - coord_val))
             indices.append(idx)
 
-        return tuple(indices)
+        return cast(tuple[int, int, int, int], tuple(indices))
 
     @monitor_performance("grid_gradient")
     def gradient(self, field: np.ndarray, axis: int) -> np.ndarray:
@@ -192,7 +194,7 @@ class SpacetimeGrid:
         coord_name = self.coordinate_names[axis]
         spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
 
-        return np.gradient(field, spacing, axis=axis)
+        return np.gradient(field, spacing, axis=axis)  # type: ignore[no-any-return]
 
     def divergence(self, vector_field: np.ndarray) -> np.ndarray:
         """
@@ -265,7 +267,7 @@ class SpacetimeGrid:
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
         interpolator = RegularGridInterpolator(coord_arrays, field, method=method)
 
-        return interpolator(coords)
+        return float(interpolator(coords))
 
     def apply_boundary_conditions(
         self, field: np.ndarray, boundary_conditions: dict[str, str]
@@ -342,7 +344,7 @@ class SpacetimeGrid:
         else:
             # General coordinate system with metric
             metric_determinant = self.metric.determinant
-            return np.sqrt(-metric_determinant)
+            return np.sqrt(-metric_determinant)  # type: ignore[no-any-return]
 
     def coordinate_transformation_jacobian(self, target_system: str) -> np.ndarray:
         """
@@ -410,7 +412,7 @@ class AdaptiveMeshRefinement:
         self.refined_regions: list[dict[str, Any]] = []
         self.refinement_criteria: list[Callable] = []
 
-    def add_refinement_criterion(self, criterion: Callable[[np.ndarray], np.ndarray]):
+    def add_refinement_criterion(self, criterion: Callable[[np.ndarray], np.ndarray]) -> None:
         """
         Add refinement criterion function.
 

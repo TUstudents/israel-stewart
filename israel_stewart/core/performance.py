@@ -22,14 +22,14 @@ class PerformanceMonitor:
     identify bottlenecks in relativistic hydrodynamics calculations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize performance monitoring."""
         self.operation_counts: dict[str, int] = {}
-        self.timing_data: dict[str, list] = {}
-        self.memory_usage: dict[str, list] = {}
+        self.timing_data: dict[str, list[float]] = {}
+        self.memory_usage: dict[str, list[float]] = {}
         self.warnings_issued: dict[str, bool] = {}
 
-    def time_operation(self, operation_name: str):
+    def time_operation(self, operation_name: str) -> Callable[[Callable], Callable]:
         """
         Decorator to time tensor operations.
 
@@ -42,7 +42,7 @@ class PerformanceMonitor:
 
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
                 start_time = time.perf_counter()
                 result = func(*args, **kwargs)
                 end_time = time.perf_counter()
@@ -93,7 +93,7 @@ class PerformanceMonitor:
         Returns:
             Dictionary with performance statistics
         """
-        report = {
+        report: dict[str, Any] = {
             "operation_counts": self.operation_counts.copy(),
             "timing_statistics": {},
             "recommendations": [],
@@ -156,7 +156,7 @@ def get_performance_monitor() -> PerformanceMonitor:
     return _global_monitor
 
 
-def monitor_performance(operation_name: str):
+def monitor_performance(operation_name: str) -> Callable[[Callable], Callable]:
     """
     Decorator for monitoring performance of tensor operations.
 
@@ -185,7 +185,7 @@ def reset_performance_stats() -> None:
 
 
 # Optimization utilities
-def suggest_einsum_optimization(einsum_string: str, *tensor_shapes) -> str | None:
+def suggest_einsum_optimization(einsum_string: str, *tensor_shapes: tuple[int, ...]) -> str | None:
     """
     Suggest optimized Einstein summation path.
 

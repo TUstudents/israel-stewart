@@ -10,7 +10,7 @@ and heat flux contributions according to the Israel-Stewart formalism.
 """
 
 import warnings
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -23,7 +23,8 @@ from ..core.tensor_utils import optimized_einsum
 
 # Forward references
 if TYPE_CHECKING:
-    from .coefficients import TransportCoefficients
+    # from .coefficients import TransportCoefficients  # TODO: Implement this class
+    pass
 
 
 class ConservationLaws:
@@ -37,7 +38,7 @@ class ConservationLaws:
     def __init__(
         self,
         fields: ISFieldConfiguration,
-        coefficients: Optional["TransportCoefficients"] = None,
+        coefficients: Any = None,  # TODO: Replace with TransportCoefficients
     ):
         """
         Initialize conservation laws.
@@ -93,7 +94,7 @@ class ConservationLaws:
         # Combine all contributions
         T_total = T_perfect + T_pressure + T_shear + T_heat
 
-        return T_total
+        return T_total  # type: ignore[no-any-return]
 
     @monitor_performance("divergence_T")
     def divergence_T(self) -> np.ndarray:
@@ -114,7 +115,7 @@ class ConservationLaws:
 
         # For each component ν of the conservation equation
         for nu in range(4):
-            div_component = 0.0
+            div_component = np.zeros_like(T[..., 0, 0])
 
             # Sum over contracted index μ: ∂_μ T^μν
             for mu in range(4):
@@ -193,7 +194,7 @@ class ConservationLaws:
         else:
             # General metric
             metric_components = self.fields.grid.metric.inverse
-            g_inv = np.broadcast_to(metric_components, (*grid_shape, 4, 4)).copy()
+            g_inv = np.broadcast_to(metric_components, (*grid_shape, 4, 4)).copy()  # type: ignore[assignment]
 
         # Four-velocity outer product: u^μu^ν
         u_outer = optimized_einsum("...i,...j->...ij", u, u)
@@ -201,7 +202,7 @@ class ConservationLaws:
         # Spatial projector: Δ^μν = g^μν + u^μu^ν (note sign convention)
         Delta = g_inv + u_outer
 
-        return Delta
+        return Delta  # type: ignore[no-any-return]
 
     def _get_coordinate_arrays(self) -> list:
         """
@@ -247,7 +248,7 @@ class ConservationLaws:
         # np.gradient returns derivatives w.r.t. each axis
         gradients = np.gradient(field, *coords)
 
-        return gradients[direction]
+        return gradients[direction]  # type: ignore[no-any-return]
 
     def _covariant_div(self, tensor_component: np.ndarray, index: int) -> np.ndarray:
         """
@@ -294,7 +295,7 @@ class ConservationLaws:
 
         # Compute divergence ∂_μ N^μ
         coords = self._get_coordinate_arrays()
-        div_N = 0.0
+        div_N = np.zeros_like(N_mu[..., 0])
 
         for mu in range(4):
             partial = self._partial_derivative(N_mu[..., mu], mu, coords)

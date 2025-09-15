@@ -211,7 +211,7 @@ def validate_einsum_string(einsum_str: str, rank1: int, rank2: int) -> None:
         )
 
 
-def optimized_einsum(einsum_str: str, *tensors) -> np.ndarray | sp.Matrix:
+def optimized_einsum(einsum_str: str, *tensors: np.ndarray | sp.Matrix) -> np.ndarray | sp.Matrix:
     """
     Perform optimized Einstein summation.
 

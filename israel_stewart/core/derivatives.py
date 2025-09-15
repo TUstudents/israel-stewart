@@ -281,7 +281,7 @@ class CovariantDerivative:
             coordinate = coordinates[index]
 
         # Use numpy gradient along specified axis
-        return np.gradient(tensor_components, coordinate, axis=None)
+        return np.gradient(tensor_components, coordinate, axis=None)  # type: ignore[no-any-return]
 
     def _contract_christoffel(
         self,
@@ -324,7 +324,7 @@ class CovariantDerivative:
                 tensor_slice = np.take(tensor_components, lam, axis=tensor_index)
 
                 # Add Γ^α_μλ T^{...λ...} to result^{...α...}
-                result_slice_indices = [slice(None)] * tensor_rank
+                result_slice_indices: list[int | slice] = [slice(None)] * tensor_rank
                 result_slice_indices[tensor_index] = alpha
                 result[tuple(result_slice_indices)] += christoffel_coeff * tensor_slice
 
@@ -374,7 +374,7 @@ class CovariantDerivative:
                 tensor_slice = np.take(tensor_components, lam, axis=tensor_index)
 
                 # Add -Γ^λ_{μα} T_{...λ...} to result_{...α...}
-                result_slice_indices = [slice(None)] * tensor_rank
+                result_slice_indices: list[int | slice] = [slice(None)] * tensor_rank
                 result_slice_indices[tensor_index] = alpha
                 result[tuple(result_slice_indices)] -= christoffel_coeff * tensor_slice
 

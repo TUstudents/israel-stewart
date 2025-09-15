@@ -215,7 +215,7 @@ class StressEnergyTensor(TensorField):
 
         return divergence
 
-    def trace(self) -> float | sp.Expr:
+    def trace(self, indices_pair: tuple[int, int] | None = None) -> float | sp.Expr:
         """
         Compute trace T = g_μν T^μν.
 
@@ -270,7 +270,7 @@ class StressEnergyTensor(TensorField):
         if isinstance(eigenvals, np.ndarray):
             # For dominant energy condition, need detailed analysis of eigenvalue structure
             # This is a simplified implementation
-            return np.all(eigenvals >= -tolerance)
+            return bool(np.all(eigenvals >= -tolerance))
         else:
             # SymPy case - symbolic check
             return all(eigenval >= -tolerance for eigenval in eigenvals if eigenval.is_real)
@@ -560,6 +560,6 @@ class ViscousStressTensor(TensorField):
         if eigenvals is not None:
             # Check that viscous effects don't lead to superluminal speeds
             max_eigenval = np.max(np.real(eigenvals))
-            return max_eigenval <= sound_speed
+            return bool(max_eigenval <= sound_speed)
 
         return True  # Conservative assumption for symbolic case

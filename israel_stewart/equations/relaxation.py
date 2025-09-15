@@ -382,7 +382,7 @@ class ISRelaxationEquations:
     def _implicit_evolution(self, fields: ISFieldConfiguration, dt: float) -> None:
         """Implicit solver for stiff relaxation times."""
 
-        def residual(x_new):
+        def residual(x_new: np.ndarray) -> np.ndarray:
             # Create temporary field configuration
             fields_new = ISFieldConfiguration(fields.grid)
 
@@ -401,7 +401,7 @@ class ISRelaxationEquations:
 
             # Implicit Euler residual: x_new - x_old - dt * F(x_new) = 0
             x_old = fields.to_dissipative_vector()
-            return x_new - x_old - dt * rhs
+            return x_new - x_old - dt * rhs  # type: ignore[no-any-return]
 
         # Initial guess
         x_initial = fields.to_dissipative_vector()
@@ -425,7 +425,7 @@ class ISRelaxationEquations:
         tau_q = self.coeffs.heat_relaxation_time or 1.0
 
         # Build diagonal relaxation matrix (simplified)
-        grid_size = np.prod(fields.grid.shape)
+        grid_size = int(np.prod(fields.grid.shape))
 
         # Relaxation eigenvalues
         lambda_pi = 1.0 / tau_pi

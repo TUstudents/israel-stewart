@@ -5,6 +5,8 @@ This module provides fundamental constants used in relativistic physics
 and Israel-Stewart hydrodynamics, with consistent unit systems.
 """
 
+from typing import cast
+
 import numpy as np
 
 # Speed of light (set to 1 in natural units)
@@ -104,7 +106,7 @@ def get_physical_constant(name: str, unit_system: str = "natural") -> float:
     if name not in constants:
         raise ValueError(f"Unknown constant: {name}")
 
-    return constants[name]
+    return cast(float, constants[name])
 
 
 def validate_relativistic_velocity(
@@ -141,7 +143,7 @@ def compute_lorentz_factor(velocity: np.ndarray) -> float:
     """
     validate_relativistic_velocity(velocity)
     v_squared = np.dot(velocity, velocity)
-    return 1.0 / np.sqrt(1.0 - v_squared / C_LIGHT**2)
+    return float(1.0 / np.sqrt(1.0 - v_squared / C_LIGHT**2))
 
 
 def validate_temperature(temperature: float) -> bool:
@@ -188,22 +190,21 @@ def validate_transport_coefficient(coefficient: float, name: str) -> bool:
 # Common unit conversions (from natural units)
 def natural_to_si_energy(energy_natural: float) -> float:
     """Convert energy from natural units to SI (Joules)."""
-    return energy_natural * SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"] / 1.0  # c
+    return energy_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / 1.0  # c
 
 
 def natural_to_si_temperature(temp_natural: float) -> float:
     """Convert temperature from natural units to SI (Kelvin)."""
-    return temp_natural / SI_CONSTANTS["k_B"]
-
+    return temp_natural / cast(float, SI_CONSTANTS["k_B"])
 
 def natural_to_si_time(time_natural: float) -> float:
     """Convert time from natural units to SI (seconds)."""
-    return time_natural * SI_CONSTANTS["hbar"] / natural_to_si_energy(1.0)
+    return time_natural * cast(float, SI_CONSTANTS["hbar"]) / natural_to_si_energy(1.0)
 
 
 def natural_to_si_length(length_natural: float) -> float:
     """Convert length from natural units to SI (meters)."""
-    return length_natural * SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"] / natural_to_si_energy(1.0)
+    return length_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / natural_to_si_energy(1.0)
 
 
 # Dimensionless combinations for Israel-Stewart hydrodynamics

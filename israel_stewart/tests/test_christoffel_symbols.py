@@ -33,7 +33,7 @@ from israel_stewart.core.metrics import (
 class TestMinkowskiChristoffel:
     """Test Christoffel symbols for Minkowski metric."""
 
-    def test_minkowski_christoffel_zeros(self):
+    def test_minkowski_christoffel_zeros(self) -> None:
         """Minkowski metric should have zero Christoffel symbols."""
         metric = MinkowskiMetric()
         christoffel = metric.christoffel_symbols
@@ -41,7 +41,7 @@ class TestMinkowskiChristoffel:
         assert christoffel.shape == (4, 4, 4)
         assert np.allclose(christoffel, 0.0)
 
-    def test_minkowski_different_signatures(self):
+    def test_minkowski_different_signatures(self) -> None:
         """Test both metric signatures give zero Christoffel symbols."""
         metric_plus = MinkowskiMetric(signature="mostly_plus")
         metric_minus = MinkowskiMetric(signature="mostly_minus")
@@ -52,7 +52,7 @@ class TestMinkowskiChristoffel:
         assert np.allclose(christoffel_plus, 0.0)
         assert np.allclose(christoffel_minus, 0.0)
 
-    def test_minkowski_numerical_christoffel(self):
+    def test_minkowski_numerical_christoffel(self) -> None:
         """Test numerical Christoffel computation with coordinate arrays."""
         metric = MinkowskiMetric()
 
@@ -67,7 +67,7 @@ class TestMinkowskiChristoffel:
         assert christoffel_numerical.shape == (4, 4, 4)
         assert np.allclose(christoffel_numerical, 0.0)
 
-    def test_minkowski_grid_integration(self):
+    def test_minkowski_grid_integration(self) -> None:
         """Test Christoffel computation with SpacetimeGrid."""
         metric = MinkowskiMetric()
         grid = create_cartesian_grid((0, 1), 2.0, (5, 5, 5, 5))
@@ -80,7 +80,7 @@ class TestMinkowskiChristoffel:
 class TestSpecializedMetrics:
     """Test specialized metric implementations."""
 
-    def test_milne_metric_properties(self):
+    def test_milne_metric_properties(self) -> None:
         """Test Milne metric basic properties."""
         metric = MilneMetric()
 
@@ -91,7 +91,7 @@ class TestSpecializedMetrics:
         components = metric.components
         assert components.shape == (4, 4)
 
-    def test_bjorken_metric_inheritance(self):
+    def test_bjorken_metric_inheritance(self) -> None:
         """Test BJorkenMetric inherits from MilneMetric correctly."""
         bjorken = BJorkenMetric()
         milne = MilneMetric()
@@ -100,7 +100,7 @@ class TestSpecializedMetrics:
         assert bjorken.signature == milne.signature
         assert isinstance(bjorken, MilneMetric)
 
-    def test_flrw_metric_properties(self):
+    def test_flrw_metric_properties(self) -> None:
         """Test FLRW metric basic properties."""
         metric = FLRWMetric()
 
@@ -108,7 +108,7 @@ class TestSpecializedMetrics:
         assert metric.signature == (1, -1, -1, -1)
         assert not metric.is_constant()
 
-    def test_schwarzschild_metric_properties(self):
+    def test_schwarzschild_metric_properties(self) -> None:
         """Test Schwarzschild metric basic properties."""
         metric = SchwarzschildMetric()
 
@@ -116,7 +116,7 @@ class TestSpecializedMetrics:
         assert metric.signature == (1, -1, -1, -1)
         assert not metric.is_constant()
 
-    def test_flrw_curvature_parameters(self):
+    def test_flrw_curvature_parameters(self) -> None:
         """Test FLRW metric with different curvature parameters."""
         # Flat universe
         flat_flrw = FLRWMetric(curvature_param=0)
@@ -130,7 +130,7 @@ class TestSpecializedMetrics:
         open_flrw = FLRWMetric(curvature_param=-1)
         assert open_flrw.k == -1
 
-    def test_schwarzschild_radius_parameter(self):
+    def test_schwarzschild_radius_parameter(self) -> None:
         """Test Schwarzschild metric with different radii."""
         metric1 = SchwarzschildMetric(schwarzschild_radius=1.0)
         metric2 = SchwarzschildMetric(schwarzschild_radius=2.0)
@@ -142,7 +142,7 @@ class TestSpecializedMetrics:
 class TestNumericalChristoffel:
     """Test numerical Christoffel symbol computation."""
 
-    def test_constant_metric_derivatives(self):
+    def test_constant_metric_derivatives(self) -> None:
         """Test that constant metrics have zero derivatives."""
         # Create a constant non-Minkowski metric
         components = np.array([[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
@@ -157,7 +157,7 @@ class TestNumericalChristoffel:
         christoffel = metric.christoffel_symbols_numerical(coords)
         assert np.allclose(christoffel, 0.0)
 
-    def test_coordinate_validation(self):
+    def test_coordinate_validation(self) -> None:
         """Test coordinate array validation."""
         metric = MinkowskiMetric()
 
@@ -168,7 +168,7 @@ class TestNumericalChristoffel:
         with pytest.raises(CoordinateError):
             metric.christoffel_symbols_numerical([np.linspace(0, 1, 10) for _ in range(5)])
 
-    def test_warning_for_no_coordinates(self):
+    def test_warning_for_no_coordinates(self) -> None:
         """Test warning when no coordinates provided for numerical computation."""
         # Create a coordinate-dependent metric (symbolic)
         t = sp.Symbol("t")
@@ -185,7 +185,7 @@ class TestNumericalChristoffel:
             assert len(coord_warnings) == 1
             assert "coordinate arrays" in str(coord_warnings[0].message)
 
-    def test_different_grid_shapes(self):
+    def test_different_grid_shapes(self) -> None:
         """Test numerical computation with different grid shapes."""
         metric = MinkowskiMetric()
 
@@ -208,7 +208,7 @@ class TestNumericalChristoffel:
 class TestChristoffelContractions:
     """Test Christoffel symbol contractions in covariant derivatives."""
 
-    def test_vector_contraction(self):
+    def test_vector_contraction(self) -> None:
         """Test Christoffel contraction for vectors."""
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
@@ -231,7 +231,7 @@ class TestChristoffelContractions:
         assert result_cov.shape == vector.shape
         assert np.allclose(result_cov, 0.0)  # Zero for Minkowski
 
-    def test_rank2_tensor_contraction(self):
+    def test_rank2_tensor_contraction(self) -> None:
         """Test Christoffel contraction for rank-2 tensors."""
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
@@ -254,7 +254,7 @@ class TestChristoffelContractions:
         assert result.shape == tensor.shape
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
-    def test_higher_rank_tensor_contraction(self):
+    def test_higher_rank_tensor_contraction(self) -> None:
         """Test Christoffel contraction for higher-rank tensors."""
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
@@ -276,7 +276,7 @@ class TestChristoffelContractions:
         assert result.shape == tensor4.shape
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
-    def test_scalar_contraction(self):
+    def test_scalar_contraction(self) -> None:
         """Test Christoffel contraction for scalars (should return zero)."""
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
@@ -293,7 +293,7 @@ class TestChristoffelContractions:
 class TestSymbolicChristoffel:
     """Test symbolic Christoffel symbol computation."""
 
-    def test_minkowski_symbolic_christoffel(self):
+    def test_minkowski_symbolic_christoffel(self) -> None:
         """Test symbolic computation for Minkowski metric."""
         # Create symbolic Minkowski metric
         g = sp.Matrix([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
@@ -306,7 +306,7 @@ class TestSymbolicChristoffel:
         )
         assert is_zero
 
-    def test_coordinate_dependent_metric(self):
+    def test_coordinate_dependent_metric(self) -> None:
         """Test symbolic computation for coordinate-dependent metric."""
         # Simple time-dependent metric g_00 = t^2
         t, x, y, z = sp.symbols("t x y z", real=True)
@@ -326,7 +326,7 @@ class TestSymbolicChristoffel:
 class TestMetricValidation:
     """Test metric validation and error handling."""
 
-    def test_invalid_metric_shape(self):
+    def test_invalid_metric_shape(self) -> None:
         """Test error for invalid metric tensor shape."""
         with pytest.raises(CoordinateError):
             GeneralMetric(np.ones((3, 3)))  # Wrong size
@@ -334,7 +334,7 @@ class TestMetricValidation:
         with pytest.raises(CoordinateError):
             GeneralMetric(np.ones((4, 3)))  # Non-square
 
-    def test_asymmetric_metric(self):
+    def test_asymmetric_metric(self) -> None:
         """Test error for asymmetric metric tensor."""
         asymmetric = np.array(
             [
@@ -349,7 +349,7 @@ class TestMetricValidation:
             metric = GeneralMetric(asymmetric)
             metric.validate_components()
 
-    def test_singular_metric_warning(self):
+    def test_singular_metric_warning(self) -> None:
         """Test warning for nearly singular metric."""
         # Create nearly singular metric
         epsilon = 1e-16
@@ -369,7 +369,7 @@ class TestMetricValidation:
             assert len(w) > 0
             assert any("conditioned" in str(warning.message) for warning in w)
 
-    def test_determinant_warning(self):
+    def test_determinant_warning(self) -> None:
         """Test warning for positive determinant (unusual for spacetime)."""
         positive_det = np.array(
             [
@@ -391,7 +391,7 @@ class TestMetricValidation:
 class TestPerformanceAndAccuracy:
     """Test performance and accuracy of Christoffel computations."""
 
-    def test_christoffel_caching(self):
+    def test_christoffel_caching(self) -> None:
         """Test that Christoffel symbols are properly cached."""
         metric = MinkowskiMetric()
 
@@ -404,7 +404,7 @@ class TestPerformanceAndAccuracy:
         # Should be the same object (cached)
         assert christoffel1 is christoffel2
 
-    def test_numerical_vs_symbolic_consistency(self):
+    def test_numerical_vs_symbolic_consistency(self) -> None:
         """Test consistency between numerical and symbolic computations."""
         # Use a simple symbolic metric that can be evaluated numerically
         g_symbolic = sp.Matrix([[2, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, -1]])
@@ -428,7 +428,7 @@ class TestPerformanceAndAccuracy:
         assert np.allclose(christoffel_num, 0.0)
 
     @pytest.mark.slow
-    def test_large_grid_performance(self):
+    def test_large_grid_performance(self) -> None:
         """Test performance with larger coordinate grids."""
         metric = MinkowskiMetric()
 
@@ -441,7 +441,7 @@ class TestPerformanceAndAccuracy:
         assert christoffel.shape == (4, 4, 4)
         assert np.allclose(christoffel, 0.0)
 
-    def test_memory_efficiency(self):
+    def test_memory_efficiency(self) -> None:
         """Test memory efficiency for different tensor ranks."""
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)

@@ -221,7 +221,7 @@ class FourVector(TensorField):
         """
         mag_sq = self.magnitude_squared()
         if isinstance(mag_sq, np.ndarray):
-            return np.abs(mag_sq) < tolerance
+            return bool(np.abs(mag_sq) < tolerance)
         else:
             return abs(float(mag_sq)) < tolerance
 
@@ -375,7 +375,7 @@ class FourVector(TensorField):
         components[1:4] = spatial_components
         return FourVector(components, False, metric)
 
-    def extract_three_velocity(self) -> np.ndarray:
+    def extract_three_velocity(self) -> np.ndarray | sp.Matrix:
         """
         Extract three-velocity from four-velocity.
 
@@ -443,7 +443,9 @@ class FourVector(TensorField):
 
         if isinstance(three_vel, np.ndarray):
             v_mag = np.sqrt(np.dot(three_vel, three_vel))
-        else:
+        elif isinstance(three_vel, sp.Matrix):
             v_mag = sp.sqrt(sum(three_vel[i] ** 2 for i in range(3)))
+        else:
+            raise TypeError(f"Unsupported type for three_velocity: {type(three_vel)}")
 
         return gamma * rest_mass * v_mag

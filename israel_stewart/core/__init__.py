@@ -7,7 +7,42 @@ field variables, and physical constants.
 """
 
 # Import order is important due to dependencies
-from .constants import *
+import numpy as np
+
+from .constants import (
+    BOLTZMANN_K,
+    # Physical constants
+    C_LIGHT,
+    # Numerical constants
+    CONDITION_NUMBER_WARN,
+    CONDUCTIVITY_MIN,
+    COORDINATE_SYSTEMS,
+    DEFAULT_UNITS,
+    DETERMINANT_MIN,
+    ENERGY_DENSITY_MIN,
+    # Naming conventions
+    FOUR_VECTOR_NAMES,
+    GAMMA_MAX,
+    HBAR,
+    METRIC_SIGNATURES,
+    NATURAL_UNITS,
+    SI_CONSTANTS,
+    TEMPERATURE_MIN,
+    TENSOR_NAMES,
+    # Tolerances
+    TOLERANCE_DEFAULT,
+    TOLERANCE_LOOSE,
+    TOLERANCE_STRICT,
+    # Physical limits
+    VELOCITY_MAX,
+    VISCOSITY_MIN,
+    compute_lorentz_factor,
+    # Utility functions
+    get_physical_constant,
+    validate_relativistic_velocity,
+    validate_temperature,
+    validate_transport_coefficient,
+)
 from .fields import (
     FieldValidationError,
     FluidVelocityField,
@@ -118,7 +153,7 @@ def create_minkowski_metric(signature: str = "mostly_plus") -> MinkowskiMetric:
     return MinkowskiMetric(signature=signature)
 
 
-def create_four_velocity(three_velocity: list, metric: MetricBase = None) -> FourVector:
+def create_four_velocity(three_velocity: list, metric: MetricBase | None = None) -> FourVector:
     """
     Create normalized four-velocity from three-velocity.
 
@@ -134,15 +169,15 @@ def create_four_velocity(three_velocity: list, metric: MetricBase = None) -> Fou
 
     from .fields import FluidVelocityField
 
-    velocity_field = FluidVelocityField(three_velocity=three_velocity, metric=metric)
+    velocity_field = FluidVelocityField(three_velocity=np.array(three_velocity), metric=metric)
     return velocity_field.four_velocity
 
 
 def create_perfect_fluid_state(
     energy_density: float,
     pressure: float,
-    three_velocity: list = None,
-    metric: MetricBase = None,
+    three_velocity: list | None = None,
+    metric: MetricBase | None = None,
 ) -> HydrodynamicState:
     """
     Create perfect fluid hydrodynamic state.
@@ -163,7 +198,8 @@ def create_perfect_fluid_state(
 
     # Create components
     thermo_state = ThermodynamicState(energy_density, pressure)
-    velocity_field = FluidVelocityField(three_velocity=three_velocity, metric=metric)
+    three_vel_array = np.array(three_velocity) if three_velocity is not None else None
+    velocity_field = FluidVelocityField(three_velocity=three_vel_array, metric=metric)
     transport_coeffs = TransportCoefficients(shear_viscosity=0.0)  # Perfect fluid
 
     return HydrodynamicState(thermo_state, velocity_field, transport_coeffs)
@@ -178,7 +214,7 @@ def lorentz_boost_matrix(velocity: list) -> "np.ndarray":
 
 
 def four_vector_from_components(
-    components: list, covariant: bool = False, metric: MetricBase = None
+    components: list, covariant: bool = False, metric: MetricBase | None = None
 ) -> FourVector:
     """Create four-vector from component list."""
     if metric is None:

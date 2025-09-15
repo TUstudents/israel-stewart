@@ -6,9 +6,13 @@ hydrodynamics, including thermodynamic state variables and fluid flow fields.
 """
 
 # Forward reference for metric
+import warnings
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .spacetime_grid import SpacetimeGrid
 
 from .constants import (
     C_LIGHT,
@@ -231,7 +235,7 @@ class FluidVelocityField:
     @property
     def lorentz_factor(self) -> float:
         """Lorentz factor � = u^0."""
-        return abs(self.four_velocity.time_component)
+        return float(abs(self.four_velocity.time_component))
 
     def boost_to_rest_frame(self) -> "FluidVelocityField":
         """Return velocity field in rest frame (zero three-velocity)."""
@@ -241,7 +245,7 @@ class FluidVelocityField:
     def is_at_rest(self, tolerance: float = 1e-10) -> bool:
         """Check if fluid is at rest."""
         three_vel_squared = np.dot(self.three_velocity, self.three_velocity)
-        return three_vel_squared < tolerance**2
+        return bool(three_vel_squared < tolerance**2)
 
     def __str__(self) -> str:
         v = self.three_velocity
@@ -651,12 +655,13 @@ class ISFieldConfiguration:
     @property
     def total_field_count(self) -> int:
         """Total number of field variables."""
+        grid_size = int(np.prod(self.grid.shape))
         return (
-            2 * np.prod(self.grid.shape)  # ρ, n
-            + 4 * np.prod(self.grid.shape)  # u^μ
-            + 1 * np.prod(self.grid.shape)  # Π
-            + 16 * np.prod(self.grid.shape)  # π^μν
-            + 4 * np.prod(self.grid.shape)  # q^μ
+            2 * grid_size  # ρ, n
+            + 4 * grid_size  # u^μ
+            + 1 * grid_size  # Π
+            + 16 * grid_size  # π^μν
+            + 4 * grid_size  # q^μ
         )
 
     def to_state_vector(self) -> np.ndarray:
@@ -690,7 +695,7 @@ class ISFieldConfiguration:
                 f"State vector size {len(state)} doesn't match expected {expected_size}"
             )
 
-        grid_size = np.prod(self.grid.shape)
+        grid_size = int(np.prod(self.grid.shape))
         offset = 0
 
         # Unpack energy density
@@ -745,7 +750,7 @@ class ISFieldConfiguration:
         Args:
             dissipative_state: Flattened dissipative flux vector
         """
-        grid_size = np.prod(self.grid.shape)
+        grid_size = int(np.prod(self.grid.shape))
 
         # Expected sizes for each field
         pi_size = grid_size
@@ -777,7 +782,7 @@ class ISFieldConfiguration:
     @property
     def dissipative_field_count(self) -> int:
         """Total number of dissipative field variables."""
-        grid_size = np.prod(self.grid.shape)
+        grid_size = int(np.prod(self.grid.shape))
         return (
             1 * grid_size  # Π
             + 16 * grid_size  # π^μν
@@ -836,6 +841,9 @@ class ISFieldConfiguration:
 
     def _project_shear_tensor(self) -> None:
         """Project shear tensor to be orthogonal to u^μ and traceless."""
+        if self.grid.metric is None:
+            raise ValueError("Cannot project shear tensor without metric")
+
         from .derivatives import ProjectionOperator
         from .four_vectors import FourVector
         from .tensor_utils import optimized_einsum
@@ -862,6 +870,9 @@ class ISFieldConfiguration:
 
     def _project_heat_flux(self) -> None:
         """Project heat flux to be orthogonal to u^μ."""
+        if self.grid.metric is None:
+            raise ValueError("Cannot project heat flux without metric")
+
         from .derivatives import ProjectionOperator
         from .four_vectors import FourVector
 
@@ -878,17 +889,17 @@ class ISFieldConfiguration:
     def _enforce_thermodynamic_constraints(self) -> None:
         """Enforce thermodynamic positivity and consistency constraints."""
         # Energy density must be positive
-        self.rho = np.maximum(self.rho, 1e-15)
+        self.rho = np.maximum(self.rho, 1e-15).reshape(self.rho.shape)
 
         # Particle density must be non-negative
-        self.n = np.maximum(self.n, 0.0)
+        self.n = np.maximum(self.n, 0.0).reshape(self.n.shape)
 
         # Pressure positivity (can be relaxed for exotic matter)
-        self.pressure = np.maximum(self.pressure, -0.1 * self.rho)  # Allow some negativity
+        self.pressure = np.maximum(self.pressure, -0.1 * self.rho).reshape(self.pressure.shape)
 
         # Temperature must be positive
         if hasattr(self, "temperature"):
-            self.temperature = np.maximum(self.temperature, 1e-10)
+            self.temperature = np.maximum(self.temperature, 1e-10).reshape(self.temperature.shape)
 
         self._thermodynamic_consistent = True
 
@@ -900,7 +911,7 @@ class ISFieldConfiguration:
             Stress-energy tensor at each grid point with shape (*grid.shape, 4, 4)
         """
         if not self._constraints_enforced:
-            warnings.warn("Computing stress-energy tensor without enforcing constraints")
+            warnings.warn("Computing stress-energy tensor without enforcing constraints", stacklevel=2)
 
         T_total = np.zeros((*self.grid.shape, 4, 4))
 
@@ -924,7 +935,7 @@ class ISFieldConfiguration:
             # Perfect fluid + viscous corrections
             T_total[indices] = rho_h * u_outer + p * g_inv + self.pi_munu[indices]
 
-        self._total_stress_tensor = T_total
+        self._total_stress_tensor = T_total  # type: ignore[assignment]
         return T_total
 
     def compute_conserved_charges(self) -> dict[str, np.ndarray]:
@@ -1006,8 +1017,8 @@ class ISFieldConfiguration:
         )
 
         # Check thermodynamic positivity
-        validation["energy_density_positive"] = np.all(self.rho > 0)
-        validation["particle_density_non_negative"] = np.all(self.n >= 0)
+        validation["energy_density_positive"] = bool(np.all(self.rho > 0))
+        validation["particle_density_non_negative"] = bool(np.all(self.n >= 0))
 
         validation["overall_valid"] = all(validation.values())
 
@@ -1046,8 +1057,8 @@ class ISFieldConfiguration:
         """Save field configuration to HDF5 file."""
         try:
             import h5py
-        except ImportError:
-            raise ImportError("h5py required for HDF5 save functionality")
+        except ImportError as e:
+            raise ImportError("h5py required for HDF5 save functionality") from e
 
         with h5py.File(filename, "w") as f:
             # Save grid information
@@ -1079,8 +1090,8 @@ class ISFieldConfiguration:
         """Load field configuration from HDF5 file."""
         try:
             import h5py
-        except ImportError:
-            raise ImportError("h5py required for HDF5 load functionality")
+        except ImportError as e:
+            raise ImportError("h5py required for HDF5 load functionality") from e
 
         config = cls(grid)
 

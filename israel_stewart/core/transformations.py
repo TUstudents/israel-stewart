@@ -6,7 +6,7 @@ coordinate transformations for tensor fields in curved spacetime.
 """
 
 # Forward reference for metrics
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import numpy as np
 import sympy as sp
@@ -282,7 +282,7 @@ class LorentzTransformation:
         return self.boost_matrix(three_velocity)
 
     @staticmethod
-    def thomas_wigner_rotation(velocity1: np.ndarray, velocity2: np.ndarray) -> np.ndarray:
+    def thomas_wigner_rotation(velocity1: np.ndarray | list[float], velocity2: np.ndarray | list[float]) -> np.ndarray:
         """
         Compute Thomas-Wigner rotation for successive boosts.
 
@@ -296,9 +296,10 @@ class LorentzTransformation:
         Returns:
             4x4 rotation matrix for Thomas-Wigner rotation
         """
-        if isinstance(velocity1, list):
+        # Convert to numpy arrays if needed (type narrowing)
+        if not isinstance(velocity1, np.ndarray):
             velocity1 = np.array(velocity1)
-        if isinstance(velocity2, list):
+        if not isinstance(velocity2, np.ndarray):
             velocity2 = np.array(velocity2)
 
         # Simplified Thomas-Wigner rotation calculation
@@ -317,7 +318,7 @@ class LorentzTransformation:
 
             if angle > 1e-12:
                 axis = cross_product / np.linalg.norm(cross_product)
-                return LorentzTransformation.rotation_matrix(axis, angle)
+                return LorentzTransformation.rotation_matrix(axis, float(angle))
 
         # For larger velocities, return identity (full calculation is complex)
         return np.eye(4)
@@ -371,11 +372,11 @@ class LorentzTransformation:
         """
         if active:
             # Active transformation: T'^μν = Λ^μ_α Λ^ν_β T^αβ
-            return self.transform_tensor(tensor, transformation)
+            return self.transform_tensor(tensor, transformation)  # type: ignore[no-any-return]
         else:
             # Passive transformation: T'^μν = (Λ^-1)^μ_α (Λ^-1)^ν_β T^αβ
             inverse_transform = self.inverse_transformation(transformation)
-            return self.transform_tensor(tensor, inverse_transform)
+            return self.transform_tensor(tensor, inverse_transform)  # type: ignore[no-any-return]
 
 
 class CoordinateTransformation:
@@ -529,7 +530,7 @@ class CoordinateTransformation:
 
     def numerical_jacobian(
         self,
-        transformation_func: callable,
+        transformation_func: Callable[[np.ndarray], np.ndarray],
         coordinates: np.ndarray,
         epsilon: float = 1e-8,
     ) -> np.ndarray:
@@ -555,8 +556,8 @@ class CoordinateTransformation:
             coords_minus[nu] -= epsilon
 
             # Compute derivatives
-            transform_plus = transformation_func(coords_plus)
-            transform_minus = transformation_func(coords_minus)
+            transform_plus: np.ndarray = transformation_func(coords_plus)
+            transform_minus: np.ndarray = transformation_func(coords_minus)
 
             jacobian[:, nu] = (transform_plus - transform_minus) / (2 * epsilon)
 

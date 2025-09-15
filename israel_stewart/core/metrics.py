@@ -9,6 +9,7 @@ Metrics handle index raising/lowering and Christoffel symbol computation.
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
+from typing import Any, cast
 
 import numpy as np
 import sympy as sp
@@ -110,13 +111,13 @@ class MetricBase(ABC):
                 return inv_metric
 
             except np.linalg.LinAlgError as e:
-                raise SingularMetricError(f"Cannot invert metric tensor: {e}")
+                raise SingularMetricError(f"Cannot invert metric tensor: {e}") from e
 
         elif isinstance(self.components, sp.Matrix):
             try:
                 return self.components.inv()
             except sp.NonInvertibleMatrixError as e:
-                raise SingularMetricError(f"Cannot invert symbolic metric tensor: {e}")
+                raise SingularMetricError(f"Cannot invert symbolic metric tensor: {e}") from e
         else:
             raise TypeError(f"Unsupported metric component type: {type(self.components)}")
 
@@ -169,7 +170,7 @@ class MetricBase(ABC):
             raise CoordinateError(f"Need exactly 4 coordinate arrays, got {len(coordinates)}")
         return self._compute_christoffel_numerical(coordinates)
 
-    def christoffel_symbols_from_grid(self, grid) -> np.ndarray:
+    def christoffel_symbols_from_grid(self, grid: Any) -> np.ndarray:
         """Compute numerical Christoffel symbols using SpacetimeGrid.
 
         Args:
@@ -557,8 +558,8 @@ class MetricBase(ABC):
         try:
             pass
             # Basic inversion check passed
-        except SingularMetricError:
-            raise MetricError("Metric tensor is not invertible")
+        except SingularMetricError as e:
+            raise MetricError("Metric tensor is not invertible") from e
 
         return True
 
@@ -604,7 +605,7 @@ class MinkowskiMetric(MetricBase):
     @property
     def signature(self) -> tuple[int, int, int, int]:
         """Return metric signature."""
-        return tuple(int(np.sign(d)) for d in self._diag)
+        return cast(tuple[int, int, int, int], tuple(int(np.sign(d)) for d in self._diag))
 
     @cached_property
     def inverse(self) -> np.ndarray:
@@ -665,7 +666,7 @@ class MinkowskiMetric(MetricBase):
             True if vector is null
         """
         norm_squared = self.inner_product(vector, vector)
-        return abs(norm_squared) < tolerance
+        return bool(abs(norm_squared) < tolerance)
 
 
 class GeneralMetric(MetricBase):
@@ -760,7 +761,7 @@ class BJorkenMetric(MilneMetric):
     commonly used in relativistic heavy-ion collisions.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Bjorken flow metric."""
         super().__init__(["tau", "eta", "x", "y"])
 

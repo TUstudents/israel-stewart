@@ -26,7 +26,7 @@ from israel_stewart.equations import ConservationLaws
 class TestConservationLawsInitialization:
     """Test ConservationLaws initialization and setup."""
 
-    def test_init_with_minkowski_metric(self):
+    def test_init_with_minkowski_metric(self) -> None:
         """Test initialization with Minkowski metric."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -37,7 +37,7 @@ class TestConservationLawsInitialization:
         assert conservation.coeffs is None
         assert conservation.covariant_derivative is not None
 
-    def test_init_with_transport_coefficients(self):
+    def test_init_with_transport_coefficients(self) -> None:
         """Test initialization with transport coefficients."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -48,7 +48,7 @@ class TestConservationLawsInitialization:
 
         assert conservation.coeffs is mock_coeffs
 
-    def test_init_with_general_metric(self):
+    def test_init_with_general_metric(self) -> None:
         """Test initialization with general metric."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         metric = MinkowskiMetric()
@@ -64,7 +64,7 @@ class TestStressEnergyTensor:
     """Test stress-energy tensor construction."""
 
     @pytest.fixture
-    def simple_fields(self):
+    def simple_fields(self) -> ISFieldConfiguration:
         """Create simple field configuration for testing."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -82,7 +82,7 @@ class TestStressEnergyTensor:
 
         return fields
 
-    def test_perfect_fluid_contribution(self, simple_fields):
+    def test_perfect_fluid_contribution(self, simple_fields: ISFieldConfiguration) -> None:
         """Test perfect fluid part of stress-energy tensor."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
@@ -98,7 +98,7 @@ class TestStressEnergyTensor:
         expected_T00 = 1.0  # Just energy density ρ
         np.testing.assert_allclose(T[..., 0, 0], expected_T00, rtol=1e-12)
 
-    def test_pressure_contribution(self, simple_fields):
+    def test_pressure_contribution(self, simple_fields: ISFieldConfiguration) -> None:
         """Test pressure and bulk viscosity contribution."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
@@ -110,7 +110,7 @@ class TestStressEnergyTensor:
         expected_T11 = 0.4 + 0.0  # (p+Π) + π^11
         np.testing.assert_allclose(T[..., 1, 1], expected_T11, rtol=1e-12)
 
-    def test_shear_stress_contribution(self, simple_fields):
+    def test_shear_stress_contribution(self, simple_fields: ISFieldConfiguration) -> None:
         """Test shear stress contribution."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
@@ -121,7 +121,7 @@ class TestStressEnergyTensor:
         np.testing.assert_allclose(T[..., 1, 2], expected_T12, rtol=1e-12)
         np.testing.assert_allclose(T[..., 2, 1], expected_T12, rtol=1e-12)
 
-    def test_heat_flux_contribution(self, simple_fields):
+    def test_heat_flux_contribution(self, simple_fields: ISFieldConfiguration) -> None:
         """Test heat flux contribution."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
@@ -133,7 +133,7 @@ class TestStressEnergyTensor:
         expected_T01 = 0.0 + 0.02  # π^01 + q^1
         np.testing.assert_allclose(T[..., 0, 1], expected_T01, rtol=1e-12)
 
-    def test_tensor_symmetry(self, simple_fields):
+    def test_tensor_symmetry(self, simple_fields: ISFieldConfiguration) -> None:
         """Test that stress-energy tensor is symmetric."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
@@ -147,7 +147,7 @@ class TestStressEnergyTensor:
 class TestSpatialProjector:
     """Test spatial projector computation."""
 
-    def test_minkowski_projector(self):
+    def test_minkowski_projector(self) -> None:
         """Test spatial projector in Minkowski spacetime."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -168,7 +168,7 @@ class TestSpatialProjector:
         np.testing.assert_allclose(Delta[..., 1, 1], 1.0, rtol=1e-12)
         np.testing.assert_allclose(Delta[..., 0, 1], 0.0, atol=1e-12)
 
-    def test_projector_with_moving_fluid(self):
+    def test_projector_with_moving_fluid(self) -> None:
         """Test spatial projector with moving fluid."""
         grid = create_cartesian_grid((0, 1), 2.0, (2, 2, 2, 2))
         fields = ISFieldConfiguration(grid)
@@ -197,7 +197,7 @@ class TestDivergenceComputation:
     """Test covariant divergence computation."""
 
     @pytest.fixture
-    def uniform_fields(self):
+    def uniform_fields(self) -> ISFieldConfiguration:
         """Create uniform field configuration."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -210,7 +210,7 @@ class TestDivergenceComputation:
         return fields
 
     @pytest.fixture
-    def gradient_fields(self):
+    def gradient_fields(self) -> ISFieldConfiguration:
         """Create field configuration with gradients."""
         grid = create_cartesian_grid((0, 2), 4.0, (6, 6, 6, 6))
         fields = ISFieldConfiguration(grid)
@@ -219,13 +219,13 @@ class TestDivergenceComputation:
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
 
         # Add spatial gradients
-        fields.rho = 1.0 + 0.1 * x_mesh
-        fields.pressure = 0.3 + 0.05 * y_mesh
+        fields.rho[:] = (1.0 + 0.1 * x_mesh).reshape(fields.rho.shape)
+        fields.pressure[:] = (0.3 + 0.05 * y_mesh).reshape(fields.pressure.shape)
         fields.u_mu[..., 0] = 1.0
 
         return fields
 
-    def test_divergence_uniform_fields(self, uniform_fields):
+    def test_divergence_uniform_fields(self, uniform_fields: ISFieldConfiguration) -> None:
         """Test divergence with uniform fields should be zero."""
         conservation = ConservationLaws(uniform_fields)
         div_T = conservation.divergence_T()
@@ -237,7 +237,7 @@ class TestDivergenceComputation:
         # Uniform fields should have zero divergence
         np.testing.assert_allclose(div_T, 0.0, atol=1e-15)
 
-    def test_divergence_with_gradients(self, gradient_fields):
+    def test_divergence_with_gradients(self, gradient_fields: ISFieldConfiguration) -> None:
         """Test divergence with spatial gradients."""
         conservation = ConservationLaws(gradient_fields)
         div_T = conservation.divergence_T()
@@ -248,7 +248,7 @@ class TestDivergenceComputation:
         # Check that energy component responds to density gradient
         assert np.max(np.abs(div_T[..., 0])) > 0
 
-    def test_coordinate_array_handling(self):
+    def test_coordinate_array_handling(self) -> None:
         """Test coordinate array construction."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -260,7 +260,7 @@ class TestDivergenceComputation:
         assert all(isinstance(c, np.ndarray) for c in coords)
         assert coords[0].shape == (3,)  # time coordinates
 
-    def test_partial_derivative_computation(self):
+    def test_partial_derivative_computation(self) -> None:
         """Test partial derivative computation."""
         grid = create_cartesian_grid((0, 1), 2.0, (5, 5, 5, 5))
         fields = ISFieldConfiguration(grid)
@@ -278,7 +278,7 @@ class TestDivergenceComputation:
 class TestEvolutionEquations:
     """Test evolution equation extraction."""
 
-    def test_evolution_with_uniform_fields(self):
+    def test_evolution_with_uniform_fields(self) -> None:
         """Test evolution equations with uniform fields."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -301,7 +301,7 @@ class TestEvolutionEquations:
         np.testing.assert_allclose(evolution["drho_dt"], 0.0, atol=1e-15)
         np.testing.assert_allclose(evolution["dmom_dt"], 0.0, atol=1e-15)
 
-    def test_evolution_with_pressure_gradient(self):
+    def test_evolution_with_pressure_gradient(self) -> None:
         """Test evolution with pressure gradients."""
         grid = create_cartesian_grid((0, 1), 2.0, (6, 6, 6, 6))
         fields = ISFieldConfiguration(grid)
@@ -309,7 +309,7 @@ class TestEvolutionEquations:
         # Create pressure gradient
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
         fields.rho[:] = 1.0
-        fields.pressure = 0.3 + 0.1 * x_mesh  # Pressure gradient in x
+        fields.pressure[:] = (0.3 + 0.1 * x_mesh).reshape(fields.pressure.shape)  # Pressure gradient in x
         fields.u_mu[..., 0] = 1.0
 
         conservation = ConservationLaws(fields)
@@ -322,7 +322,7 @@ class TestEvolutionEquations:
 class TestParticleConservation:
     """Test particle number conservation."""
 
-    def test_particle_conservation_uniform(self):
+    def test_particle_conservation_uniform(self) -> None:
         """Test particle conservation with uniform density."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -335,14 +335,14 @@ class TestParticleConservation:
         # Uniform density should give zero divergence
         np.testing.assert_allclose(div_N, 0.0, atol=1e-15)
 
-    def test_particle_conservation_with_gradient(self):
+    def test_particle_conservation_with_gradient(self) -> None:
         """Test particle conservation with density gradient."""
         grid = create_cartesian_grid((0, 1), 2.0, (5, 5, 5, 5))
         fields = ISFieldConfiguration(grid)
 
         # Create particle density gradient
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
-        fields.n = 0.5 + 0.1 * x_mesh
+        fields.n[:] = (0.5 + 0.1 * x_mesh).reshape(fields.n.shape)
         fields.u_mu[..., 0] = 1.0
 
         conservation = ConservationLaws(fields)
@@ -357,7 +357,7 @@ class TestParticleConservation:
 class TestConservationValidation:
     """Test conservation law validation."""
 
-    def test_validation_perfect_conservation(self):
+    def test_validation_perfect_conservation(self) -> None:
         """Test validation with perfectly conserved quantities."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -373,16 +373,16 @@ class TestConservationValidation:
         assert validation["particle_number_conserved"] is True
         assert validation["all_conserved"] is True
 
-    def test_validation_violated_conservation(self):
+    def test_validation_violated_conservation(self) -> None:
         """Test validation with violated conservation."""
         grid = create_cartesian_grid((0, 1), 2.0, (5, 5, 5, 5))
         fields = ISFieldConfiguration(grid)
 
         # Add gradients to violate conservation
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
-        fields.rho = 1.0 + 0.2 * x_mesh
-        fields.pressure = 0.3 + 0.1 * y_mesh
-        fields.n = 0.5 + 0.1 * x_mesh
+        fields.rho[:] = (1.0 + 0.2 * x_mesh).reshape(fields.rho.shape)
+        fields.pressure[:] = (0.3 + 0.1 * y_mesh).reshape(fields.pressure.shape)
+        fields.n[:] = (0.5 + 0.1 * x_mesh).reshape(fields.n.shape)
         fields.u_mu[..., 0] = 1.0
 
         conservation = ConservationLaws(fields)
@@ -391,15 +391,15 @@ class TestConservationValidation:
         assert validation["energy_momentum_conserved"] is False
         assert validation["all_conserved"] is False
 
-    def test_validation_custom_tolerance(self):
+    def test_validation_custom_tolerance(self) -> None:
         """Test validation with custom tolerance."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
 
         # Create large gradients that definitely violate conservation
         t_mesh, x_mesh, y_mesh, z_mesh = grid.meshgrid()
-        fields.rho = 1.0 + 0.5 * x_mesh  # Large gradient for reliable detection
-        fields.pressure = 0.3 + 0.2 * y_mesh
+        fields.rho[:] = (1.0 + 0.5 * x_mesh).reshape(fields.rho.shape)  # Large gradient for reliable detection
+        fields.pressure[:] = (0.3 + 0.2 * y_mesh).reshape(fields.pressure.shape)
         fields.n[:] = 0.5
         fields.u_mu[..., 0] = 1.0
 
@@ -415,7 +415,7 @@ class TestConservationValidation:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_empty_grid(self):
+    def test_empty_grid(self) -> None:
         """Test with minimal grid size."""
         grid = create_cartesian_grid((0, 1), 2.0, (2, 2, 2, 2))
         fields = ISFieldConfiguration(grid)
@@ -429,7 +429,7 @@ class TestEdgeCases:
         T = conservation.stress_energy_tensor()
         assert T.shape == (2, 2, 2, 2, 4, 4)
 
-    def test_christoffel_symbol_handling(self):
+    def test_christoffel_symbol_handling(self) -> None:
         """Test handling of Christoffel symbols."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -442,7 +442,7 @@ class TestEdgeCases:
         div_T = conservation.divergence_T()
         assert div_T.shape == (3, 3, 3, 3, 4)
 
-    def test_string_representations(self):
+    def test_string_representations(self) -> None:
         """Test string representations."""
         grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
         fields = ISFieldConfiguration(grid)
@@ -460,7 +460,7 @@ class TestEdgeCases:
 class TestIntegrationWithGrid:
     """Test integration with different grid types."""
 
-    def test_cartesian_grid_integration(self):
+    def test_cartesian_grid_integration(self) -> None:
         """Test with Cartesian coordinates."""
         grid = create_cartesian_grid((0, 1), 2.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -473,7 +473,7 @@ class TestIntegrationWithGrid:
         assert len(coords) == 4
         assert grid.coordinate_names == ["t", "x", "y", "z"]
 
-    def test_milne_grid_integration(self):
+    def test_milne_grid_integration(self) -> None:
         """Test with Milne coordinates."""
         grid = create_milne_grid((0.1, 1.0), (-2, 2), 4.0, (4, 4, 4, 4))
         fields = ISFieldConfiguration(grid)
@@ -491,7 +491,7 @@ class TestIntegrationWithGrid:
 
 
 @pytest.mark.parametrize("grid_size", [(3, 3, 3, 3), (4, 5, 6, 7)])
-def test_different_grid_sizes(grid_size):
+def test_different_grid_sizes(grid_size: tuple[int, int, int, int]) -> None:
     """Test with different grid sizes."""
     grid = create_cartesian_grid((0, 1), 2.0, grid_size)
     fields = ISFieldConfiguration(grid)
@@ -507,7 +507,7 @@ def test_different_grid_sizes(grid_size):
 
 
 @pytest.mark.parametrize("rho,pressure", [(1.0, 0.3), (2.5, 0.8), (0.1, 0.03)])
-def test_different_thermodynamic_states(rho, pressure):
+def test_different_thermodynamic_states(rho: float, pressure: float) -> None:
     """Test with different thermodynamic conditions."""
     grid = create_cartesian_grid((0, 1), 2.0, (3, 3, 3, 3))
     fields = ISFieldConfiguration(grid)

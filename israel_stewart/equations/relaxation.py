@@ -199,8 +199,7 @@ class ISRelaxationEquations:
             shear_contribution = self.coeffs.lambda_Pi_pi * pi_trace * theta
             nonlinear += shear_contribution
 
-        return linear + first_order + nonlinear  # type: ignore[no-any-return]
-
+        return linear + first_order + nonlinear
     def _shear_rhs(
         self,
         pi_munu: np.ndarray,
@@ -267,8 +266,7 @@ class ISRelaxationEquations:
             )
             nonlinear += vorticity_term
 
-        return linear + first_order + nonlinear  # type: ignore[no-any-return]
-
+        return linear + first_order + nonlinear
     def _heat_rhs(
         self,
         q_mu: np.ndarray,
@@ -303,154 +301,175 @@ class ISRelaxationEquations:
                     shear_heat_term = np.sum(pi_munu[..., mu, :] * nabla_T, axis=-1)
                     nonlinear[..., mu] += self.coeffs.lambda_q_pi * shear_heat_term
 
-        return linear + first_order + nonlinear  # type: ignore[no-any-return]
-
+        return linear + first_order + nonlinear
     def _compute_expansion_scalar(self, u_mu: np.ndarray) -> np.ndarray:
         """
-        Compute expansion scalar θ = ∇_μ u^μ using a vectorized approach.
+        Compute expansion scalar θ = ∇_μ u^μ using proper covariant derivatives.
+
+        Uses a field-aware wrapper to interface with the corrected vector_divergence method.
         """
         from ..core.derivatives import CovariantDerivative
-        from ..core.four_vectors import FourVector
 
-        # 1. Initialize the covariant derivative operator
+        # Compute divergence using manual gradients and Christoffel symbols
+        # ∇_μ u^μ = ∂_μ u^μ + Γ^μ_μν u^ν
+
+        # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
+        christoffel = cov_deriv.christoffel_symbols
 
-        # 2. Create a single FourVector object for the entire field
-        velocity_field = FourVector(u_mu, is_covariant=False, metric=self.metric)
+        # Compute partial derivatives ∂_μ u^μ
+        partial_div = np.zeros(u_mu.shape[:-1])
+        for mu in range(4):
+            partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
 
-        # 3. Get grid coordinates (this part of your code can remain)
-        grid_coords = [
-            self.grid.coordinates.get("t"),
-            self.grid.coordinates.get("x"),
-            self.grid.coordinates.get("y"),
-            self.grid.coordinates.get("z"),
-        ]
+        # Add Christoffel term: Γ^μ_μν u^ν = Γ^μ_νμ u^ν (using symmetry)
+        christoffel_term = np.zeros(u_mu.shape[:-1])
+        for mu in range(4):
+            for nu in range(4):
+                christoffel_term += christoffel[mu, mu, nu] * u_mu[..., nu]
 
-        # 4. Call the vectorized divergence method ONCE
-        # The loop is no longer needed.
-        theta = cov_deriv.vector_divergence(velocity_field, grid_coords)
+        theta = partial_div + christoffel_term
 
         return theta
 
     def _compute_shear_tensor(self, u_mu: np.ndarray) -> np.ndarray:
         """
-        Compute shear tensor σ^μν using a vectorized approach.
+        Compute shear tensor σ^μν using manual gradients and Christoffel symbols.
+
+        Formula: σ^μν = ∇^(μ u^ν) + a^(μ u^ν) - (1/3)Δ^μν θ
         """
-        from ..core.derivatives import CovariantDerivative, ProjectionOperator
-        from ..core.four_vectors import FourVector
+        from ..core.derivatives import CovariantDerivative
+        from ..core.tensor_utils import optimized_einsum
 
+        # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
-        grid_coords = [
-            self.grid.coordinates.get("t"),
-            self.grid.coordinates.get("x"),
-            self.grid.coordinates.get("y"),
-            self.grid.coordinates.get("z"),
-        ]
+        christoffel = cov_deriv.christoffel_symbols
 
-        # 1. Compute ∇_ν u_μ across the grid
-        # This should be a vectorized operation inside CovariantDerivative
-        nabla_u = cov_deriv.tensor_covariant_derivative(
-            FourVector(u_mu, is_covariant=True, metric=self.metric), grid_coords
-        )
+        # Compute velocity gradients using finite differences
+        nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
+        for mu in range(4):
+            for nu in range(4):
+                nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # 2. Raise indices to get ∇^μ u^ν
+        # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
+        nabla_u = nabla_u_partial.copy()
+        for mu in range(4):
+            for nu in range(4):
+                for rho in range(4):
+                    nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+
+        # Get metric tensors
         g_inv = self.metric.inverse
-        nabla_u_up = np.einsum("...ab,ca,db->...cd", nabla_u.components, g_inv, g_inv)
+        g = self.metric.components
+        if isinstance(g_inv, np.ndarray) and g_inv.ndim == 2:
+            g_inv = np.broadcast_to(g_inv, u_mu.shape[:-1] + (4, 4))
+            g = np.broadcast_to(g, u_mu.shape[:-1] + (4, 4))
 
-        # 3. Symmetrize to get ∇^(μ u^ν)
-        symmetric_grad_u = 0.5 * (nabla_u_up + np.transpose(nabla_u_up, axes=(0, 1, 3, 2)))
+        # Raise indices: ∇^μ u^ν = g^μρ g^νσ ∇_ρ u_σ
+        nabla_u_up = optimized_einsum("...ac,...bd,...cd->...ab", g_inv, g_inv, nabla_u)
 
-        # 4. Compute four-acceleration a^μ = u^ν ∇_ν u^μ
-        acceleration = np.einsum("...l,...lm->...m", u_mu, nabla_u.components)
+        # Symmetrize: ∇^(μ u^ν) = (1/2)(∇^μ u^ν + ∇^ν u^μ)
+        symmetric_grad = 0.5 * (nabla_u_up + np.swapaxes(nabla_u_up, -2, -1))
 
-        # 5. Compute a^(μ u^ν)
+        # Compute four-acceleration: a^μ = u^ρ ∇_ρ u^μ
+        u_lower = optimized_einsum("...ab,...b->...a", g, u_mu)
+        acceleration = optimized_einsum("...a,...ab->...b", u_lower, nabla_u)
+        a_up = optimized_einsum("...ab,...b->...a", g_inv, acceleration)
+
+        # Symmetrized acceleration outer product: a^(μ u^ν)
         accel_outer = 0.5 * (
-            np.einsum("...m,...n->...mn", acceleration, u_mu)
-            + np.einsum("...n,...m->...mn", acceleration, u_mu)
+            optimized_einsum("...a,...b->...ab", a_up, u_mu)
+            + optimized_einsum("...a,...b->...ba", a_up, u_mu)
         )
 
-        # 6. Get projector Δ^μν
-        projector = ProjectionOperator(
-            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
-        )
-        delta = projector.perpendicular_projector().components
-
-        # 7. Project the symmetric part of the velocity gradient
-        term1 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, symmetric_grad_u)
-
-        # 8. Project the acceleration term
-        term2 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, accel_outer)
-
-        # 9. Get expansion scalar θ
+        # Get expansion scalar for trace removal
         theta = self._compute_expansion_scalar(u_mu)
 
-        # 10. Assemble shear tensor: σ^μν = [projected terms] - (1/3)Δ^μν θ
-        trace_term = (1.0 / 3.0) * np.einsum("...,...mn->...mn", theta, delta)
+        # Compute perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        delta = g_inv + optimized_einsum("...a,...b->...ab", u_mu, u_mu)
 
-        sigma_munu = term1 + term2 - trace_term
+        # Project to spatial hypersurface: Δ^μρ Δ^νσ (∇^(ρ u^σ) + a^(ρ u^σ))
+        full_tensor = symmetric_grad + accel_outer
+        projected = optimized_einsum("...ac,...bd,...cd->...ab", delta, delta, full_tensor)
+
+        # Remove trace: σ^μν = projected - (1/3)Δ^μν θ
+        trace_part = (1.0 / 3.0) * optimized_einsum("...,...ab->...ab", theta, delta)
+        sigma_munu = projected - trace_part
+
         return sigma_munu
 
     def _compute_vorticity_tensor(self, u_mu: np.ndarray) -> np.ndarray:
         """
-        Compute vorticity tensor ω^μν using a vectorized approach.
+        Compute vorticity tensor ω^μν using manual gradients and Christoffel symbols.
+
+        Formula: ω^μν = ∇^[μ u^ν] + a^[μ u^ν]
         """
-        from ..core.derivatives import CovariantDerivative, ProjectionOperator
-        from ..core.four_vectors import FourVector
+        from ..core.derivatives import CovariantDerivative
+        from ..core.tensor_utils import optimized_einsum
 
+        # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
-        grid_coords = [
-            self.grid.coordinates.get("t"),
-            self.grid.coordinates.get("x"),
-            self.grid.coordinates.get("y"),
-            self.grid.coordinates.get("z"),
-        ]
+        christoffel = cov_deriv.christoffel_symbols
 
-        # 1. Compute ∇_ν u_μ across the grid
-        nabla_u = cov_deriv.tensor_covariant_derivative(
-            FourVector(u_mu, is_covariant=True, metric=self.metric), grid_coords
-        )
+        # Compute velocity gradients using finite differences
+        nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
+        for mu in range(4):
+            for nu in range(4):
+                nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # 2. Raise indices to get ∇^μ u^ν
+        # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
+        nabla_u = nabla_u_partial.copy()
+        for mu in range(4):
+            for nu in range(4):
+                for rho in range(4):
+                    nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+
+        # Get metric tensors
         g_inv = self.metric.inverse
-        nabla_u_up = np.einsum("...ab,ca,db->...cd", nabla_u.components, g_inv, g_inv)
+        g = self.metric.components
+        if isinstance(g_inv, np.ndarray) and g_inv.ndim == 2:
+            g_inv = np.broadcast_to(g_inv, u_mu.shape[:-1] + (4, 4))
+            g = np.broadcast_to(g, u_mu.shape[:-1] + (4, 4))
 
-        # 3. Antisymmetrize to get ∇^[μ u^ν]
-        antisymmetric_grad_u = 0.5 * (nabla_u_up - np.transpose(nabla_u_up, axes=(0, 1, 3, 2)))
+        # Raise indices: ∇^μ u^ν = g^μρ g^νσ ∇_ρ u_σ
+        nabla_u_up = optimized_einsum("...ac,...bd,...cd->...ab", g_inv, g_inv, nabla_u)
 
-        # 4. Compute four-acceleration a^μ = u^ν ∇_ν u^μ
-        acceleration = np.einsum("...l,...lm->...m", u_mu, nabla_u.components)
+        # Antisymmetrize: ∇^[μ u^ν] = (1/2)(∇^μ u^ν - ∇^ν u^μ)
+        antisymmetric_grad = 0.5 * (nabla_u_up - np.swapaxes(nabla_u_up, -2, -1))
 
-        # 5. Compute a^[μ u^ν]
-        accel_outer = 0.5 * (
-            np.einsum("...m,...n->...mn", acceleration, u_mu)
-            - np.einsum("...n,...m->...mn", acceleration, u_mu)
+        # Compute four-acceleration: a^μ = u^ρ ∇_ρ u^μ
+        u_lower = optimized_einsum("...ab,...b->...a", g, u_mu)
+        acceleration = optimized_einsum("...a,...ab->...b", u_lower, nabla_u)
+        a_up = optimized_einsum("...ab,...b->...a", g_inv, acceleration)
+
+        # Antisymmetrized acceleration outer product: a^[μ u^ν]
+        accel_antisymmetric = 0.5 * (
+            optimized_einsum("...a,...b->...ab", a_up, u_mu)
+            - optimized_einsum("...a,...b->...ba", a_up, u_mu)
         )
 
-        # 6. Get projector Δ^μν
-        projector = ProjectionOperator(
-            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
-        )
-        delta = projector.perpendicular_projector().components
+        # Compute perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        delta = g_inv + optimized_einsum("...a,...b->...ab", u_mu, u_mu)
 
-        # 7. Project the antisymmetric part of the velocity gradient
-        term1 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, antisymmetric_grad_u)
+        # Project to spatial hypersurface: Δ^μρ Δ^νσ (∇^[ρ u^σ] + a^[ρ u^σ])
+        full_antisymmetric = antisymmetric_grad + accel_antisymmetric
+        projected = optimized_einsum("...ac,...bd,...cd->...ab", delta, delta, full_antisymmetric)
 
-        # 8. Project the acceleration term
-        term2 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, accel_outer)
+        # Ensure exact antisymmetry: ω^μν = (1/2)(projected - projected^T)
+        omega_munu = 0.5 * (projected - np.swapaxes(projected, -2, -1))
 
-        # 9. Assemble vorticity tensor: ω^μν = [projected terms]
-        omega_munu = term1 + term2
-
-        # 10. Enforce antisymmetry numerically
-        return 0.5 * (omega_munu - np.transpose(omega_munu, axes=(0, 1, 3, 2)))
+        return np.asarray(omega_munu)
 
     def _compute_temperature_gradient(self, T: np.ndarray, u_mu: np.ndarray) -> np.ndarray:
         """
-        Compute projected temperature gradient ∇^μ T = Δ^μν ∇_ν T using a vectorized approach.
-        """
-        from ..core.derivatives import CovariantDerivative, ProjectionOperator
-        from ..core.four_vectors import FourVector
+        Compute projected temperature gradient ∇^μ T = Δ^μν ∇_ν T using vectorized operations.
 
+        This gives the spatial gradient of temperature orthogonal to the fluid flow.
+        """
+        from ..core.derivatives import CovariantDerivative
+        from ..core.tensor_utils import optimized_einsum
+
+        # Initialize covariant derivative operator
         cov_deriv = CovariantDerivative(self.metric)
         grid_coords = [
             self.grid.coordinates.get("t"),
@@ -459,19 +478,32 @@ class ISRelaxationEquations:
             self.grid.coordinates.get("z"),
         ]
 
-        # 1. Compute the covariant gradient of the temperature field ∇_μ T
-        grad_T_covariant = cov_deriv.scalar_gradient(T, grid_coords)
+        # Compute gradient of temperature using finite differences: ∂_μ T
+        grad_T_lower = np.zeros(T.shape + (4,))
+        for mu in range(4):
+            grad_T_lower[..., mu] = np.gradient(T, axis=mu, edge_order=1)
 
-        # 2. Get the spatial projector Δ^μν
-        projector = ProjectionOperator(
-            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
-        )
-        delta = projector.perpendicular_projector().components
+        # Get metric inverse for raising indices
+        g_inv = self.metric.inverse
+        if isinstance(g_inv, np.ndarray) and g_inv.ndim == 2:
+            # Broadcast metric to match field dimensions
+            g_inv = np.broadcast_to(g_inv, T.shape + (4, 4))
 
-        # 3. Project the gradient: ∇^μ T = Δ^μν (∇_ν T)
-        # grad_T_covariant has shape (..., 4)
-        # delta has shape (..., 4, 4)
-        nabla_T = np.einsum("...mn,...n->...m", delta, grad_T_covariant.components)
+        # Raise gradient indices: ∇^μ T = g^μν ∇_ν T
+        grad_T_up = optimized_einsum("...ab,...b->...a", g_inv, grad_T_lower)
+
+        # Compute perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        # Need to align u_mu with T dimensions
+        if u_mu.shape[:-1] != T.shape:
+            # Assume T has same spatial dimensions as u_mu
+            u_aligned = u_mu[: T.shape[0], : T.shape[1], : T.shape[2], : T.shape[3]]
+        else:
+            u_aligned = u_mu
+
+        delta = g_inv + optimized_einsum("...a,...b->...ab", u_aligned, u_aligned)
+
+        # Project gradient to spatial hypersurface: ∇^μ T = Δ^μν ∇_ν T
+        nabla_T = optimized_einsum("...ab,...b->...a", delta, grad_T_lower)
 
         return nabla_T
 
@@ -588,8 +620,7 @@ class ISRelaxationEquations:
 
             # Implicit Euler residual: x_new - x_old - dt * F(x_new) = 0
             x_old = fields.to_dissipative_vector()
-            return x_new - x_old - dt * rhs  # type: ignore[no-any-return]
-
+            return x_new - x_old - dt * rhs
         # Initial guess
         x_initial = fields.to_dissipative_vector()
 

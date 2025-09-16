@@ -85,50 +85,41 @@ class CovariantDerivative:
 
     @monitor_performance("vector_divergence")
     def vector_divergence(
-        self, vector_field: FourVector, coordinates: np.ndarray | list[np.ndarray]
-    ) -> float | sp.Expr:
+        self,
+        vector_field: FourVector,
+        coordinates: list[np.ndarray],
+    ) -> np.ndarray:
         """
-        Compute covariant divergence ∇_μ V^μ of vector field.
+        Compute covariant divergence ∇_μ V^μ of a vector field across the entire grid.
 
-        ∇_μ V^μ = ∂_μ V^μ + Γ^μ_μλ V^λ
-
-        Args:
-            vector_field: Four-vector field V^μ(x)
-            coordinates: Coordinate grid
-
-        Returns:
-            Scalar divergence
+        Returns a scalar field (grid) representing the divergence at each point.
         """
         christoffel = self.christoffel_symbols
+        components = vector_field.components  # Shape: (..., 4)
 
-        if isinstance(vector_field.components, np.ndarray):
-            # Vectorized computation for better performance
-            divergence = 0.0
+        # 1. Compute all partial derivatives ∂_μ V^ν at once.
+        # The result `grad_V` will have shape (4, ..., 4)
+        # where the first axis is the derivative index μ.
+        grad_V = np.stack(
+            [
+                np.gradient(components[..., nu], axis=mu, edge_order=2)
+                for mu in range(4)
+                for nu in range(4)
+            ],
+            axis=0,
+        ).reshape(4, 4, *components.shape[:-1])
 
-            # Partial derivative terms - vectorized
-            if isinstance(coordinates, list) and len(coordinates) >= 4:
-                for mu in range(4):
-                    div_term = np.gradient(vector_field.components[mu], coordinates[mu])
-                    divergence += div_term.mean()  # Use mean for scalar result
+        # We need the trace of the partial derivatives: ∂_μ V^μ
+        partial_deriv_trace = np.einsum("ii...->...", grad_V)  # Sums over the diagonal
 
-            # Christoffel symbol terms: Γ^μ_μλ V^λ - vectorized
-            christoffel_trace = np.einsum("iij,j->", christoffel, vector_field.components)
-            divergence += christoffel_trace
+        # 2. Compute the Christoffel term Γ^μ_μλ V^λ, vectorized over the grid.
+        # christoffel shape: (4, 4, 4)
+        # components shape: (..., 4)
+        # result shape: (...)
+        christoffel_term = np.einsum("iil,...l->...", christoffel, components)
 
-        else:
-            # Symbolic computation - simplified
-            divergence = sp.sympify(0)
-            coord_symbols = [sp.Symbol(f"x{i}") for i in range(4)]
-
-            for mu in range(4):
-                # Partial derivatives
-                divergence += sp.diff(vector_field.components[mu], coord_symbols[mu])
-
-                # Christoffel terms
-                for lam in range(4):
-                    divergence += christoffel[mu, mu, lam] * vector_field.components[lam]
-
-        return divergence
+        # 3. Return the sum as a scalar field
+        return partial_deriv_trace + christoffel_term
 
     def material_derivative(
         self,
@@ -163,222 +154,78 @@ class CovariantDerivative:
     def tensor_covariant_derivative(
         self,
         tensor_field: TensorField,
-        derivative_index: int,
-        coordinates: np.ndarray | list[np.ndarray],
+        coordinates: list[np.ndarray],
     ) -> TensorField:
         """
-        Compute covariant derivative ∇_μ T^α...β... of general tensor.
-
-        For rank-2 tensor T^αβ:
-        ∇_μ T^αβ = ∂_μ T^αβ + Γ^α_μλ T^λβ + Γ^β_μλ T^αλ
-
-        Args:
-            tensor_field: Input tensor field
-            derivative_index: Index of derivative (μ in ∇_μ)
-            coordinates: Coordinate grid
-
-        Returns:
-            Tensor with one additional covariant index
+        Compute covariant derivative ∇_μ T^α...β... of a general tensor field.
+        Returns a new tensor field with one additional covariant index (the derivative index).
         """
         christoffel = self.christoffel_symbols
+        components = tensor_field.components
 
-        if not isinstance(tensor_field.components, np.ndarray):
-            raise NotImplementedError("Symbolic tensor derivatives not fully implemented")
-
-        # Start with partial derivative term
-        partial_derivative = self._partial_derivative(
-            tensor_field.components, derivative_index, coordinates
+        # 1. Compute all partial derivatives ∂_μ T^..._...
+        partial_derivatives = np.stack(
+            [self._partial_derivative(components, mu, coordinates) for mu in range(4)], axis=-1
         )
 
-        # Add Christoffel correction terms
-        covariant_derivative = partial_derivative.copy()
+        correction = np.zeros_like(partial_derivatives)
 
-        # For each contravariant index, add Γ^α_μλ T^...λ...
-        for idx_pos, (is_cov, _idx_name) in enumerate(tensor_field.indices):
-            if not is_cov:  # Contravariant index
-                for lam in range(4):
-                    # Contract over this index
-                    correction = self._contract_christoffel(
-                        tensor_field.components,
-                        christoffel,
-                        idx_pos,
-                        derivative_index,
-                        lam,
-                    )
-                    covariant_derivative += correction
+        # 2. Add correction terms for each index
+        for i, (is_cov, _) in enumerate(tensor_field.indices):
+            if is_cov:
+                # Covariant index correction: -Γ^λ_μi T_...λ...
+                correction -= self._contract_christoffel_covariant(components, christoffel, i)
+            else:
+                # Contravariant index correction: +Γ^i_μλ T^...λ...
+                correction += self._contract_christoffel(components, christoffel, i)
 
-        # For each covariant index, subtract Γ^λ_μα T^..._λ...
-        for idx_pos, (is_cov, _idx_name) in enumerate(tensor_field.indices):
-            if is_cov:  # Covariant index
-                for lam in range(4):
-                    correction = self._contract_christoffel_covariant(
-                        tensor_field.components,
-                        christoffel,
-                        idx_pos,
-                        derivative_index,
-                        lam,
-                    )
-                    covariant_derivative -= correction
+        covariant_derivative = partial_derivatives + correction
 
-        # Build new index string (add covariant derivative index)
-        new_indices = [f"_{derivative_index}"] + [
-            f"{'_' if cov else ''}{name}" for cov, name in tensor_field.indices
-        ]
-        new_index_string = " ".join(new_indices)
+        # Build new index string
+        new_indices = tensor_field._index_string() + " _d"
 
-        return TensorField(covariant_derivative, new_index_string, self.metric)
-
-    def divergence(
-        self, tensor_field: TensorField, coordinates: np.ndarray | list[np.ndarray]
-    ) -> np.ndarray | sp.Matrix:
-        """
-        Compute covariant divergence of tensor field.
-
-        For rank-2 tensor: ∇_μ T^μν
-
-        Args:
-            tensor_field: Input tensor field
-            coordinates: Coordinate grid
-
-        Returns:
-            Divergence (rank reduced by 1)
-        """
-        if tensor_field.rank == 1:
-            # Vector divergence
-            return self.vector_divergence(tensor_field, coordinates)
-
-        elif tensor_field.rank == 2:
-            # Tensor divergence: ∇_μ T^μν
-            divergence = (
-                np.zeros(4) if isinstance(tensor_field.components, np.ndarray) else sp.zeros(4, 1)
-            )
-
-            for nu in range(4):
-                for mu in range(4):
-                    # Compute ∇_μ T^μν
-                    cov_deriv = self.tensor_covariant_derivative(tensor_field, mu, coordinates)
-                    if isinstance(divergence, np.ndarray):
-                        divergence[nu] += cov_deriv.components[mu, nu]
-                    else:
-                        divergence[nu] += cov_deriv.components[mu, nu]
-
-            return divergence
-
-        else:
-            raise NotImplementedError("Divergence not implemented for rank > 2")
+        return TensorField(covariant_derivative, new_indices, self.metric)
 
     def _partial_derivative(
         self,
         tensor_components: np.ndarray,
         index: int,
-        coordinates: np.ndarray | list[np.ndarray],
+        coordinates: list[np.ndarray],
     ) -> np.ndarray:
-        """Compute partial derivative ∂_μ T along specified coordinate."""
-        # Simplified - assumes uniform grid spacing
-        if isinstance(coordinates, list):
-            coordinate = coordinates[index]
-        else:
-            coordinate = coordinates[index]
-
-        # Use numpy gradient along specified axis
-        return np.gradient(tensor_components, coordinate, axis=None)  # type: ignore[no-any-return]
+        """Compute partial derivative ∂_μ T along a specified coordinate axis."""
+        return np.gradient(tensor_components, coordinates[index], axis=index, edge_order=2)
 
     def _contract_christoffel(
         self,
         tensor_components: np.ndarray,
         christoffel: np.ndarray,
-        tensor_index: int,
-        deriv_index: int,
-        contract_index: int,
+        tensor_index_pos: int,
     ) -> np.ndarray:
-        """Contract tensor with Christoffel symbols for contravariant index.
-
-        Handles arbitrary tensor ranks.
-
-        Args:
-            tensor_components: Tensor to contract
-            christoffel: Christoffel symbols Γ^λ_μν
-            tensor_index: Which tensor index to contract (0-indexed)
-            deriv_index: Derivative index μ in ∇_μ
-            contract_index: Summation index (not used in general implementation)
-
-        Returns:
-            Contracted tensor with same shape as input
-        """
-        # Get tensor shape info
-        tensor_shape = tensor_components.shape
-        tensor_rank = len(tensor_shape)
-
-        if tensor_rank == 0:  # Scalar
-            return np.zeros_like(tensor_components)
-
-        result = np.zeros_like(tensor_components)
-
-        # For contravariant contraction: Γ^α_μλ T^{...λ...}
-        for alpha in range(4):  # Free contravariant index
-            for lam in range(4):  # Summation index
-                # Get Γ^α_μλ
-                christoffel_coeff = christoffel[alpha, deriv_index, lam]
-
-                # Get T^{...λ...}
-                tensor_slice = np.take(tensor_components, lam, axis=tensor_index)
-
-                # Add Γ^α_μλ T^{...λ...} to result^{...α...}
-                result_slice_indices: list[int | slice] = [slice(None)] * tensor_rank
-                result_slice_indices[tensor_index] = alpha
-                result[tuple(result_slice_indices)] += christoffel_coeff * tensor_slice
-
-        return result
+        """Computes the contravariant correction term: Γ^α_μλ T^...λ..."""
+        # Move the contracted axis to the end
+        moved_tensor = np.moveaxis(tensor_components, tensor_index_pos, -1)
+        # Contract with Christoffel symbols
+        # Γ^α_μλ T^...λ -> result^...α_μ
+        # (a, m, l) * (..., l) -> (..., a, m)
+        correction = np.tensordot(moved_tensor, christoffel, axes=([-1], [2]))
+        # Move the new axes to their correct positions
+        return np.moveaxis(correction, [-2, -1], [tensor_index_pos, tensor_components.ndim])
 
     def _contract_christoffel_covariant(
         self,
         tensor_components: np.ndarray,
         christoffel: np.ndarray,
-        tensor_index: int,
-        deriv_index: int,
-        contract_index: int,
+        tensor_index_pos: int,
     ) -> np.ndarray:
-        """Contract tensor with Christoffel symbols for covariant index.
-
-        For covariant indices, the contraction is:
-        ∇_μ T_{...α...} = ∂_μ T_{...α...} - Γ^λ_{μα} T_{...λ...}
-
-        Args:
-            tensor_components: Tensor to contract
-            christoffel: Christoffel symbols Γ^λ_μν
-            tensor_index: Which tensor index to contract (0-indexed)
-            deriv_index: Derivative index μ in ∇_μ
-            contract_index: Summation index (not used in general implementation)
-
-        Returns:
-            Contracted tensor with same shape as input
-        """
-        # Get tensor shape info
-        tensor_shape = tensor_components.shape
-        tensor_rank = len(tensor_shape)
-
-        if tensor_rank == 0:  # Scalar
-            return np.zeros_like(tensor_components)
-
-        result = np.zeros_like(tensor_components)
-
-        # For covariant contraction: -Γ^λ_{μα} T_{...λ...}
-        # Here α is the free index, λ is summed over
-
-        for alpha in range(4):  # Free covariant index
-            for lam in range(4):  # Summation index
-                # Get Γ^λ_{μα}
-                christoffel_coeff = christoffel[lam, deriv_index, alpha]
-
-                # Get T_{...λ...}
-                tensor_slice = np.take(tensor_components, lam, axis=tensor_index)
-
-                # Add -Γ^λ_{μα} T_{...λ...} to result_{...α...}
-                result_slice_indices: list[int | slice] = [slice(None)] * tensor_rank
-                result_slice_indices[tensor_index] = alpha
-                result[tuple(result_slice_indices)] -= christoffel_coeff * tensor_slice
-
-        return result
+        """Computes the covariant correction term: Γ^λ_μα T_...λ..."""
+        # Move the contracted axis to the end
+        moved_tensor = np.moveaxis(tensor_components, tensor_index_pos, -1)
+        # Contract with Christoffel symbols
+        # Γ^λ_μα T_...λ -> result_...α_μ
+        # (l, m, a) * (..., l) -> (..., m, a)
+        correction = np.tensordot(moved_tensor, christoffel, axes=([-1], [0]))
+        # Move the new axes to their correct positions
+        return np.moveaxis(correction, [-2, -1], [tensor_components.ndim, tensor_index_pos])
 
     def laplacian(
         self,
@@ -499,8 +346,9 @@ class ProjectionOperator:
         # Compute u^μ u^ν
         u_outer = np.outer(self.u.components, self.u.components)
 
-        # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
-        delta = g_inverse + u_outer
+        # Perpendicular projector: Δ^μν = g^μν + sign * u^μ u^ν
+        sign = self.metric.signature[0]
+        delta = g_inverse + sign * u_outer
 
         return TensorField(delta, "mu nu", self.metric)
 

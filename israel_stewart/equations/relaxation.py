@@ -306,41 +306,228 @@ class ISRelaxationEquations:
         return linear + first_order + nonlinear  # type: ignore[no-any-return]
 
     def _compute_expansion_scalar(self, u_mu: np.ndarray) -> np.ndarray:
-        """Compute expansion scalar theta = nabla dot u."""
-        # Simplified finite difference approximation
-        # Full implementation would use covariant derivatives
-        theta = np.zeros(u_mu.shape[:-1])
+        """
+        Compute expansion scalar θ = ∇_μ u^μ using a vectorized approach.
+        """
+        from ..core.derivatives import CovariantDerivative
+        from ..core.four_vectors import FourVector
 
-        for i in range(1, min(4, len(u_mu.shape))):  # Spatial components
-            if u_mu.shape[i] > 1:
-                # Simple finite difference
-                du_dx = np.gradient(u_mu[..., i], axis=i - 1)
-                theta += du_dx
+        # 1. Initialize the covariant derivative operator
+        cov_deriv = CovariantDerivative(self.metric)
+
+        # 2. Create a single FourVector object for the entire field
+        velocity_field = FourVector(u_mu, is_covariant=False, metric=self.metric)
+
+        # 3. Get grid coordinates (this part of your code can remain)
+        grid_coords = [
+            self.grid.coordinates.get("t"),
+            self.grid.coordinates.get("x"),
+            self.grid.coordinates.get("y"),
+            self.grid.coordinates.get("z"),
+        ]
+
+        # 4. Call the vectorized divergence method ONCE
+        # The loop is no longer needed.
+        theta = cov_deriv.vector_divergence(velocity_field, grid_coords)
 
         return theta
 
     def _compute_shear_tensor(self, u_mu: np.ndarray) -> np.ndarray:
-        """Compute shear tensor sigma^munu."""
-        # Placeholder: return zero shear tensor
-        # Full implementation requires proper 3+1 decomposition
-        return np.zeros((*u_mu.shape[:-1], 4, 4))
+        """
+        Compute shear tensor σ^μν using a vectorized approach.
+        """
+        from ..core.derivatives import CovariantDerivative, ProjectionOperator
+        from ..core.four_vectors import FourVector
+
+        cov_deriv = CovariantDerivative(self.metric)
+        grid_coords = [
+            self.grid.coordinates.get("t"),
+            self.grid.coordinates.get("x"),
+            self.grid.coordinates.get("y"),
+            self.grid.coordinates.get("z"),
+        ]
+
+        # 1. Compute ∇_ν u_μ across the grid
+        # This should be a vectorized operation inside CovariantDerivative
+        nabla_u = cov_deriv.tensor_covariant_derivative(
+            FourVector(u_mu, is_covariant=True, metric=self.metric), grid_coords
+        )
+
+        # 2. Raise indices to get ∇^μ u^ν
+        g_inv = self.metric.inverse
+        nabla_u_up = np.einsum("...ab,ca,db->...cd", nabla_u.components, g_inv, g_inv)
+
+        # 3. Symmetrize to get ∇^(μ u^ν)
+        symmetric_grad_u = 0.5 * (nabla_u_up + np.transpose(nabla_u_up, axes=(0, 1, 3, 2)))
+
+        # 4. Compute four-acceleration a^μ = u^ν ∇_ν u^μ
+        acceleration = np.einsum("...l,...lm->...m", u_mu, nabla_u.components)
+
+        # 5. Compute a^(μ u^ν)
+        accel_outer = 0.5 * (
+            np.einsum("...m,...n->...mn", acceleration, u_mu)
+            + np.einsum("...n,...m->...mn", acceleration, u_mu)
+        )
+
+        # 6. Get projector Δ^μν
+        projector = ProjectionOperator(
+            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
+        )
+        delta = projector.perpendicular_projector().components
+
+        # 7. Project the symmetric part of the velocity gradient
+        term1 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, symmetric_grad_u)
+
+        # 8. Project the acceleration term
+        term2 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, accel_outer)
+
+        # 9. Get expansion scalar θ
+        theta = self._compute_expansion_scalar(u_mu)
+
+        # 10. Assemble shear tensor: σ^μν = [projected terms] - (1/3)Δ^μν θ
+        trace_term = (1.0 / 3.0) * np.einsum("...,...mn->...mn", theta, delta)
+
+        sigma_munu = term1 + term2 - trace_term
+        return sigma_munu
 
     def _compute_vorticity_tensor(self, u_mu: np.ndarray) -> np.ndarray:
-        """Compute vorticity tensor omega^munu."""
-        # Placeholder: return zero vorticity tensor
-        return np.zeros((*u_mu.shape[:-1], 4, 4))
+        """
+        Compute vorticity tensor ω^μν using a vectorized approach.
+        """
+        from ..core.derivatives import CovariantDerivative, ProjectionOperator
+        from ..core.four_vectors import FourVector
+
+        cov_deriv = CovariantDerivative(self.metric)
+        grid_coords = [
+            self.grid.coordinates.get("t"),
+            self.grid.coordinates.get("x"),
+            self.grid.coordinates.get("y"),
+            self.grid.coordinates.get("z"),
+        ]
+
+        # 1. Compute ∇_ν u_μ across the grid
+        nabla_u = cov_deriv.tensor_covariant_derivative(
+            FourVector(u_mu, is_covariant=True, metric=self.metric), grid_coords
+        )
+
+        # 2. Raise indices to get ∇^μ u^ν
+        g_inv = self.metric.inverse
+        nabla_u_up = np.einsum("...ab,ca,db->...cd", nabla_u.components, g_inv, g_inv)
+
+        # 3. Antisymmetrize to get ∇^[μ u^ν]
+        antisymmetric_grad_u = 0.5 * (nabla_u_up - np.transpose(nabla_u_up, axes=(0, 1, 3, 2)))
+
+        # 4. Compute four-acceleration a^μ = u^ν ∇_ν u^μ
+        acceleration = np.einsum("...l,...lm->...m", u_mu, nabla_u.components)
+
+        # 5. Compute a^[μ u^ν]
+        accel_outer = 0.5 * (
+            np.einsum("...m,...n->...mn", acceleration, u_mu)
+            - np.einsum("...n,...m->...mn", acceleration, u_mu)
+        )
+
+        # 6. Get projector Δ^μν
+        projector = ProjectionOperator(
+            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
+        )
+        delta = projector.perpendicular_projector().components
+
+        # 7. Project the antisymmetric part of the velocity gradient
+        term1 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, antisymmetric_grad_u)
+
+        # 8. Project the acceleration term
+        term2 = np.einsum("...ma,...nb,...ab->...mn", delta, delta, accel_outer)
+
+        # 9. Assemble vorticity tensor: ω^μν = [projected terms]
+        omega_munu = term1 + term2
+
+        # 10. Enforce antisymmetry numerically
+        return 0.5 * (omega_munu - np.transpose(omega_munu, axes=(0, 1, 3, 2)))
 
     def _compute_temperature_gradient(self, T: np.ndarray, u_mu: np.ndarray) -> np.ndarray:
-        """Compute projected temperature gradient."""
-        # Simplified finite difference gradient
-        grad_T = np.zeros((*T.shape, 4))
+        """
+        Compute projected temperature gradient ∇^μ T = Δ^μν ∇_ν T using a vectorized approach.
+        """
+        from ..core.derivatives import CovariantDerivative, ProjectionOperator
+        from ..core.four_vectors import FourVector
 
-        # Spatial gradients (simplified)
-        for i in range(1, min(4, len(T.shape) + 1)):
-            if i - 1 < len(T.shape) and T.shape[i - 1] > 1:
-                grad_T[..., i] = np.gradient(T, axis=i - 1)
+        cov_deriv = CovariantDerivative(self.metric)
+        grid_coords = [
+            self.grid.coordinates.get("t"),
+            self.grid.coordinates.get("x"),
+            self.grid.coordinates.get("y"),
+            self.grid.coordinates.get("z"),
+        ]
 
-        return grad_T
+        # 1. Compute the covariant gradient of the temperature field ∇_μ T
+        grad_T_covariant = cov_deriv.scalar_gradient(T, grid_coords)
+
+        # 2. Get the spatial projector Δ^μν
+        projector = ProjectionOperator(
+            FourVector(u_mu, is_covariant=False, metric=self.metric), self.metric
+        )
+        delta = projector.perpendicular_projector().components
+
+        # 3. Project the gradient: ∇^μ T = Δ^μν (∇_ν T)
+        # grad_T_covariant has shape (..., 4)
+        # delta has shape (..., 4, 4)
+        nabla_T = np.einsum("...mn,...n->...m", delta, grad_T_covariant.components)
+
+        return nabla_T
+
+    def validate_kinematic_quantities(self, fields: ISFieldConfiguration) -> dict[str, bool]:
+        """
+        Validate kinematic quantities satisfy required physical constraints.
+
+        Tests:
+        - σ^μν u_ν = 0 (shear orthogonality to velocity)
+        - σ^μ_μ = 0 (traceless condition)
+        - ω^μν = -ω^νμ (antisymmetry)
+        - ω^μν u_ν = 0 (vorticity orthogonality to velocity)
+        """
+        from ..core.four_vectors import FourVector
+        from ..core.tensor_utils import optimized_einsum
+
+        u_mu = fields.u_mu
+
+        # Compute kinematic quantities
+        theta = self._compute_expansion_scalar(u_mu)
+        sigma_munu = self._compute_shear_tensor(u_mu)
+        omega_munu = self._compute_vorticity_tensor(u_mu)
+
+        validation = {}
+
+        # Test 1: Shear tensor orthogonality σ^μν u_ν = 0
+        shear_u_contraction = optimized_einsum("...ij,...j->...i", sigma_munu, u_mu)
+        validation["shear_orthogonal_to_velocity"] = np.allclose(
+            shear_u_contraction, 0.0, atol=1e-10
+        )
+
+        # Test 2: Shear tensor traceless σ^μ_μ = 0
+        shear_trace = np.trace(sigma_munu, axis1=-2, axis2=-1)
+        validation["shear_tensor_traceless"] = np.allclose(shear_trace, 0.0, atol=1e-12)
+
+        # Test 3: Vorticity antisymmetry ω^μν = -ω^νμ
+        omega_transpose = np.transpose(
+            omega_munu, axes=list(range(len(omega_munu.shape) - 2)) + [-1, -2]
+        )
+        validation["vorticity_antisymmetric"] = np.allclose(
+            omega_munu + omega_transpose, 0.0, atol=1e-12
+        )
+
+        # Test 4: Vorticity orthogonality ω^μν u_ν = 0
+        vorticity_u_contraction = optimized_einsum("...ij,...j->...i", omega_munu, u_mu)
+        validation["vorticity_orthogonal_to_velocity"] = np.allclose(
+            vorticity_u_contraction, 0.0, atol=1e-10
+        )
+
+        # Test 5: Expansion scalar dimensionality (should be scalar)
+        validation["expansion_scalar_shape"] = theta.shape == u_mu.shape[:-1]
+
+        # Overall validation
+        validation["all_kinematic_constraints_satisfied"] = all(validation.values())
+
+        return validation
 
     def evolve_relaxation(
         self, fields: ISFieldConfiguration, dt: float, method: str = "explicit"

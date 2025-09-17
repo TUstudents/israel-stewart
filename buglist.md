@@ -1,0 +1,12 @@
+- High – israel_stewart/core/tensor_base.py:38 – '_validate_components' requires every tensor dimension to equal 4, so any tensor sampled on a grid (e.g., gradient fields shaped (Nt, Nx, Ny, Nz, 4)) raises a ValueError. This blocks field-aware tensor ops such as 'scalar_gradient' and 'vector_divergence'.
+- High – israel_stewart/core/derivatives.py:147 – 'material_derivative' calls 'tensor_covariant_derivative' with an extra positional argument ('mu'), so it always raises TypeError.
+- High – israel_stewart/core/stress_tensors.py:536 – 'israel_stewart_evolution' subtracts a TensorField from a NumPy array, causing unsupported operand errors.
+- High – israel_stewart/core/derivatives.py:68 – the symbolic branch of 'scalar_gradient' produces an (4,1) Matrix that 'FourVector' rejects, so symbolic gradients fail.
+- Medium – israel_stewart/core/derivatives.py:103 – 'vector_divergence' always uses edge_order=2 in np.gradient, which breaks on axes with only two points.
+- High – israel_stewart/core/derivatives.py:353 – 'perpendicular_projector' multiplies u^μ u^ν by signature[0], flipping the projector sign in both signature conventions.
+- Medium – israel_stewart/core/derivatives.py:359 – 'project_vector_parallel' hardcodes a leading minus sign, so mostly-minus metrics get the wrong projected vector.
+- High – israel_stewart/core/tensor_base.py:262 – raising/lowering indices uses 'optimized_einsum' even for SymPy metrics, causing type errors.
+- High – israel_stewart/core/tensor_utils.py:34 – 'convert_to_numpy' forces '.astype(float)' on SymPy matrices; symbolic entries crash conversion.
+- High – israel_stewart/core/spacetime_grid.py:482 – 'volume_element' calls NumPy sqrt on symbolic determinants and never evaluates coordinate dependence.
+- High – israel_stewart/core/spacetime_grid.py:599 – 'create_milne_grid' omits a Milne metric, leaving grid.metric=None when Milne-specific projections require it.
+- Medium – israel_stewart/core/constants.py:198 – natural-unit conversion helpers misuse ħ and c, returning values with the wrong units.

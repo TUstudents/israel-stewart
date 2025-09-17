@@ -194,7 +194,9 @@ class CovariantDerivative:
         coordinates: list[np.ndarray],
     ) -> np.ndarray:
         """Compute partial derivative ∂_μ T along a specified coordinate axis."""
-        result: np.ndarray = np.gradient(tensor_components, coordinates[index], axis=index, edge_order=2)
+        result: np.ndarray = np.gradient(
+            tensor_components, coordinates[index], axis=index, edge_order=2
+        )
         return result
 
     def _contract_christoffel(

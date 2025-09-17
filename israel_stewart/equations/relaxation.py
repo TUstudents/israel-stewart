@@ -243,8 +243,8 @@ class ISRelaxationEquations:
             # Vectorized implementation of the shear-heat coupling term
             # Term is lambda_pi_q * (q^mu * nabla^nu T + q^nu * nabla^mu T) / 2
             outer_product = np.einsum("...i,...j->...ij", q_mu, nabla_T)
-            heat_term = self.coeffs.lambda_pi_q * 0.5 * (
-                outer_product + np.swapaxes(outer_product, -1, -2)
+            heat_term = (
+                self.coeffs.lambda_pi_q * 0.5 * (outer_product + np.swapaxes(outer_product, -1, -2))
             )
             nonlinear += heat_term
 
@@ -321,11 +321,14 @@ class ISRelaxationEquations:
         christoffel = cov_deriv.christoffel_symbols
 
         # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+        is_symbolic = (
+            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
+        ) or not isinstance(christoffel, np.ndarray)
 
         if is_symbolic:
             # This is symbolic - for now use flat space approximation
             import warnings
+
             warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
             christoffel = np.zeros((4, 4, 4))
 
@@ -360,11 +363,14 @@ class ISRelaxationEquations:
         christoffel = cov_deriv.christoffel_symbols
 
         # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+        is_symbolic = (
+            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
+        ) or not isinstance(christoffel, np.ndarray)
 
         if is_symbolic:
             # This is symbolic - for now use flat space approximation
             import warnings
+
             warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
             christoffel = np.zeros((4, 4, 4))
 
@@ -437,11 +443,14 @@ class ISRelaxationEquations:
         christoffel = cov_deriv.christoffel_symbols
 
         # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+        is_symbolic = (
+            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
+        ) or not isinstance(christoffel, np.ndarray)
 
         if is_symbolic:
             # This is symbolic - for now use flat space approximation
             import warnings
+
             warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
             christoffel = np.zeros((4, 4, 4))
 

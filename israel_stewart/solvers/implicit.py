@@ -8,7 +8,8 @@ Key features include Newton-Krylov methods, IMEX schemes, and adaptive timestep 
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import scipy.linalg as la
@@ -63,7 +64,7 @@ class ImplicitSolverBase(ABC):
         self,
         fields: ISFieldConfiguration,
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """
         Solve one implicit time step.
@@ -82,9 +83,9 @@ class ImplicitSolverBase(ABC):
     def compute_jacobian(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         perturbation: float = 1e-8,
-    ) -> Union[np.ndarray, sparse.spmatrix]:
+    ) -> np.ndarray | sparse.spmatrix:
         """
         Compute Jacobian matrix for Newton iteration.
 
@@ -101,7 +102,7 @@ class ImplicitSolverBase(ABC):
     def estimate_stiffness_ratio(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> float:
         """
         Estimate stiffness ratio for adaptive timestep control.
@@ -115,7 +116,9 @@ class ImplicitSolverBase(ABC):
         if sparse.issparse(jacobian):
             # For sparse matrices, compute a few eigenvalues
             try:
-                eigenvals = spla.eigs(jacobian, k=min(10, jacobian.shape[0] - 1), return_eigenvectors=False)
+                eigenvals = spla.eigs(
+                    jacobian, k=min(10, jacobian.shape[0] - 1), return_eigenvectors=False
+                )
             except (spla.ArpackNoConvergence, spla.ArpackError):
                 # Fallback to condition number estimate
                 return 1e6
@@ -135,7 +138,7 @@ class ImplicitSolverBase(ABC):
     def recommend_timestep(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         target_ratio: float = 10.0,
     ) -> float:
         """
@@ -164,7 +167,7 @@ class ImplicitSolverBase(ABC):
 
         return float(recommended_dt)
 
-    def get_solver_statistics(self) -> Dict[str, Any]:
+    def get_solver_statistics(self) -> dict[str, Any]:
         """Get performance statistics for the solver."""
         if not self.iteration_counts:
             return {"status": "no_steps_taken"}
@@ -174,7 +177,9 @@ class ImplicitSolverBase(ABC):
             "avg_iterations": np.mean(self.iteration_counts),
             "max_iterations": np.max(self.iteration_counts),
             "final_residual": self.convergence_history[-1] if self.convergence_history else None,
-            "convergence_rate": float(np.mean(np.diff(np.log10(np.array(self.convergence_history) + 1e-16)))),
+            "convergence_rate": float(
+                np.mean(np.diff(np.log10(np.array(self.convergence_history) + 1e-16)))
+            ),
         }
 
 
@@ -194,7 +199,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
         tolerance: float = 1e-8,
         max_iterations: int = 50,
         use_sparse: bool = True,
-        preconditioner: Optional[str] = "ilu",
+        preconditioner: str | None = "ilu",
     ):
         """
         Initialize backward Euler solver.
@@ -217,7 +222,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
         self,
         fields: ISFieldConfiguration,
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """
         Solve one backward Euler step using Newton iteration.
@@ -267,7 +272,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
         warnings.warn(
             f"Newton iteration failed to converge in {self.max_iterations} iterations. "
             f"Final residual: {residual_norm:.2e}",
-            UserWarning
+            UserWarning,
         )
         self.iteration_counts.append(self.max_iterations)
         return new_fields
@@ -275,9 +280,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
     def _compute_newton_jacobian(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         dt: float,
-    ) -> Union[np.ndarray, sparse.spmatrix]:
+    ) -> np.ndarray | sparse.spmatrix:
         """Compute Newton Jacobian: J = I - dt * df/du."""
         # Get system size
         system_vector = self._fields_to_vector(fields)
@@ -288,7 +293,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
         # Newton Jacobian: J = I - dt * df/du
         if sparse.issparse(rhs_jacobian):
-            format_str = getattr(rhs_jacobian, 'format', 'csr')
+            format_str = getattr(rhs_jacobian, "format", "csr")
             identity = sparse.identity(n, format=format_str)
             jacobian = identity - dt * rhs_jacobian
         else:
@@ -296,11 +301,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
         return jacobian
 
-    def _solve_sparse_linear_system(
-        self,
-        matrix: sparse.spmatrix,
-        rhs: np.ndarray
-    ) -> np.ndarray:
+    def _solve_sparse_linear_system(self, matrix: sparse.spmatrix, rhs: np.ndarray) -> np.ndarray:
         """Solve sparse linear system with preconditioning."""
         if self.preconditioner == "ilu":
             try:
@@ -332,9 +333,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
     def compute_jacobian(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         perturbation: float = 1e-8,
-    ) -> Union[np.ndarray, sparse.spmatrix]:
+    ) -> np.ndarray | sparse.spmatrix:
         """
         Compute RHS Jacobian matrix using finite differences.
 
@@ -390,29 +391,29 @@ class BackwardEulerSolver(ImplicitSolverBase):
         vectors = []
 
         # Add scalar fields
-        if hasattr(fields, 'Pi') and fields.Pi is not None:
+        if hasattr(fields, "Pi") and fields.Pi is not None:
             vectors.append(fields.Pi.flatten())
 
         # Add tensor fields
-        if hasattr(fields, 'pi_munu') and fields.pi_munu is not None:
+        if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             vectors.append(fields.pi_munu.flatten())
 
-        if hasattr(fields, 'q_mu') and fields.q_mu is not None:
+        if hasattr(fields, "q_mu") and fields.q_mu is not None:
             vectors.append(fields.q_mu.flatten())
 
         return np.concatenate(vectors) if vectors else np.array([])
 
-    def _rhs_to_vector(self, rhs: Dict[str, np.ndarray]) -> np.ndarray:
+    def _rhs_to_vector(self, rhs: dict[str, np.ndarray]) -> np.ndarray:
         """Convert RHS dictionary to flat vector."""
         vectors = []
 
         # Maintain same order as _fields_to_vector
-        if 'Pi' in rhs:
-            vectors.append(rhs['Pi'].flatten())
-        if 'pi_munu' in rhs:
-            vectors.append(rhs['pi_munu'].flatten())
-        if 'q_mu' in rhs:
-            vectors.append(rhs['q_mu'].flatten())
+        if "Pi" in rhs:
+            vectors.append(rhs["Pi"].flatten())
+        if "pi_munu" in rhs:
+            vectors.append(rhs["pi_munu"].flatten())
+        if "q_mu" in rhs:
+            vectors.append(rhs["q_mu"].flatten())
 
         return np.concatenate(vectors) if vectors else np.array([])
 
@@ -421,20 +422,20 @@ class BackwardEulerSolver(ImplicitSolverBase):
         idx = 0
 
         # Restore scalar fields
-        if hasattr(fields, 'Pi') and fields.Pi is not None:
+        if hasattr(fields, "Pi") and fields.Pi is not None:
             size = fields.Pi.size
-            fields.Pi = vector[idx:idx + size].reshape(fields.Pi.shape)
+            fields.Pi = vector[idx : idx + size].reshape(fields.Pi.shape)
             idx += size
 
         # Restore tensor fields
-        if hasattr(fields, 'pi_munu') and fields.pi_munu is not None:
+        if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             size = fields.pi_munu.size
-            fields.pi_munu = vector[idx:idx + size].reshape(fields.pi_munu.shape)
+            fields.pi_munu = vector[idx : idx + size].reshape(fields.pi_munu.shape)
             idx += size
 
-        if hasattr(fields, 'q_mu') and fields.q_mu is not None:
+        if hasattr(fields, "q_mu") and fields.q_mu is not None:
             size = fields.q_mu.size
-            fields.q_mu = vector[idx:idx + size].reshape(fields.q_mu.shape)
+            fields.q_mu = vector[idx : idx + size].reshape(fields.q_mu.shape)
             idx += size
 
 
@@ -484,50 +485,36 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
         self.stages = 1
         self.a_exp = np.array([[0]])  # Explicit coefficients
         self.a_imp = np.array([[1]])  # Implicit coefficients
-        self.b_exp = np.array([1])    # Explicit weights
-        self.b_imp = np.array([1])    # Implicit weights
-        self.c = np.array([1])        # Stage times
+        self.b_exp = np.array([1])  # Explicit weights
+        self.b_imp = np.array([1])  # Implicit weights
+        self.c = np.array([1])  # Stage times
 
     def _setup_imex_rk2(self) -> None:
         """Setup coefficients for second-order IMEX-RK scheme (L-stable)."""
         gamma = (2 - np.sqrt(2)) / 2
 
         self.stages = 2
-        self.a_exp = np.array([
-            [0, 0],
-            [1, 0]
-        ])
-        self.a_imp = np.array([
-            [gamma, 0],
-            [1-gamma, gamma]
-        ])
-        self.b_exp = np.array([1-gamma, gamma])
-        self.b_imp = np.array([1-gamma, gamma])
+        self.a_exp = np.array([[0, 0], [1, 0]])
+        self.a_imp = np.array([[gamma, 0], [1 - gamma, gamma]])
+        self.b_exp = np.array([1 - gamma, gamma])
+        self.b_imp = np.array([1 - gamma, gamma])
         self.c = np.array([gamma, 1])
 
     def _setup_imex_rk3(self) -> None:
         """Setup coefficients for third-order IMEX-RK scheme."""
         self.stages = 3
-        self.a_exp = np.array([
-            [0, 0, 0],
-            [1/2, 0, 0],
-            [11/18, 1/18, 0]
-        ])
-        self.a_imp = np.array([
-            [1/3, 0, 0],
-            [0, 1/3, 0],
-            [1/4, 0, 1/3]
-        ])
-        self.b_exp = np.array([1/4, 0, 3/4])
-        self.b_imp = np.array([1/4, 0, 3/4])
-        self.c = np.array([1/3, 1/3, 2/3])
+        self.a_exp = np.array([[0, 0, 0], [1 / 2, 0, 0], [11 / 18, 1 / 18, 0]])
+        self.a_imp = np.array([[1 / 3, 0, 0], [0, 1 / 3, 0], [1 / 4, 0, 1 / 3]])
+        self.b_exp = np.array([1 / 4, 0, 3 / 4])
+        self.b_imp = np.array([1 / 4, 0, 3 / 4])
+        self.c = np.array([1 / 3, 1 / 3, 2 / 3])
 
     @monitor_performance("imex_rk_step")
     def solve_step(
         self,
         fields: ISFieldConfiguration,
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """
         Solve one IMEX-RK step.
@@ -557,8 +544,8 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
         stage_fields: list[ISFieldConfiguration],
         stage: int,
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
-    ) -> Dict[str, np.ndarray]:
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
+    ) -> dict[str, np.ndarray]:
         """Compute explicit sum for current stage."""
         explicit_sum = {}
 
@@ -580,10 +567,10 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
     def _solve_implicit_stage(
         self,
         initial_fields: ISFieldConfiguration,
-        explicit_contribution: Dict[str, np.ndarray],
+        explicit_contribution: dict[str, np.ndarray],
         implicit_weight: float,
         stage: int,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """Solve implicit part of stage using simplified Newton iteration."""
         # For now, use a simplified approach - in practice you'd implement
@@ -615,7 +602,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
         initial_fields: ISFieldConfiguration,
         stage_fields: list[ISFieldConfiguration],
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """Compute final update using stage weights."""
         result = initial_fields.copy()
@@ -647,7 +634,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
 
         return result
 
-    def _extract_hyperbolic_part(self, rhs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def _extract_hyperbolic_part(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Extract hyperbolic (advection) terms from RHS."""
         # Simplified: return spatial derivative terms
         # In practice, this would be more sophisticated
@@ -657,7 +644,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             hyperbolic[key] = 0.5 * value
         return hyperbolic
 
-    def _extract_relaxation_part(self, rhs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def _extract_relaxation_part(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Extract relaxation terms from RHS."""
         # Simplified: return remaining terms
         # In practice, this would extract the relaxation source terms
@@ -670,14 +657,14 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
     def compute_jacobian(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         perturbation: float = 1e-8,
-    ) -> Union[np.ndarray, sparse.spmatrix]:
+    ) -> np.ndarray | sparse.spmatrix:
         """Compute Jacobian for IMEX method (focusing on implicit part)."""
         # For IMEX, we primarily need the Jacobian of the relaxation terms
         # This is a simplified implementation
         n = 100  # Placeholder size
-        return sparse.identity(n, format='csr')
+        return sparse.identity(n, format="csr")
 
 
 class ExponentialIntegrator(ImplicitSolverBase):
@@ -712,14 +699,14 @@ class ExponentialIntegrator(ImplicitSolverBase):
         # Precompute relaxation timescales
         self.tau_pi = coefficients.shear_relaxation_time or 0.1
         self.tau_Pi = coefficients.bulk_relaxation_time or 0.1
-        self.tau_q = getattr(coefficients, 'heat_relaxation_time', None) or 0.1
+        self.tau_q = getattr(coefficients, "heat_relaxation_time", None) or 0.1
 
     @monitor_performance("etd_step")
     def solve_step(
         self,
         fields: ISFieldConfiguration,
         dt: float,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
     ) -> ISFieldConfiguration:
         """
         Solve one exponential integrator step.
@@ -733,29 +720,21 @@ class ExponentialIntegrator(ImplicitSolverBase):
         current_rhs = rhs_func(fields)
 
         # Apply exponential integration to each relaxation variable
-        if hasattr(result, 'Pi') and result.Pi is not None and 'Pi' in current_rhs:
-            result.Pi = self._etd_update(
-                result.Pi, current_rhs['Pi'], dt, self.tau_Pi
-            )
+        if hasattr(result, "Pi") and result.Pi is not None and "Pi" in current_rhs:
+            result.Pi = self._etd_update(result.Pi, current_rhs["Pi"], dt, self.tau_Pi)
 
-        if hasattr(result, 'pi_munu') and result.pi_munu is not None and 'pi_munu' in current_rhs:
+        if hasattr(result, "pi_munu") and result.pi_munu is not None and "pi_munu" in current_rhs:
             result.pi_munu = self._etd_update(
-                result.pi_munu, current_rhs['pi_munu'], dt, self.tau_pi
+                result.pi_munu, current_rhs["pi_munu"], dt, self.tau_pi
             )
 
-        if hasattr(result, 'q_mu') and result.q_mu is not None and 'q_mu' in current_rhs:
-            result.q_mu = self._etd_update(
-                result.q_mu, current_rhs['q_mu'], dt, self.tau_q
-            )
+        if hasattr(result, "q_mu") and result.q_mu is not None and "q_mu" in current_rhs:
+            result.q_mu = self._etd_update(result.q_mu, current_rhs["q_mu"], dt, self.tau_q)
 
         return result
 
     def _etd_update(
-        self,
-        current_value: np.ndarray,
-        source_term: np.ndarray,
-        dt: float,
-        tau: float
+        self, current_value: np.ndarray, source_term: np.ndarray, dt: float, tau: float
     ) -> np.ndarray:
         """
         Apply exponential time differencing update.
@@ -787,9 +766,9 @@ class ExponentialIntegrator(ImplicitSolverBase):
     def compute_jacobian(
         self,
         fields: ISFieldConfiguration,
-        rhs_func: Callable[[ISFieldConfiguration], Dict[str, np.ndarray]],
+        rhs_func: Callable[[ISFieldConfiguration], dict[str, np.ndarray]],
         perturbation: float = 1e-8,
-    ) -> Union[np.ndarray, sparse.spmatrix]:
+    ) -> np.ndarray | sparse.spmatrix:
         """
         Compute Jacobian for exponential integrator.
 
@@ -797,11 +776,11 @@ class ExponentialIntegrator(ImplicitSolverBase):
         """
         # Get system size
         total_size = 0
-        if hasattr(fields, 'Pi') and fields.Pi is not None:
+        if hasattr(fields, "Pi") and fields.Pi is not None:
             total_size += fields.Pi.size
-        if hasattr(fields, 'pi_munu') and fields.pi_munu is not None:
+        if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             total_size += fields.pi_munu.size
-        if hasattr(fields, 'q_mu') and fields.q_mu is not None:
+        if hasattr(fields, "q_mu") and fields.q_mu is not None:
             total_size += fields.q_mu.size
 
         if total_size == 0:
@@ -810,14 +789,14 @@ class ExponentialIntegrator(ImplicitSolverBase):
         # Build diagonal Jacobian for relaxation terms
         diag_values = []
 
-        if hasattr(fields, 'Pi') and fields.Pi is not None:
+        if hasattr(fields, "Pi") and fields.Pi is not None:
             diag_values.extend([-1.0 / self.tau_Pi] * fields.Pi.size)
-        if hasattr(fields, 'pi_munu') and fields.pi_munu is not None:
+        if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             diag_values.extend([-1.0 / self.tau_pi] * fields.pi_munu.size)
-        if hasattr(fields, 'q_mu') and fields.q_mu is not None:
+        if hasattr(fields, "q_mu") and fields.q_mu is not None:
             diag_values.extend([-1.0 / self.tau_q] * fields.q_mu.size)
 
-        return sparse.diags(diag_values, format='csr')
+        return sparse.diags(diag_values, format="csr")
 
 
 # Factory function for creating solvers

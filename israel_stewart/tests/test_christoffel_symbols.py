@@ -218,9 +218,7 @@ class TestChristoffelContractions:
         vector = np.array([1, 2, 3, 4])
 
         # Contravariant contraction
-        result_contra = cov_deriv._contract_christoffel(
-            vector, christoffel, tensor_index_pos=0
-        )
+        result_contra = cov_deriv._contract_christoffel(vector, christoffel, tensor_index_pos=0)
         assert result_contra.shape == (4, 4)  # Result has shape (4_deriv, 4_orig)
         assert np.allclose(result_contra, 0.0)  # Zero for Minkowski
 
@@ -241,16 +239,12 @@ class TestChristoffelContractions:
         tensor = np.random.rand(4, 4)
 
         # Test contraction on first index
-        result = cov_deriv._contract_christoffel(
-            tensor, christoffel, tensor_index_pos=0
-        )
+        result = cov_deriv._contract_christoffel(tensor, christoffel, tensor_index_pos=0)
         assert result.shape == (4, 4, 4)  # (4_deriv, 4_orig_0, 4_orig_1)
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
         # Test contraction on second index
-        result = cov_deriv._contract_christoffel(
-            tensor, christoffel, tensor_index_pos=1
-        )
+        result = cov_deriv._contract_christoffel(tensor, christoffel, tensor_index_pos=1)
         assert result.shape == (4, 4, 4)  # (4_orig_0, 4_deriv, 4_orig_1)
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
@@ -262,17 +256,13 @@ class TestChristoffelContractions:
 
         # Test rank-3 tensor
         tensor3 = np.random.rand(4, 4, 4)
-        result = cov_deriv._contract_christoffel(
-            tensor3, christoffel, tensor_index_pos=1
-        )
+        result = cov_deriv._contract_christoffel(tensor3, christoffel, tensor_index_pos=1)
         assert result.shape == (4, 4, 4, 4)  # (4_orig_0, 4_deriv, 4_orig_1, 4_orig_2)
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
         # Test rank-4 tensor
         tensor4 = np.random.rand(4, 4, 4, 4)
-        result = cov_deriv._contract_christoffel(
-            tensor4, christoffel, tensor_index_pos=3
-        )
+        result = cov_deriv._contract_christoffel(tensor4, christoffel, tensor_index_pos=3)
         assert result.shape == (4, 4, 4, 4, 4)  # (4_orig_0, 4_orig_1, 4_orig_2, 4_deriv, 4_orig_3)
         assert np.allclose(result, 0.0)  # Zero for Minkowski
 
@@ -287,9 +277,7 @@ class TestChristoffelContractions:
         # For a scalar, there are no tensor indices to contract
         # This test should be skipped or modified since scalars don't have tensor indices
         with pytest.raises((IndexError, ValueError)):
-            result = cov_deriv._contract_christoffel(
-                scalar, christoffel, tensor_index_pos=0
-            )
+            result = cov_deriv._contract_christoffel(scalar, christoffel, tensor_index_pos=0)
 
 
 class TestSymbolicChristoffel:
@@ -454,9 +442,7 @@ class TestPerformanceAndAccuracy:
             shape = tuple(4 for _ in range(rank))
             tensor = np.random.rand(*shape)
 
-            result = cov_deriv._contract_christoffel(
-                tensor, christoffel, tensor_index_pos=0
-            )
+            result = cov_deriv._contract_christoffel(tensor, christoffel, tensor_index_pos=0)
             # Result should have one additional dimension for derivative index
             expected_shape = (4,) + shape  # Add derivative dimension
             assert result.shape == expected_shape

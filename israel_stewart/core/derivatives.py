@@ -119,7 +119,8 @@ class CovariantDerivative:
         christoffel_term = np.einsum("iil,...l->...", christoffel, components)
 
         # 3. Return the sum as a scalar field
-        return partial_deriv_trace + christoffel_term
+        result: np.ndarray = partial_deriv_trace + christoffel_term
+        return result
 
     def material_derivative(
         self,
@@ -193,7 +194,8 @@ class CovariantDerivative:
         coordinates: list[np.ndarray],
     ) -> np.ndarray:
         """Compute partial derivative ∂_μ T along a specified coordinate axis."""
-        return np.gradient(tensor_components, coordinates[index], axis=index, edge_order=2)
+        result: np.ndarray = np.gradient(tensor_components, coordinates[index], axis=index, edge_order=2)
+        return result
 
     def _contract_christoffel(
         self,

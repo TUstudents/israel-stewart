@@ -209,9 +209,9 @@ class StressEnergyTensor(TensorField):
         if self.metric is None:
             raise ValueError("Cannot check conservation without metric")
 
-        # Compute covariant divergence
+        # Compute covariant divergence ∇_μ T^μν for each ν
         cov_deriv = CovariantDerivative(self.metric)
-        divergence = cov_deriv.divergence(self, coordinates)
+        divergence = cov_deriv.tensor_covariant_derivative(self, coordinates)
 
         return divergence
 

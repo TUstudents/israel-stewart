@@ -57,3 +57,15 @@ flowchart TD
 - Reproducibility: set seeds and record grid/solver settings in output metadata.
 - Numba: for debugging, you can set `NUMBA_DISABLE_JIT=1`. Control threads via `NUMBA_NUM_THREADS`.
 - I/O: prefer `israel_stewart.utils.io` for HDF5; write outputs under a user‑specified directory.
+
+## Workflow Practices
+- Prefer `rg`/`rg --files` for searches; run shell commands via `bash -lc` and always set the working directory.
+- Use the planning tool for multi-step work (skip it for the easiest ~25% of tasks) and keep plans updated as steps complete.
+- Keep edits ASCII unless the file already uses other characters; add comments only when they clarify non-obvious logic.
+- Never revert user changes; if unexpected modifications appear, pause and ask the user how to proceed.
+
+## Response Style
+- Default to concise, friendly explanations that lead with the change/outcome before details.
+- For code changes, mention affected paths with 1-based line references; avoid dumping entire files.
+- Use plain text with backticks for literals; fenced code blocks only when showing multi-line snippets.
+- Offer next steps (tests, commits, builds) when they naturally follow from the work.

@@ -565,8 +565,11 @@ class TestRelaxationPhysics:
         dt = 0.01
         relaxation.evolve_relaxation(fields, dt)
 
-        assert np.all(np.isfinite(fields.Pi))
-        assert np.all(np.isfinite(fields.pi_munu))
+        # Convert to numpy arrays if needed and check finiteness
+        Pi_array = np.asarray(fields.Pi, dtype=float)
+        pi_munu_array = np.asarray(fields.pi_munu, dtype=float)
+        assert np.all(np.isfinite(Pi_array))
+        assert np.all(np.isfinite(pi_munu_array))
 
 
 # Benchmark tests for performance

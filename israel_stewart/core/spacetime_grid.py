@@ -178,7 +178,7 @@ class SpacetimeGrid:
             Tuple of 4D coordinate arrays
         """
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
-        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[call-overload,no-any-return]
+        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[arg-type]
 
     def coordinate_at_index(self, indices: tuple[int, int, int, int]) -> np.ndarray:
         """

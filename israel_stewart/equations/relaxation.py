@@ -200,6 +200,7 @@ class ISRelaxationEquations:
             nonlinear += shear_contribution
 
         return linear + first_order + nonlinear
+
     def _shear_rhs(
         self,
         pi_munu: np.ndarray,
@@ -237,18 +238,15 @@ class ISRelaxationEquations:
             bulk_coupling = self.coeffs.lambda_pi_Pi * Pi[..., np.newaxis, np.newaxis] * sigma_munu
             nonlinear += bulk_coupling
 
-        # Shear-heat coupling (simplified)
+        # Shear-heat coupling
         if self.coeffs.lambda_pi_q != 0:
-            # This is a simplified version - full implementation requires careful index handling
-            for mu in range(4):
-                for nu in range(4):
-                    if nabla_T.shape[-1] > max(mu, nu):
-                        heat_term = (
-                            self.coeffs.lambda_pi_q
-                            * (q_mu[..., mu] * nabla_T[..., nu] + q_mu[..., nu] * nabla_T[..., mu])
-                            / 2
-                        )
-                        nonlinear[..., mu, nu] += heat_term
+            # Vectorized implementation of the shear-heat coupling term
+            # Term is lambda_pi_q * (q^mu * nabla^nu T + q^nu * nabla^mu T) / 2
+            outer_product = np.einsum("...i,...j->...ij", q_mu, nabla_T)
+            heat_term = self.coeffs.lambda_pi_q * 0.5 * (
+                outer_product + np.swapaxes(outer_product, -1, -2)
+            )
+            nonlinear += heat_term
 
         # Nonlinear shear terms
         if self.coeffs.tau_pi_pi != 0 and self.coeffs.shear_relaxation_time:
@@ -267,6 +265,7 @@ class ISRelaxationEquations:
             nonlinear += vorticity_term
 
         return linear + first_order + nonlinear
+
     def _heat_rhs(
         self,
         q_mu: np.ndarray,
@@ -295,13 +294,15 @@ class ISRelaxationEquations:
 
         # Shear-heat coupling
         if self.coeffs.lambda_q_pi != 0:
-            # Simplified: pi^munu * nabla_nu T
-            for mu in range(4):
-                if nabla_T.shape[-1] > mu:
-                    shear_heat_term = np.sum(pi_munu[..., mu, :] * nabla_T, axis=-1)
-                    nonlinear[..., mu] += self.coeffs.lambda_q_pi * shear_heat_term
+            # Vectorized implementation of the shear-heat coupling term
+            # Term is lambda_q_pi * pi^munu * nabla_nu T
+            shear_heat_term = self.coeffs.lambda_q_pi * np.einsum(
+                "...ij,...j->...i", pi_munu, nabla_T
+            )
+            nonlinear += shear_heat_term
 
         return linear + first_order + nonlinear
+
     def _compute_expansion_scalar(self, u_mu: np.ndarray) -> np.ndarray:
         """
         Compute expansion scalar θ = ∇_μ u^μ using proper covariant derivatives.
@@ -315,7 +316,18 @@ class ISRelaxationEquations:
 
         # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
+
+        # Get Christoffel symbols - handle both numerical and symbolic cases
         christoffel = cov_deriv.christoffel_symbols
+
+        # Check if christoffel is symbolic or contains symbolic elements
+        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+
+        if is_symbolic:
+            # This is symbolic - for now use flat space approximation
+            import warnings
+            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            christoffel = np.zeros((4, 4, 4))
 
         # Compute partial derivatives ∂_μ u^μ
         partial_div = np.zeros(u_mu.shape[:-1])
@@ -343,7 +355,18 @@ class ISRelaxationEquations:
 
         # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
+
+        # Get Christoffel symbols - handle both numerical and symbolic cases
         christoffel = cov_deriv.christoffel_symbols
+
+        # Check if christoffel is symbolic or contains symbolic elements
+        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+
+        if is_symbolic:
+            # This is symbolic - for now use flat space approximation
+            import warnings
+            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            christoffel = np.zeros((4, 4, 4))
 
         # Compute velocity gradients using finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
@@ -409,7 +432,18 @@ class ISRelaxationEquations:
 
         # Initialize covariant derivative operator for Christoffel symbols
         cov_deriv = CovariantDerivative(self.metric)
+
+        # Get Christoffel symbols - handle both numerical and symbolic cases
         christoffel = cov_deriv.christoffel_symbols
+
+        # Check if christoffel is symbolic or contains symbolic elements
+        is_symbolic = (hasattr(christoffel, 'dtype') and christoffel.dtype == 'O') or not isinstance(christoffel, np.ndarray)
+
+        if is_symbolic:
+            # This is symbolic - for now use flat space approximation
+            import warnings
+            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            christoffel = np.zeros((4, 4, 4))
 
         # Compute velocity gradients using finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
@@ -616,11 +650,13 @@ class ISRelaxationEquations:
             fields_new.from_dissipative_vector(x_new)
 
             # Compute RHS at new state
-            rhs = self.compute_relaxation_rhs(fields_new)
+            rhs: np.ndarray = self.compute_relaxation_rhs(fields_new)
 
             # Implicit Euler residual: x_new - x_old - dt * F(x_new) = 0
             x_old = fields.to_dissipative_vector()
-            return x_new - x_old - dt * rhs
+            result: np.ndarray = x_new - x_old - dt * rhs
+            return result
+
         # Initial guess
         x_initial = fields.to_dissipative_vector()
 

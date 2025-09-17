@@ -49,6 +49,14 @@ ENERGY_DENSITY_MIN = 1e-15  # Minimum energy density
 VISCOSITY_MIN = 0.0  # Minimum viscosity (entropy production constraint)
 CONDUCTIVITY_MIN = 0.0  # Minimum thermal conductivity
 
+# Particle masses (in natural units, GeV)
+MPROTON = 0.938272  # Proton mass in GeV
+MNEUTRON = 0.939565  # Neutron mass in GeV
+MELECTRON = 0.000511  # Electron mass in GeV
+
+# Convenience aliases for natural units
+KBOLTZ = BOLTZMANN_K  # Alias for Boltzmann constant
+
 # Numerical stability parameters
 CONDITION_NUMBER_WARN = 1e12  # Warn if matrix condition number exceeds this
 DETERMINANT_MIN = 1e-15  # Minimum determinant for non-singular matrices

@@ -5,7 +5,7 @@ This module provides fundamental constants used in relativistic physics
 and Israel-Stewart hydrodynamics, with consistent unit systems.
 """
 
-from typing import cast
+from typing import TypedDict
 
 import numpy as np
 
@@ -18,11 +18,29 @@ HBAR = 1.0
 # Boltzmann constant (set to 1 in natural units)
 BOLTZMANN_K = 1.0
 
+# Unit conversion constants
+GEV_TO_JOULE = 1.602176634e-10  # Conversion factor: 1 GeV = 1.602176634e-10 J
+JOULE_TO_GEV = 1.0 / GEV_TO_JOULE  # Inverse conversion
+
+
+class PhysicalConstants(TypedDict):
+    """Type definition for physical constants dictionaries."""
+    c: float
+    hbar: float
+    k_B: float
+    system: str
+
+
 # Natural units system (c = ħ = k_B = 1)
-NATURAL_UNITS = {"c": C_LIGHT, "hbar": HBAR, "k_B": BOLTZMANN_K, "system": "natural"}
+NATURAL_UNITS: PhysicalConstants = {
+    "c": C_LIGHT,
+    "hbar": HBAR,
+    "k_B": BOLTZMANN_K,
+    "system": "natural"
+}
 
 # SI units (for dimensional analysis and conversion)
-SI_CONSTANTS = {
+SI_CONSTANTS: PhysicalConstants = {
     "c": 2.99792458e8,  # m/s
     "hbar": 1.054571817e-34,  # J·s
     "k_B": 1.380649e-23,  # J/K
@@ -56,6 +74,28 @@ MELECTRON = 0.000511  # Electron mass in GeV
 
 # Convenience aliases for natural units
 KBOLTZ = BOLTZMANN_K  # Alias for Boltzmann constant
+
+# Additional conversion utilities
+def si_to_natural_energy(energy_si: float) -> float:
+    """Convert energy from SI (Joules) to natural units (GeV)."""
+    return energy_si * JOULE_TO_GEV
+
+
+def si_to_natural_temperature(temp_si: float) -> float:
+    """Convert temperature from SI (Kelvin) to natural units (GeV)."""
+    temp_joules = temp_si * SI_CONSTANTS["k_B"]
+    return temp_joules * JOULE_TO_GEV
+
+
+def si_to_natural_time(time_si: float) -> float:
+    """Convert time from SI (seconds) to natural units (GeV^-1)."""
+    return time_si * GEV_TO_JOULE / SI_CONSTANTS["hbar"]
+
+
+def si_to_natural_length(length_si: float) -> float:
+    """Convert length from SI (meters) to natural units (GeV^-1)."""
+    hbar_c = SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"]
+    return length_si * GEV_TO_JOULE / hbar_c
 
 # Numerical stability parameters
 CONDITION_NUMBER_WARN = 1e12  # Warn if matrix condition number exceeds this
@@ -104,17 +144,17 @@ def get_physical_constant(name: str, unit_system: str = "natural") -> float:
     Returns:
         Constant value
     """
-    if unit_system == "natural":
-        constants = NATURAL_UNITS
-    elif unit_system == "SI":
-        constants = SI_CONSTANTS
-    else:
+    unit_systems: dict[str, PhysicalConstants] = {"natural": NATURAL_UNITS, "SI": SI_CONSTANTS}
+
+    if unit_system not in unit_systems:
         raise ValueError(f"Unknown unit system: {unit_system}")
 
+    constants = unit_systems[unit_system]
     if name not in constants:
         raise ValueError(f"Unknown constant: {name}")
 
-    return cast(float, constants[name])
+    # Cast needed for TypedDict access with variable key
+    return float(constants[name])  # type: ignore[literal-required]
 
 
 def validate_relativistic_velocity(
@@ -196,31 +236,47 @@ def validate_transport_coefficient(coefficient: float, name: str) -> bool:
 
 
 # Common unit conversions (from natural units)
+# In natural units: c = ħ = k_B = 1
+# Energy scale: 1 GeV = 1.602176634e-10 J
+# Length scale: 1 GeV^-1 = ħc/GeV ≈ 1.973e-16 m
+# Time scale: 1 GeV^-1 = ħ/GeV ≈ 6.582e-25 s
+
 def natural_to_si_energy(energy_natural: float) -> float:
-    """Convert energy from natural units to SI (Joules)."""
-    return (
-        energy_natural * cast(float, SI_CONSTANTS["hbar"]) * cast(float, SI_CONSTANTS["c"]) / 1.0
-    )  # c
+    """Convert energy from natural units (GeV) to SI (Joules).
+
+    In natural units, energies are measured in GeV.
+    Conversion: E[J] = E[GeV] × (1 GeV in Joules)
+    """
+    return energy_natural * GEV_TO_JOULE
 
 
 def natural_to_si_temperature(temp_natural: float) -> float:
-    """Convert temperature from natural units to SI (Kelvin)."""
-    return temp_natural / cast(float, SI_CONSTANTS["k_B"])
+    """Convert temperature from natural units (GeV) to SI (Kelvin).
+
+    In natural units with k_B = 1, temperature has units of energy (GeV).
+    Conversion: T[K] = T[GeV] × (1 GeV in Joules) / k_B[J/K]
+    """
+    temp_joules = temp_natural * GEV_TO_JOULE
+    return temp_joules / SI_CONSTANTS["k_B"]
 
 
 def natural_to_si_time(time_natural: float) -> float:
-    """Convert time from natural units to SI (seconds)."""
-    return time_natural * cast(float, SI_CONSTANTS["hbar"]) / natural_to_si_energy(1.0)
+    """Convert time from natural units (GeV^-1) to SI (seconds).
+
+    In natural units with ħ = 1, time has units GeV^-1.
+    Conversion: t[s] = t[GeV^-1] × ħ[J·s] / (1 GeV in Joules)
+    """
+    return time_natural * SI_CONSTANTS["hbar"] / GEV_TO_JOULE
 
 
 def natural_to_si_length(length_natural: float) -> float:
-    """Convert length from natural units to SI (meters)."""
-    return (
-        length_natural
-        * cast(float, SI_CONSTANTS["hbar"])
-        * cast(float, SI_CONSTANTS["c"])
-        / natural_to_si_energy(1.0)
-    )
+    """Convert length from natural units (GeV^-1) to SI (meters).
+
+    In natural units with ħ = c = 1, length has units GeV^-1.
+    Conversion: L[m] = L[GeV^-1] × ħc[J·m] / (1 GeV in Joules)
+    """
+    hbar_c = SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"]
+    return length_natural * hbar_c / GEV_TO_JOULE
 
 
 # Dimensionless combinations for Israel-Stewart hydrodynamics

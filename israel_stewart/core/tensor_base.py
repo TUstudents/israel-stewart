@@ -66,17 +66,45 @@ class TensorField:
             # Check for numerical stability
             if np.any(np.isnan(components)) or np.any(np.isinf(components)):
                 raise ValueError("Tensor components contain NaN or infinite values")
-            # Check dimensions are 4 for spacetime
-            if any(dim != 4 for dim in components.shape):
-                raise ValueError(
-                    f"All tensor dimensions must be 4 for spacetime, got shape {components.shape}"
-                )
+
+            # For tensor fields on grids, only the trailing dimensions must be 4 (spacetime indices)
+            # Allow shapes like (*grid_shape, 4), (*grid_shape, 4, 4), etc.
+            if components.ndim == 0:
+                raise ValueError("Tensor components cannot be scalar")
+
+            # We need to know the tensor rank to validate properly, but we don't have indices parsed yet
+            # For now, just check that the array has at least one dimension
+            # More detailed validation will happen in _validate_tensor() after indices are parsed
+            if components.size == 0:
+                raise ValueError("Tensor components cannot be empty")
+
         elif is_sympy_matrix(components):
-            # Check dimensions for SymPy
-            if any(dim != 4 for dim in components.shape):
-                raise ValueError(
-                    f"All tensor dimensions must be 4 for spacetime, got shape {components.shape}"
-                )
+            # For SymPy matrices/vectors, handle different shapes
+            shape = components.shape
+            if len(shape) == 1:
+                # Vector case: should have 4 elements
+                if shape[0] != 4:
+                    raise ValueError(
+                        f"SymPy vector must have 4 elements for spacetime, got shape {shape}"
+                    )
+            elif len(shape) == 2:
+                # Matrix case: both dimensions should be 4, or it could be a column vector (4,1)
+                if shape == (4, 1):
+                    # Column vector - this is acceptable for rank-1 tensors
+                    pass
+                elif all(dim == 4 for dim in shape):
+                    # 4x4 matrix - acceptable for rank-2 tensors
+                    pass
+                else:
+                    raise ValueError(
+                        f"SymPy tensor dimensions must be 4 for spacetime, got shape {shape}"
+                    )
+            else:
+                # Higher-rank tensors: all dimensions must be 4
+                if any(dim != 4 for dim in shape):
+                    raise ValueError(
+                        f"SymPy tensor dimensions must be 4 for spacetime, got shape {shape}"
+                    )
         else:
             raise TypeError(
                 f"Components must be numpy array or sympy matrix, got {type(components)}"
@@ -103,21 +131,42 @@ class TensorField:
         return parsed
 
     def _validate_tensor(self) -> None:
-        """Validate tensor rank consistency."""
+        """Validate tensor rank consistency and spacetime dimensions."""
         expected_rank = len(self.indices)
 
         if is_numpy_array(self.components):
-            actual_rank = self.components.ndim
+            total_dims = self.components.ndim
+            shape = self.components.shape
+
+            # For grid-based tensors, the last `expected_rank` dimensions are tensor indices
+            if total_dims < expected_rank:
+                raise ValueError(
+                    f"Tensor rank mismatch: indices specify rank {expected_rank}, "
+                    f"but components have only {total_dims} dimensions"
+                )
+
+            # Check that the trailing dimensions (tensor indices) are all 4
+            tensor_index_dims = shape[-expected_rank:] if expected_rank > 0 else ()
+            if any(dim != 4 for dim in tensor_index_dims):
+                raise ValueError(
+                    f"Tensor index dimensions must be 4 for spacetime, "
+                    f"got {tensor_index_dims} in shape {shape}"
+                )
+
         elif is_sympy_matrix(self.components):
-            actual_rank = len(self.components.shape)
+            shape = self.components.shape
+            actual_rank = len(shape)
+
+            # Special case: SymPy column vectors (4,1) should be treated as rank-1
+            if shape == (4, 1) and expected_rank == 1:
+                actual_rank = 1  # Override for column vectors
+            elif actual_rank != expected_rank:
+                raise ValueError(
+                    f"SymPy tensor rank mismatch: indices specify rank {expected_rank}, "
+                    f"components have rank {actual_rank}"
+                )
         else:
             raise TypeError(f"Unsupported component type: {type(self.components)}")
-
-        if actual_rank != expected_rank:
-            raise ValueError(
-                f"Tensor rank mismatch: indices specify rank {expected_rank}, "
-                f"components have rank {actual_rank}"
-            )
 
         # Additional validation for specific ranks
         if expected_rank == 0:  # Scalar
@@ -160,17 +209,37 @@ class TensorField:
             Transposed tensor
         """
         if axis_order is None:
-            # Default: reverse all indices
+            # Default: reverse tensor indices only
             axis_order = tuple(range(self.rank - 1, -1, -1))
 
         if isinstance(self.components, np.ndarray):
-            new_components = np.transpose(self.components, axis_order)
+            # For grid-based tensors, only transpose the tensor dimensions
+            total_dims = self.components.ndim
+            grid_dims = total_dims - self.rank
+
+            # Build full axis order: keep grid dimensions in place, transpose tensor dimensions
+            full_axis_order = list(range(grid_dims))  # Grid dimensions stay in place
+            tensor_axis_mapping = [grid_dims + i for i in axis_order]  # Map to tensor dimensions
+            full_axis_order.extend(tensor_axis_mapping)
+
+            new_components = np.transpose(self.components, full_axis_order)
         else:
-            # For SymPy matrices, only support 2D transposition
-            if self.rank == 2 and axis_order == (1, 0):
+            # For SymPy matrices
+            if self.rank == 1:
+                # Vector transposition doesn't change anything for column vectors
+                new_components = self.components.copy()
+            elif self.rank == 2 and axis_order == (1, 0):
                 new_components = self.components.T
             else:
-                raise NotImplementedError("SymPy tensor transposition only supports 2D matrices")
+                # For higher rank SymPy tensors, convert to numpy, transpose, then back
+                # This is less efficient but provides full functionality
+                warnings.warn(
+                    "SymPy higher-rank tensor transposition requires conversion to NumPy",
+                    stacklevel=2,
+                )
+                temp_array = np.array(self.components).astype(complex)
+                transposed_array = np.transpose(temp_array, axis_order)
+                new_components = sp.Matrix(transposed_array)
 
         # Reorder indices accordingly
         new_indices = [self.indices[i] for i in axis_order]
@@ -241,7 +310,9 @@ class TensorField:
         return TensorField(antisymmetrized_components, self._index_string(), self.metric)
 
     @monitor_performance("tensor_contract")
-    def contract(self, other: "TensorField", self_index: int, other_index: int) -> "TensorField":
+    def contract(
+        self, other: "TensorField", self_index: int, other_index: int
+    ) -> "TensorField | np.ndarray | float | complex":
         """
         Contract two tensors along specified indices.
 
@@ -261,24 +332,51 @@ class TensorField:
         # Validate index compatibility
         validate_index_compatibility(self.indices, other.indices, (self_index, other_index))
 
-        # Build einsum string
-        self_indices = [chr(97 + i) for i in range(self.rank)]  # a, b, c, ...
-        other_indices = [chr(97 + self.rank + i) for i in range(other.rank)]
+        # For grid-based tensors, we need to handle the grid dimensions
+        if is_numpy_array(self.components) and is_numpy_array(other.components):
+            self_total_dims = self.components.ndim
+            other_total_dims = other.components.ndim
+            self_grid_dims = self_total_dims - self.rank
+            other_grid_dims = other_total_dims - other.rank
+        else:
+            # SymPy case - no grid dimensions
+            self_total_dims = self.rank
+            other_total_dims = other.rank
+            self_grid_dims = 0
+            other_grid_dims = 0
+
+        # Check that grid shapes are compatible
+        if self_grid_dims != other_grid_dims:
+            raise ValueError(
+                f"Grid dimension mismatch: self has {self_grid_dims} grid dims, "
+                f"other has {other_grid_dims} grid dims"
+            )
+
+        # Build einsum string including grid dimensions
+        grid_indices = [chr(65 + i) for i in range(self_grid_dims)]  # A, B, C, ... for grid
+        self_tensor_indices = [chr(97 + i) for i in range(self.rank)]  # a, b, c, ... for tensor
+        other_tensor_indices = [chr(97 + self.rank + i) for i in range(other.rank)]
 
         # Make contracted indices the same
-        other_indices[other_index] = self_indices[self_index]
+        other_tensor_indices[other_index] = self_tensor_indices[self_index]
 
-        # Result indices (remove contracted ones)
-        result_indices = [idx for i, idx in enumerate(self_indices) if i != self_index] + [
-            idx for i, idx in enumerate(other_indices) if i != other_index
-        ]
+        # Result indices (grid + remaining tensor indices)
+        result_tensor_indices = [
+            idx for i, idx in enumerate(self_tensor_indices) if i != self_index
+        ] + [idx for i, idx in enumerate(other_tensor_indices) if i != other_index]
+
+        # Full index strings (grid + tensor)
+        self_full_indices = grid_indices + self_tensor_indices
+        other_full_indices = grid_indices + other_tensor_indices
+        result_full_indices = grid_indices + result_tensor_indices
 
         einsum_str = (
-            f"{''.join(self_indices)},{''.join(other_indices)}->" + f"{''.join(result_indices)}"
+            f"{''.join(self_full_indices)},{''.join(other_full_indices)}->"
+            + f"{''.join(result_full_indices)}"
         )
 
-        # Validate einsum string
-        validate_einsum_string(einsum_str, self.rank, other.rank)
+        # Validate einsum string (pass total dimensions including grid)
+        validate_einsum_string(einsum_str, self_total_dims, other_total_dims)
 
         # Perform contraction with type checking and optimization
         if is_numpy_array(self.components) and is_numpy_array(other.components):
@@ -295,6 +393,12 @@ class TensorField:
         result_index_list = [self.indices[i] for i in range(self.rank) if i != self_index] + [
             other.indices[i] for i in range(other.rank) if i != other_index
         ]
+
+        # Handle scalar result (rank 0)
+        if len(result_index_list) == 0:
+            # Return scalar result directly (not as TensorField)
+            return result_components
+
         result_index_str = " ".join(
             f"{'_' if cov else ''}{name}" for cov, name in result_index_list
         )
@@ -319,11 +423,11 @@ class TensorField:
         elif self.rank == 2 and other.rank == 1:  # Matrix-vector contraction
             if self_index == 0:  # Contract first index of matrix with vector
                 return sp.Matrix(
-                    [sum(self_comp[j, i] * other_comp[i] for i in range(4)) for j in range(4)]
+                    [sum(self_comp[i, j] * other_comp[i] for i in range(4)) for j in range(4)]
                 )
             elif self_index == 1:  # Contract second index of matrix with vector
                 return sp.Matrix(
-                    [sum(self_comp[i, j] * other_comp[i] for i in range(4)) for j in range(4)]
+                    [sum(self_comp[i, j] * other_comp[j] for j in range(4)) for i in range(4)]
                 )
 
         elif self.rank == 1 and other.rank == 2:  # Vector-matrix contraction
@@ -400,7 +504,7 @@ class TensorField:
         # Contract with inverse metric
         metric_inverse = self.metric.inverse
 
-        # Build contraction
+        # Build contraction based on tensor rank and index position
         if self.rank == 1:  # Vector
             result_components = optimized_einsum("ij,j->i", metric_inverse, self.components)
         elif self.rank == 2:  # Matrix
@@ -408,11 +512,26 @@ class TensorField:
                 result_components = optimized_einsum("ij,jk->ik", metric_inverse, self.components)
             else:
                 result_components = optimized_einsum("ij,ki->kj", metric_inverse, self.components)
+        elif self.rank == 3:  # Rank-3 tensor
+            if index_pos == 0:
+                result_components = optimized_einsum("ij,jkl->ikl", metric_inverse, self.components)
+            elif index_pos == 1:
+                result_components = optimized_einsum("ij,kij->kil", metric_inverse, self.components)
+            else:  # index_pos == 2
+                result_components = optimized_einsum("ij,kli->klj", metric_inverse, self.components)
+        elif self.rank == 4:  # Rank-4 tensor
+            # General einsum for rank-4 tensors
+            indices = list("abcd")
+            indices[index_pos] = "x"
+            output_indices = list("abcd")
+            output_indices[index_pos] = "y"
+            einsum_str = f"xy,{''.join(indices)}->{''.join(output_indices)}"
+            result_components = optimized_einsum(einsum_str, metric_inverse, self.components)
         else:
-            raise NotImplementedError("Index raising not implemented for rank > 2")
+            raise NotImplementedError(f"Index raising not implemented for rank {self.rank} > 4")
 
         # Update indices
-        new_indices = self.indices.copy()
+        new_indices: list[tuple[bool, str]] = self.indices.copy()
         new_indices[index_pos] = (False, index_name)  # Make contravariant
         new_index_str = " ".join(f"{'_' if cov else ''}{name}" for cov, name in new_indices)
 
@@ -443,7 +562,7 @@ class TensorField:
         # Contract with metric
         metric_components = self.metric.components
 
-        # Build contraction
+        # Build contraction based on tensor rank and index position
         if self.rank == 1:  # Vector
             result_components = optimized_einsum("ij,j->i", metric_components, self.components)
         elif self.rank == 2:  # Matrix
@@ -455,11 +574,32 @@ class TensorField:
                 result_components = optimized_einsum(
                     "ij,ki->kj", metric_components, self.components
                 )
+        elif self.rank == 3:  # Rank-3 tensor
+            if index_pos == 0:
+                result_components = optimized_einsum(
+                    "ij,jkl->ikl", metric_components, self.components
+                )
+            elif index_pos == 1:
+                result_components = optimized_einsum(
+                    "ij,kij->kil", metric_components, self.components
+                )
+            else:  # index_pos == 2
+                result_components = optimized_einsum(
+                    "ij,kli->klj", metric_components, self.components
+                )
+        elif self.rank == 4:  # Rank-4 tensor
+            # General einsum for rank-4 tensors
+            indices = list("abcd")
+            indices[index_pos] = "x"
+            output_indices = list("abcd")
+            output_indices[index_pos] = "y"
+            einsum_str = f"xy,{''.join(indices)}->{''.join(output_indices)}"
+            result_components = optimized_einsum(einsum_str, metric_components, self.components)
         else:
-            raise NotImplementedError("Index lowering not implemented for rank > 2")
+            raise NotImplementedError(f"Index lowering not implemented for rank {self.rank} > 4")
 
         # Update indices
-        new_indices = self.indices.copy()
+        new_indices: list[tuple[bool, str]] = self.indices.copy()
         new_indices[index_pos] = (True, index_name)  # Make covariant
         new_index_str = " ".join(f"{'_' if cov else ''}{name}" for cov, name in new_indices)
 
@@ -504,8 +644,24 @@ class TensorField:
 
         # For higher rank tensors, need general contraction
         if is_numpy_array(self.components):
-            trace_axes = (i, j)
-            return np.trace(self.components, axis1=trace_axes[0], axis2=trace_axes[1])
+            # For grid-based tensors, we need to map tensor indices to full array indices
+            total_dims = self.components.ndim
+            grid_dims = total_dims - self.rank
+
+            # Map tensor indices to full array indices
+            full_axis_i = grid_dims + i
+            full_axis_j = grid_dims + j
+
+            return np.trace(self.components, axis1=full_axis_i, axis2=full_axis_j)
         else:
             # SymPy implementation for higher rank
-            raise NotImplementedError("SymPy trace for rank > 2 not implemented")
+            if self.rank > 2:
+                # Convert to numpy for computation, then back to SymPy if needed
+                temp_array = np.array(self.components).astype(complex)
+                result = np.trace(temp_array, axis1=i, axis2=j)
+                # Convert back to SymPy if the result is symbolic
+                if np.any(np.iscomplex(result)) or isinstance(result, complex):
+                    return complex(result)
+                return float(result)
+            else:
+                raise NotImplementedError("SymPy trace for rank > 2 not implemented")

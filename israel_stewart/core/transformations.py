@@ -195,14 +195,23 @@ class LorentzTransformation:
                         tensor.components,
                     )
         else:
-            # SymPy version - simplified
+            # SymPy version - mathematically correct transformations
             transformation_sp = sp.Matrix(transformation)
+            inv_transformation_sp = sp.Matrix(inv_transformation)
+
             if not tensor.indices[0][0] and not tensor.indices[1][0]:  # Both contravariant
+                # T'^μν = Λ^μ_α Λ^ν_β T^αβ
                 transformed = transformation_sp * tensor.components * transformation_sp.T
-            else:
-                # More complex transformation for mixed/covariant indices
-                inv_transformation_sp = sp.Matrix(inv_transformation)
-                transformed = inv_transformation_sp * tensor.components * inv_transformation_sp.T
+            elif tensor.indices[0][0] and tensor.indices[1][0]:  # Both covariant
+                # T'_μν = (Λ⁻¹)^α_μ (Λ⁻¹)^β_ν T_αβ = (Λ⁻¹)ᵀ T Λ⁻¹
+                transformed = inv_transformation_sp.T * tensor.components * inv_transformation_sp
+            else:  # Mixed indices
+                if not tensor.indices[0][0]:  # First contravariant, second covariant
+                    # T'^μ_ν = Λ^μ_α (Λ⁻¹)^β_ν T^α_β = Λ T (Λ⁻¹)ᵀ
+                    transformed = transformation_sp * tensor.components * inv_transformation_sp.T
+                else:  # First covariant, second contravariant
+                    # T'_μ^ν = (Λ⁻¹)^α_μ Λ^ν_β T_α^β = (Λ⁻¹)ᵀ T Λ
+                    transformed = inv_transformation_sp.T * tensor.components * transformation_sp
 
         return TensorField(transformed, tensor._index_string(), self.metric)
 
@@ -292,30 +301,62 @@ class LorentzTransformation:
         When two boosts are applied successively in different directions,
         the result includes a spatial rotation (Thomas-Wigner rotation).
 
+        **WARNING**: This implementation uses a small-velocity approximation.
+        For velocities |v| > 0.001c, the result may be significantly inaccurate.
+
         Args:
             velocity1: First boost velocity
             velocity2: Second boost velocity
 
         Returns:
             4x4 rotation matrix for Thomas-Wigner rotation
+
+        Raises:
+            NotImplementedError: For high velocities where approximation is invalid
+            PhysicsError: For superluminal velocities
         """
+        import warnings
+
         # Convert to numpy arrays if needed (type narrowing)
         if not isinstance(velocity1, np.ndarray):
             velocity1 = np.array(velocity1)
         if not isinstance(velocity2, np.ndarray):
             velocity2 = np.array(velocity2)
 
-        # Simplified Thomas-Wigner rotation calculation
-        # Full calculation involves relativistic velocity addition
-
-        # For small velocities, the rotation angle is approximately
-        # θ ≈ (v₁ × v₂) / (2c²) in the small velocity limit
+        if len(velocity1) != 3 or len(velocity2) != 3:
+            raise ValueError("Velocities must be 3-dimensional")
 
         v1_squared = np.dot(velocity1, velocity1)
         v2_squared = np.dot(velocity2, velocity2)
 
-        if v1_squared < 1e-6 and v2_squared < 1e-6:
-            # Small velocity approximation
+        # Check for superluminal velocities
+        if v1_squared >= 1.0 or v2_squared >= 1.0:
+            raise PhysicsError("Velocities must be less than speed of light")
+
+        # Define velocity thresholds
+        small_velocity_threshold = 1e-6  # |v| < 0.001c for good approximation
+        moderate_velocity_threshold = 0.01  # |v| < 0.1c for warning
+
+        max_velocity_squared = max(v1_squared, v2_squared)
+
+        if max_velocity_squared >= moderate_velocity_threshold:
+            if max_velocity_squared >= 0.25:  # |v| >= 0.5c
+                raise NotImplementedError(
+                    f"Thomas-Wigner rotation for high velocities (max |v| = {np.sqrt(max_velocity_squared):.3f}c) "
+                    "requires full relativistic calculation. Use small-velocity approximation only for |v| < 0.1c."
+                )
+            else:
+                warnings.warn(
+                    f"Thomas-Wigner rotation approximation may be inaccurate for velocities "
+                    f"(max |v| = {np.sqrt(max_velocity_squared):.3f}c). "
+                    "Small-velocity approximation is most accurate for |v| < 0.001c.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        if max_velocity_squared < small_velocity_threshold:
+            # Small velocity approximation: θ ≈ (v₁ × v₂) / (2c²)
+            # In natural units where c = 1: θ ≈ (v₁ × v₂) / 2
             cross_product = np.cross(velocity1, velocity2)
             angle = np.linalg.norm(cross_product) / 2.0
 
@@ -323,7 +364,22 @@ class LorentzTransformation:
                 axis = cross_product / np.linalg.norm(cross_product)
                 return LorentzTransformation.rotation_matrix(axis, float(angle))
 
-        # For larger velocities, return identity (full calculation is complex)
+        elif max_velocity_squared < moderate_velocity_threshold:
+            # Extended approximation for moderate velocities
+            # Include first-order relativistic corrections
+            gamma1 = 1.0 / np.sqrt(1.0 - v1_squared)
+            gamma2 = 1.0 / np.sqrt(1.0 - v2_squared)
+
+            cross_product = np.cross(velocity1, velocity2)
+            # First-order correction: θ ≈ (γ₁γ₂/(γ₁+γ₂)) * (v₁ × v₂) / 2
+            correction_factor = (gamma1 * gamma2) / (gamma1 + gamma2)
+            angle = correction_factor * np.linalg.norm(cross_product) / 2.0
+
+            if angle > 1e-12:
+                axis = cross_product / np.linalg.norm(cross_product)
+                return LorentzTransformation.rotation_matrix(axis, float(angle))
+
+        # Return identity matrix for parallel velocities or very small angles
         return np.eye(4)
 
     def validate_transformation(self, transformation: np.ndarray) -> bool:

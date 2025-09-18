@@ -6,6 +6,7 @@ discretization utilities for relativistic hydrodynamics calculations.
 """
 
 # Forward reference for metrics
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional, cast
 
@@ -14,8 +15,9 @@ import numpy as np
 from .performance import monitor_performance
 
 # Import tensor framework components
-
 if TYPE_CHECKING:
+    from .derivatives import CovariantDerivative
+    from .four_vectors import FourVector
     from .metrics import MetricBase
 
 
@@ -82,6 +84,50 @@ class SpacetimeGrid:
 
         if any(n < 2 for n in self.grid_points):
             raise ValueError("All grid dimensions must have at least 2 points")
+
+        # Validate coordinate system specific constraints
+        self._validate_coordinate_system_constraints()
+
+    def _validate_coordinate_system_constraints(self) -> None:
+        """Validate coordinate system specific constraints."""
+        if self.coordinate_system == "spherical":
+            # Check that theta range is [0, π]
+            theta_range = self.spatial_ranges[1]  # theta is second spatial coordinate
+            if theta_range[0] < 0 or theta_range[1] > np.pi:
+                warnings.warn(
+                    f"Spherical coordinates theta range {theta_range} extends outside [0, π]. "
+                    "This may cause issues with volume elements and derivatives.",
+                    stacklevel=3,
+                )
+
+            # Check that phi range is reasonable
+            phi_range = self.spatial_ranges[2]  # phi is third spatial coordinate
+            if phi_range[1] - phi_range[0] > 2 * np.pi:
+                warnings.warn(
+                    f"Spherical coordinates phi range spans more than 2π: {phi_range}. "
+                    "This may cause issues with periodic boundary conditions.",
+                    stacklevel=3,
+                )
+
+        elif self.coordinate_system == "cylindrical":
+            # Check that rho is non-negative
+            rho_range = self.spatial_ranges[0]  # rho is first spatial coordinate
+            if rho_range[0] < 0:
+                warnings.warn(
+                    f"Cylindrical coordinates rho range {rho_range} includes negative values. "
+                    "Negative radial coordinates may cause issues.",
+                    stacklevel=3,
+                )
+
+        elif self.coordinate_system == "milne":
+            # Check that tau is positive
+            tau_range = self.time_range
+            if tau_range[0] <= 0:
+                warnings.warn(
+                    f"Milne coordinates tau range {tau_range} includes non-positive values. "
+                    "Proper time must be positive in Milne coordinates.",
+                    stacklevel=3,
+                )
 
     def _create_coordinate_arrays(self) -> dict[str, np.ndarray]:
         """Create coordinate arrays for the grid."""
@@ -223,6 +269,9 @@ class SpacetimeGrid:
         """
         Compute gradient along specified axis using finite differences.
 
+        Assumes uniform grid spacing. For non-uniform grids, this method
+        may produce inaccurate results.
+
         Args:
             field: Field values on grid
             axis: Axis along which to compute gradient (0=t, 1=x, 2=y, 3=z)
@@ -233,14 +282,31 @@ class SpacetimeGrid:
         if field.shape != self.shape:
             raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
+        if axis < 0 or axis >= 4:
+            raise ValueError(f"Axis must be in range [0, 3], got {axis}")
+
         coord_name = self.coordinate_names[axis]
-        spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
+        coord_array = self.coordinates[coord_name]
+
+        # Check for uniform spacing and warn if not
+        spacing = coord_array[1] - coord_array[0]
+        if len(coord_array) > 2:
+            max_spacing_diff = np.max(np.diff(coord_array)) - np.min(np.diff(coord_array))
+            if max_spacing_diff > 1e-10 * spacing:
+                warnings.warn(
+                    f"Non-uniform grid spacing detected in {coord_name} direction. "
+                    "Gradient calculation assumes uniform spacing and may be inaccurate.",
+                    stacklevel=2,
+                )
 
         return np.gradient(field, spacing, axis=axis)  # type: ignore[no-any-return]
 
     def divergence(self, vector_field: np.ndarray) -> np.ndarray:
         """
-        Compute divergence of vector field using finite differences.
+        Compute divergence of vector field.
+
+        Uses covariant divergence if metric is available, otherwise falls back
+        to flat-space divergence with a warning for non-Cartesian coordinates.
 
         Args:
             vector_field: Vector field with shape (*grid.shape, 4)
@@ -254,17 +320,44 @@ class SpacetimeGrid:
                 f"Vector field shape {vector_field.shape} doesn't match expected {expected_shape}"
             )
 
-        divergence = np.zeros(self.shape)
+        # Use covariant divergence if metric is available
+        if self.metric is not None:
+            # Import here to avoid circular imports
+            from .derivatives import CovariantDerivative
+            from .four_vectors import FourVector
 
-        for mu in range(4):
-            grad_component = self.gradient(vector_field[..., mu], axis=mu)
-            divergence += grad_component
+            # Create coordinate arrays for covariant derivative
+            coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
 
-        return divergence
+            # Create CovariantDerivative instance
+            covariant_deriv = CovariantDerivative(self.metric)
+
+            # Convert to FourVector format and compute covariant divergence
+            four_vector = FourVector(vector_field, is_covariant=False, metric=self.metric)
+            return covariant_deriv.vector_divergence(four_vector, coord_arrays)  # type: ignore[no-any-return]
+        else:
+            # Flat-space approximation - warn for non-Cartesian coordinates
+            if self.coordinate_system != "cartesian":
+                warnings.warn(
+                    f"Using flat-space divergence approximation for {self.coordinate_system} coordinates. "
+                    "This may produce incorrect results. Consider providing a metric tensor.",
+                    stacklevel=2,
+                )
+
+            # Simple flat-space divergence
+            divergence = np.zeros(self.shape)
+            for mu in range(4):
+                grad_component = self.gradient(vector_field[..., mu], axis=mu)
+                divergence += grad_component
+
+            return divergence
 
     def laplacian(self, field: np.ndarray) -> np.ndarray:
         """
-        Compute Laplacian using finite differences.
+        Compute Laplacian of scalar field.
+
+        Uses covariant Laplacian if metric is available, otherwise falls back
+        to flat-space Laplacian with a warning for non-Cartesian coordinates.
 
         Args:
             field: Scalar field on grid
@@ -275,18 +368,47 @@ class SpacetimeGrid:
         if field.shape != self.shape:
             raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
-        laplacian = np.zeros_like(field)
+        # Use covariant Laplacian if metric is available
+        if self.metric is not None:
+            # Import here to avoid circular imports
+            from .derivatives import CovariantDerivative
 
-        # Spatial Laplacian (exclude time coordinate)
-        for axis in range(1, 4):
-            coord_name = self.coordinate_names[axis]
-            spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
+            # Create coordinate arrays for covariant derivative
+            coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
 
-            # Second derivative using central differences
-            second_deriv = np.gradient(np.gradient(field, spacing, axis=axis), spacing, axis=axis)
-            laplacian += second_deriv
+            # Create CovariantDerivative instance
+            covariant_deriv = CovariantDerivative(self.metric)
 
-        return laplacian
+            # Compute covariant Laplacian: ∇² φ = ∇_μ ∇^μ φ
+            # First compute gradient
+            gradient_field = np.zeros((*self.shape, 4))
+            for mu in range(4):
+                gradient_field[..., mu] = self.gradient(field, axis=mu)
+
+            # Then compute divergence of gradient
+            return self.divergence(gradient_field)
+        else:
+            # Flat-space approximation - warn for non-Cartesian coordinates
+            if self.coordinate_system != "cartesian":
+                warnings.warn(
+                    f"Using flat-space Laplacian approximation for {self.coordinate_system} coordinates. "
+                    "This may produce incorrect results. Consider providing a metric tensor.",
+                    stacklevel=2,
+                )
+
+            # Simple flat-space Laplacian (spatial only)
+            laplacian = np.zeros_like(field)
+            for axis in range(1, 4):  # Exclude time coordinate
+                coord_name = self.coordinate_names[axis]
+                spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
+
+                # Second derivative using central differences
+                second_deriv = np.gradient(
+                    np.gradient(field, spacing, axis=axis), spacing, axis=axis
+                )
+                laplacian += second_deriv
+
+            return laplacian
 
     def interpolate(self, field: np.ndarray, coords: np.ndarray, method: str = "linear") -> float:
         """
@@ -312,7 +434,7 @@ class SpacetimeGrid:
         return float(interpolator(coords))
 
     def apply_boundary_conditions(
-        self, field: np.ndarray, boundary_conditions: dict[str, str]
+        self, field: np.ndarray, boundary_conditions: dict[str, str | tuple[str, float]]
     ) -> np.ndarray:
         """
         Apply boundary conditions to field.
@@ -320,7 +442,8 @@ class SpacetimeGrid:
         Args:
             field: Field to apply boundary conditions to
             boundary_conditions: Dict mapping boundary names to condition types
-                                 ('periodic', 'reflecting', 'absorbing', 'fixed')
+                                 - 'periodic', 'reflecting', 'absorbing' (strings)
+                                 - ('fixed', value) for fixed boundaries with specified value
 
         Returns:
             Field with boundary conditions applied
@@ -334,8 +457,13 @@ class SpacetimeGrid:
                 field_bc = self._apply_reflecting_bc(field_bc, boundary)
             elif condition == "absorbing":
                 field_bc = self._apply_absorbing_bc(field_bc, boundary)
+            elif isinstance(condition, tuple) and condition[0] == "fixed":
+                # Handle fixed boundary with specified value
+                value = condition[1] if len(condition) > 1 else 0.0
+                field_bc = self._apply_fixed_bc(field_bc, boundary, value)
             elif condition == "fixed":
-                field_bc = self._apply_fixed_bc(field_bc, boundary)
+                # Handle fixed boundary with default value (0.0)
+                field_bc = self._apply_fixed_bc(field_bc, boundary, 0.0)
             else:
                 raise ValueError(f"Unknown boundary condition: {condition}")
 
@@ -361,18 +489,19 @@ class SpacetimeGrid:
         coord_name, side = parts
 
         # Map coordinate names to axis indices
+        # Note: Coordinate ordering is (t, spatial1, spatial2, spatial3)
         coord_to_axis = {
             "t": 0,
             "time": 0,
             "tau": 0,
             "x": 1,
             "y": 2,
-            "r": 1,
-            "rho": 1,
-            "eta": 1,
             "z": 3,
+            "r": 1,  # spherical: (t, r, theta, phi)
             "theta": 2,
-            "phi": 2,
+            "phi": 3,  # Fixed: phi is at index 3 in spherical coordinates
+            "rho": 1,  # cylindrical: (t, rho, phi, z)
+            "eta": 1,  # milne: (tau, eta, x, y)
         }
 
         if coord_name not in coord_to_axis:
@@ -441,19 +570,204 @@ class SpacetimeGrid:
         return field_bc
 
     def _apply_reflecting_bc(self, field: np.ndarray, boundary: str) -> np.ndarray:
-        """Apply reflecting boundary conditions."""
-        # Implementation for reflecting boundaries
-        return field
+        """Apply reflecting boundary conditions.
+
+        Reflecting boundaries mirror field values across the boundary,
+        appropriate for problems with symmetry.
+
+        Args:
+            field: Field array to apply boundary conditions to
+            boundary: Boundary specification (e.g., 'x_min', 'x_max')
+
+        Returns:
+            Field with reflecting boundary conditions applied
+        """
+        field_bc = field.copy()
+
+        # Parse boundary specification
+        parts = boundary.split("_")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid boundary specification: {boundary}")
+
+        coord_name, side = parts
+
+        # Use same coordinate mapping as periodic BC
+        coord_to_axis = {
+            "t": 0,
+            "time": 0,
+            "tau": 0,
+            "x": 1,
+            "y": 2,
+            "z": 3,
+            "r": 1,
+            "theta": 2,
+            "phi": 3,
+            "rho": 1,
+            "eta": 1,
+        }
+
+        if coord_name not in coord_to_axis:
+            raise ValueError(f"Unknown coordinate: {coord_name}")
+
+        axis = coord_to_axis[coord_name]
+
+        # Apply reflecting boundary condition
+        if side == "min":
+            # Reflect from interior points to boundary
+            if axis == 0:  # time
+                field_bc[0, ...] = field_bc[1, ...]
+            elif axis == 1:  # x
+                field_bc[:, 0, ...] = field_bc[:, 1, ...]
+            elif axis == 2:  # y
+                field_bc[:, :, 0, :] = field_bc[:, :, 1, :]
+            elif axis == 3:  # z
+                field_bc[:, :, :, 0] = field_bc[:, :, :, 1]
+        elif side == "max":
+            # Reflect from interior points to boundary
+            if axis == 0:  # time
+                field_bc[-1, ...] = field_bc[-2, ...]
+            elif axis == 1:  # x
+                field_bc[:, -1, ...] = field_bc[:, -2, ...]
+            elif axis == 2:  # y
+                field_bc[:, :, -1, :] = field_bc[:, :, -2, :]
+            elif axis == 3:  # z
+                field_bc[:, :, :, -1] = field_bc[:, :, :, -2]
+        else:
+            raise ValueError(f"Invalid boundary side: {side}")
+
+        return field_bc
 
     def _apply_absorbing_bc(self, field: np.ndarray, boundary: str) -> np.ndarray:
-        """Apply absorbing boundary conditions."""
-        # Implementation for absorbing boundaries
-        return field
+        """Apply absorbing boundary conditions.
 
-    def _apply_fixed_bc(self, field: np.ndarray, boundary: str) -> np.ndarray:
-        """Apply fixed value boundary conditions."""
-        # Implementation for fixed boundaries
-        return field
+        Absorbing boundaries set the field to zero at the boundary,
+        preventing reflection and allowing waves to "exit" the domain.
+
+        Args:
+            field: Field array to apply boundary conditions to
+            boundary: Boundary specification (e.g., 'x_min', 'x_max')
+
+        Returns:
+            Field with absorbing boundary conditions applied
+        """
+        field_bc = field.copy()
+
+        # Parse boundary specification
+        parts = boundary.split("_")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid boundary specification: {boundary}")
+
+        coord_name, side = parts
+
+        # Use same coordinate mapping as periodic BC
+        coord_to_axis = {
+            "t": 0,
+            "time": 0,
+            "tau": 0,
+            "x": 1,
+            "y": 2,
+            "z": 3,
+            "r": 1,
+            "theta": 2,
+            "phi": 3,
+            "rho": 1,
+            "eta": 1,
+        }
+
+        if coord_name not in coord_to_axis:
+            raise ValueError(f"Unknown coordinate: {coord_name}")
+
+        axis = coord_to_axis[coord_name]
+
+        # Apply absorbing boundary condition (set to zero)
+        if side == "min":
+            if axis == 0:  # time
+                field_bc[0, ...] = 0.0
+            elif axis == 1:  # x
+                field_bc[:, 0, ...] = 0.0
+            elif axis == 2:  # y
+                field_bc[:, :, 0, :] = 0.0
+            elif axis == 3:  # z
+                field_bc[:, :, :, 0] = 0.0
+        elif side == "max":
+            if axis == 0:  # time
+                field_bc[-1, ...] = 0.0
+            elif axis == 1:  # x
+                field_bc[:, -1, ...] = 0.0
+            elif axis == 2:  # y
+                field_bc[:, :, -1, :] = 0.0
+            elif axis == 3:  # z
+                field_bc[:, :, :, -1] = 0.0
+        else:
+            raise ValueError(f"Invalid boundary side: {side}")
+
+        return field_bc
+
+    def _apply_fixed_bc(self, field: np.ndarray, boundary: str, value: float = 0.0) -> np.ndarray:
+        """Apply fixed value boundary conditions.
+
+        Fixed boundaries set the field to a specified constant value at the boundary.
+
+        Args:
+            field: Field array to apply boundary conditions to
+            boundary: Boundary specification (e.g., 'x_min', 'x_max')
+            value: Fixed value to set at boundary (default: 0.0)
+
+        Returns:
+            Field with fixed boundary conditions applied
+        """
+        field_bc = field.copy()
+
+        # Parse boundary specification
+        parts = boundary.split("_")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid boundary specification: {boundary}")
+
+        coord_name, side = parts
+
+        # Use same coordinate mapping as periodic BC
+        coord_to_axis = {
+            "t": 0,
+            "time": 0,
+            "tau": 0,
+            "x": 1,
+            "y": 2,
+            "z": 3,
+            "r": 1,
+            "theta": 2,
+            "phi": 3,
+            "rho": 1,
+            "eta": 1,
+        }
+
+        if coord_name not in coord_to_axis:
+            raise ValueError(f"Unknown coordinate: {coord_name}")
+
+        axis = coord_to_axis[coord_name]
+
+        # Apply fixed boundary condition
+        if side == "min":
+            if axis == 0:  # time
+                field_bc[0, ...] = value
+            elif axis == 1:  # x
+                field_bc[:, 0, ...] = value
+            elif axis == 2:  # y
+                field_bc[:, :, 0, :] = value
+            elif axis == 3:  # z
+                field_bc[:, :, :, 0] = value
+        elif side == "max":
+            if axis == 0:  # time
+                field_bc[-1, ...] = value
+            elif axis == 1:  # x
+                field_bc[:, -1, ...] = value
+            elif axis == 2:  # y
+                field_bc[:, :, -1, :] = value
+            elif axis == 3:  # z
+                field_bc[:, :, :, -1] = value
+        else:
+            raise ValueError(f"Invalid boundary side: {side}")
+
+        return field_bc
 
     def volume_element(self) -> np.ndarray:
         """
@@ -491,10 +805,15 @@ class SpacetimeGrid:
 
         Returns:
             Jacobian matrix ∂x'^μ/∂x^ν
+
+        Raises:
+            NotImplementedError: This feature is not yet implemented
         """
-        # This would implement coordinate transformations
-        # For now, return identity
-        return np.eye(4)
+        raise NotImplementedError(
+            "Coordinate transformation Jacobian computation is not yet implemented. "
+            "This would require implementing analytical transformations between "
+            f"'{self.coordinate_system}' and '{target_system}' coordinate systems."
+        )
 
     def create_subgrid(
         self, time_slice: slice | None = None, spatial_slices: list[slice] | None = None
@@ -508,10 +827,17 @@ class SpacetimeGrid:
 
         Returns:
             New SpacetimeGrid covering subregion
+
+        Raises:
+            NotImplementedError: This feature is not yet implemented
         """
-        # Implementation for creating subgrids
-        # This is useful for adaptive mesh refinement
-        raise NotImplementedError("Subgrid creation not yet implemented")
+        raise NotImplementedError(
+            "Subgrid creation is not yet implemented. This would involve: "
+            "1) Extracting coordinate ranges from slices, "
+            "2) Computing new grid parameters, "
+            "3) Creating a new SpacetimeGrid instance with the subregion parameters. "
+            "This is useful for adaptive mesh refinement and domain decomposition."
+        )
 
     def __str__(self) -> str:
         return (
@@ -567,12 +893,18 @@ class AdaptiveMeshRefinement:
 
         Returns:
             Dictionary with refined grid information
+
+        Raises:
+            NotImplementedError: This feature is not yet implemented
         """
-        # Placeholder implementation
-        return {
-            "refined_grid": self.base_grid,
-            "refinement_map": np.zeros(self.base_grid.shape),
-        }
+        raise NotImplementedError(
+            "Adaptive mesh refinement is not yet implemented. This would involve: "
+            "1) Analyzing field gradients and applying refinement criteria, "
+            "2) Identifying regions requiring refinement, "
+            "3) Creating refined subgrids with increased resolution, "
+            "4) Managing communication between different refinement levels. "
+            "Consider using existing AMR libraries like BoxLib or Chombo."
+        )
 
 
 # Utility functions for common grid operations

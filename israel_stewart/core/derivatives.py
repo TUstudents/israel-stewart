@@ -92,31 +92,27 @@ class CovariantDerivative:
         """
         Compute covariant divergence ∇_μ V^μ of a vector field across the entire grid.
 
+        Optimized implementation that directly computes the trace of partial derivatives
+        without creating large intermediate arrays.
+
         Returns a scalar field (grid) representing the divergence at each point.
         """
         christoffel = self.christoffel_symbols
         components = vector_field.components  # Shape: (..., 4)
 
-        # 1. Compute all partial derivatives ∂_μ V^ν at once.
-        # The result `grad_V` will have shape (4, ..., 4)
-        # where the first axis is the derivative index μ.
-        grad_V = np.stack(
-            [
-                np.gradient(components[..., nu], axis=mu, edge_order=2)
-                for mu in range(4)
-                for nu in range(4)
-            ],
-            axis=0,
-        ).reshape(4, 4, *components.shape[:-1])
+        # 1. Compute partial derivative trace ∂_μ V^μ directly (much more efficient)
+        partial_deriv_trace = np.zeros(components.shape[:-1])
+        for mu in range(4):
+            # Only compute diagonal terms we need for the trace
+            partial_deriv_trace += np.gradient(
+                components[..., mu], coordinates[mu], axis=mu, edge_order=2
+            )
 
-        # We need the trace of the partial derivatives: ∂_μ V^μ
-        partial_deriv_trace = np.einsum("ii...->...", grad_V)  # Sums over the diagonal
-
-        # 2. Compute the Christoffel term Γ^μ_μλ V^λ, vectorized over the grid.
-        # christoffel shape: (4, 4, 4)
+        # 2. Compute the Christoffel term Γ^μ_μλ V^λ, vectorized over the grid
+        # christoffel shape: (4, 4, 4) -> extract trace Γ^μ_μλ
         # components shape: (..., 4)
         # result shape: (...)
-        christoffel_term = np.einsum("iil,...l->...", christoffel, components)
+        christoffel_term = optimized_einsum("iil,...l->...", christoffel, components)
 
         # 3. Return the sum as a scalar field
         result: np.ndarray = partial_deriv_trace + christoffel_term
@@ -131,6 +127,9 @@ class CovariantDerivative:
         """
         Compute material derivative D = u^μ ∇_μ along fluid flow.
 
+        Optimized implementation that computes the full covariant derivative once
+        and then contracts with the four-velocity, avoiding redundant calculations.
+
         Args:
             tensor_field: Tensor field to differentiate
             four_velocity: Fluid four-velocity u^μ
@@ -139,15 +138,14 @@ class CovariantDerivative:
         Returns:
             Material derivative of tensor field
         """
-        # For each component μ, compute u^μ ∇_μ T
-        material_deriv_components = np.zeros_like(tensor_field.components)
+        # Compute full covariant derivative ∇_μ T once (returns tensor with extra derivative index)
+        full_cov_deriv = self.tensor_covariant_derivative(tensor_field, coordinates)
 
-        for mu in range(4):
-            # Compute ∇_μ T
-            cov_deriv = self.tensor_covariant_derivative(tensor_field, mu, coordinates)
-
-            # Contract with u^μ: u^μ ∇_μ T
-            material_deriv_components += four_velocity.components[mu] * cov_deriv.components
+        # Contract with four-velocity: u^μ ∇_μ T
+        # The derivative index is the last one in full_cov_deriv
+        material_deriv_components = optimized_einsum(
+            "m,...m->...", four_velocity.components, full_cov_deriv.components
+        )
 
         return TensorField(material_deriv_components, tensor_field._index_string(), self.metric)
 
@@ -182,8 +180,15 @@ class CovariantDerivative:
 
         covariant_derivative = partial_derivatives + correction
 
-        # Build new index string
-        new_indices = tensor_field._index_string() + " _d"
+        # Build new index string with robust index handling
+        # Add derivative index as the last covariant index
+        if hasattr(tensor_field, 'add_covariant_index'):
+            # Use proper method if available
+            new_indices = tensor_field.add_covariant_index("d")
+        else:
+            # Fallback to string manipulation with better formatting
+            current_indices = tensor_field._index_string()
+            new_indices = current_indices + " _d" if current_indices else "_d"
 
         return TensorField(covariant_derivative, new_indices, self.metric)
 
@@ -263,21 +268,37 @@ class CovariantDerivative:
         """
         Compute Lie derivative L_V T of tensor along vector field.
 
+        **WARNING**: This implementation is incomplete! It only includes the
+        material derivative term V^μ ∇_μ T. The full Lie derivative requires
+        additional terms involving the derivatives of the vector field.
+
         Args:
             tensor_field: Tensor to differentiate
             vector_field: Vector field V^μ
             coordinates: Coordinate grid
 
         Returns:
-            Lie derivative L_V T
-        """
-        # Lie derivative: L_V T = V^μ ∇_μ T + (∇_μ V^ν) T terms
+            Incomplete Lie derivative (material derivative part only)
 
-        # Material derivative part: V^μ ∇_μ T
+        Raises:
+            UserWarning: Always warns about incomplete implementation
+        """
+        warnings.warn(
+            "lie_derivative is incomplete - only material derivative V^μ ∇_μ T implemented. "
+            "Missing tensor index contraction terms (∇_μ V^ν) for proper Lie derivative. "
+            "Use with caution for physics calculations.",
+            UserWarning,
+            stacklevel=2
+        )
+
+        # Lie derivative: L_V T = V^μ ∇_μ T + (∇_μ V^ν) T terms
+        # Only the first term is implemented:
         material_part = self.material_derivative(tensor_field, vector_field, coordinates)
 
-        # Additional terms depend on tensor rank - simplified implementation
-        # Full implementation would include all index contractions
+        # TODO: Add remaining terms for complete Lie derivative:
+        # For scalars: complete (material derivative is sufficient)
+        # For vectors: + (∇_μ V^ν) T_ν terms
+        # For tensors: + appropriate index contraction terms
 
         return material_part
 
@@ -339,7 +360,9 @@ class ProjectionOperator:
         """
         Compute perpendicular projection tensor Δ^μν = g^μν + u^μ u^ν.
 
-        Projects onto 3-space orthogonal to four-velocity.
+        Projects onto 3-space orthogonal to four-velocity. The formula is
+        independent of metric signature since the four-velocity normalization
+        u^μ u_μ = ±c² already accounts for the signature convention.
 
         Returns:
             Perpendicular projection tensor Δ^μν
@@ -350,9 +373,9 @@ class ProjectionOperator:
         # Compute u^μ u^ν
         u_outer = np.outer(self.u.components, self.u.components)
 
-        # Perpendicular projector: Δ^μν = g^μν + sign * u^μ u^ν
-        sign = self.metric.signature[0]
-        delta = g_inverse + sign * u_outer
+        # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        # This formula is correct regardless of metric signature
+        delta = g_inverse + u_outer
 
         return TensorField(delta, "mu nu", self.metric)
 
@@ -394,7 +417,8 @@ class ProjectionOperator:
                 "mn,n->m", delta.components, vector_lowered.components
             )
         else:
-            perp_components = delta.components * vector_lowered.components
+            # Proper SymPy matrix multiplication for tensor contraction
+            perp_components = delta.components @ vector_lowered.components
 
         return FourVector(perp_components, False, self.metric)
 
@@ -423,8 +447,8 @@ class ProjectionOperator:
                 tensor_lowered.components,
             )
         else:
-            # SymPy version - simplified
-            spatial = delta.components * tensor_lowered.components * delta.components
+            # Proper SymPy tensor contraction: Δ^μα T_αβ Δ^βν
+            spatial = delta.components @ tensor_lowered.components @ delta.components.T
 
         return TensorField(spatial, "mu nu", self.metric)
 

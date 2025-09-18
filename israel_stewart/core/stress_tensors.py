@@ -132,8 +132,17 @@ class StressEnergyTensor(TensorField):
                 "ma,nb,ab->mn", delta.components, delta.components, T_down.components
             )
         else:
-            # SymPy version - simplified
-            pressure = delta.components * T_down.components * delta.components
+            # SymPy version - proper tensor contraction: P^μν = Δ^μα Δ^νβ T_αβ
+            pressure = sp.zeros(4, 4)
+            for mu in range(4):
+                for nu in range(4):
+                    for alpha in range(4):
+                        for beta in range(4):
+                            pressure[mu, nu] += (
+                                delta.components[mu, alpha]
+                                * delta.components[nu, beta]
+                                * T_down.components[alpha, beta]
+                            )
 
         return TensorField(pressure, "mu nu", self.metric)
 
@@ -252,28 +261,60 @@ class StressEnergyTensor(TensorField):
             # SymPy eigenvalues
             return list(sp.Matrix(self.components).eigenvals().keys())
 
-    def dominant_energy_condition(self, tolerance: float = 1e-10) -> bool:
+    def dominant_energy_condition(
+        self, four_velocity: FourVector, tolerance: float = 1e-10
+    ) -> bool:
         """
         Check dominant energy condition.
 
-        For physical matter, T^μν should satisfy dominant energy condition.
+        For physical matter, T^μν should satisfy:
+        1. Energy density ρ = u_μ u_ν T^μν ≥ 0
+        2. For any timelike or null vector v^μ: v_μ v_ν T^μν ≥ 0
 
         Args:
+            four_velocity: Fluid four-velocity for energy density extraction
             tolerance: Numerical tolerance for checks
 
         Returns:
             True if dominant energy condition is satisfied
         """
-        # Simplified check: all eigenvalues should have the right sign structure
+        # Check 1: Energy density must be non-negative
+        energy_dens = self.energy_density(four_velocity)
+        if isinstance(energy_dens, float | int):
+            if energy_dens < -tolerance:
+                return False
+        elif hasattr(energy_dens, "is_negative"):
+            if energy_dens.is_negative:
+                return False
+
+        # Check 2: Eigenvalue analysis
+        # For the dominant energy condition, we need more sophisticated analysis
+        # Here we implement a simplified version checking eigenvalue signs
         eigenvals = self.eigenvalues()
 
         if isinstance(eigenvals, np.ndarray):
-            # For dominant energy condition, need detailed analysis of eigenvalue structure
-            # This is a simplified implementation
-            return bool(np.all(eigenvals >= -tolerance))
+            # Check that there's one negative eigenvalue (timelike direction)
+            # and three positive eigenvalues (spacelike directions)
+            eigenvals_sorted = np.sort(eigenvals)
+
+            # For physical stress-energy tensor in mostly-minus signature:
+            # Should have one large negative eigenvalue and three smaller positive ones
+            if len(eigenvals_sorted) == 4:
+                # Most negative eigenvalue should dominate
+                if eigenvals_sorted[0] >= -tolerance:  # Should be negative
+                    return False
+                # Check that energy density dominates momentum/stress
+                if abs(eigenvals_sorted[0]) < max(abs(eigenvals_sorted[1:])):
+                    return False
+
+            return True
         else:
-            # SymPy case - symbolic check
-            return all(eigenval >= -tolerance for eigenval in eigenvals if eigenval.is_real)
+            # SymPy case - basic check for real eigenvalues
+            real_eigenvals = [ev for ev in eigenvals if ev.is_real]
+            if len(real_eigenvals) < 4:
+                return False  # Need all real eigenvalues for physical matter
+
+            return all(abs(ev) > tolerance for ev in real_eigenvals)  # No zero eigenvalues
 
 
 class ViscousStressTensor(TensorField):
@@ -311,6 +352,28 @@ class ViscousStressTensor(TensorField):
             if not np.allclose(self.components, symmetric_part, rtol=1e-10):
                 warnings.warn("Viscous stress tensor should be symmetric", stacklevel=2)
 
+            # Check for NaN or infinite values
+            if not np.all(np.isfinite(self.components)):
+                raise ValueError("Viscous stress tensor contains NaN or infinite values")
+
+            # Check for reasonable magnitude (basic sanity check)
+            max_component = np.max(np.abs(self.components))
+            if max_component > 1e10:
+                warnings.warn(
+                    f"Viscous stress tensor has very large components (max: {max_component:.2e}). "
+                    "This may indicate numerical instability.",
+                    stacklevel=2,
+                )
+        else:
+            # SymPy case - check for symbolic validity
+            try:
+                # Attempt to access matrix properties
+                symmetric_check = self.components - self.components.T
+                if not symmetric_check.equals(sp.zeros(4, 4)):
+                    warnings.warn("Viscous stress tensor should be symmetric", stacklevel=2)
+            except Exception:
+                warnings.warn("Could not validate SymPy viscous tensor properties", stacklevel=2)
+
     @monitor_performance("shear_extraction")
     def shear_part(self, four_velocity: FourVector) -> "ViscousStressTensor":
         """
@@ -345,9 +408,26 @@ class ViscousStressTensor(TensorField):
             trace = np.einsum("ab,ab", delta.components, pi_down.components)
             shear = projected - (1.0 / 3.0) * trace * delta.components
         else:
-            # SymPy version
-            projected = delta.components * pi_down.components * delta.components
-            trace = (delta.components * pi_down.components).trace()
+            # SymPy version - proper tensor contraction
+            projected = sp.zeros(4, 4)
+            for mu in range(4):
+                for nu in range(4):
+                    for alpha in range(4):
+                        for beta in range(4):
+                            projected[mu, nu] += (
+                                delta.components[mu, alpha]
+                                * delta.components[nu, beta]
+                                * pi_down.components[alpha, beta]
+                            )
+
+            # Compute trace: Δ_γδ π^γδ
+            trace = 0
+            for gamma in range(4):
+                for delta_idx in range(4):
+                    trace += (
+                        delta.components[gamma, delta_idx] * pi_down.components[gamma, delta_idx]
+                    )
+
             shear = projected - (sp.Rational(1, 3) * trace * delta.components)
 
         return ViscousStressTensor(shear, self.metric)
@@ -378,7 +458,12 @@ class ViscousStressTensor(TensorField):
         if isinstance(self.components, np.ndarray):
             bulk = -(1.0 / 3.0) * np.einsum("mn,mn", delta.components, pi_down.components)
         else:
-            bulk = -(sp.Rational(1, 3) * (delta.components * pi_down.components).trace())
+            # SymPy version - proper trace computation: Π = -(1/3) Δ_μν π^μν
+            trace = 0
+            for mu in range(4):
+                for nu in range(4):
+                    trace += delta.components[mu, nu] * pi_down.components[mu, nu]
+            bulk = -sp.Rational(1, 3) * trace
 
         return bulk
 
@@ -440,6 +525,27 @@ class ViscousStressTensor(TensorField):
         if metric is None:
             raise ValueError("Cannot construct viscous tensor without metric")
 
+        # Validate transport coefficients
+        if isinstance(shear_viscosity, float | int) and shear_viscosity < 0:
+            raise ValueError(f"Shear viscosity must be non-negative, got {shear_viscosity}")
+        if isinstance(bulk_viscosity, float | int) and bulk_viscosity < 0:
+            raise ValueError(f"Bulk viscosity must be non-negative, got {bulk_viscosity}")
+        if isinstance(thermal_conductivity, float | int) and thermal_conductivity < 0:
+            raise ValueError(
+                f"Thermal conductivity must be non-negative, got {thermal_conductivity}"
+            )
+
+        # Check four-velocity normalization
+        if four_velocity.metric is not None:
+            norm_squared = four_velocity.dot(four_velocity)
+            expected_norm = -1.0  # For mostly-minus signature
+            if isinstance(norm_squared, float | int):
+                if abs(norm_squared - expected_norm) > 1e-10:
+                    warnings.warn(
+                        f"Four-velocity not properly normalized: u·u = {norm_squared}, expected {expected_norm}",
+                        stacklevel=2,
+                    )
+
         # Import here to avoid circular imports
         from .derivatives import ProjectionOperator
 
@@ -470,23 +576,38 @@ class ViscousStressTensor(TensorField):
         shear_part = -shear_viscosity * traceless_shear
 
         # Bulk viscous part: -ζ Δ^μν (∇_α u^α)
-        # Approximate divergence from velocity gradient trace
+        # Compute proper four-divergence using covariant derivative
+        from .derivatives import CovariantDerivative
+
+        cov_deriv = CovariantDerivative(metric)
+        # For proper implementation, we need coordinate arrays to compute ∇_α u^α
+        # For now, use a warning and simplified approximation
+        warnings.warn(
+            "from_transport_coefficients uses simplified four-divergence approximation. "
+            "For accurate results, use proper covariant divergence with coordinate arrays.",
+            stacklevel=2,
+        )
+
+        # Simplified approximation: use trace of velocity gradient as proxy
+        # Note: This is not physically correct but allows method to function
         divergence = velocity_gradient.trace() if hasattr(velocity_gradient, "trace") else 0.0
         bulk_part = -bulk_viscosity * divergence * delta.components
 
-        # Heat conduction part: thermal conductivity effects
-        # Simplified: q^μ = -κ ∇^μ T (projected)
-        temp_grad_projected = proj_op.project_vector_perpendicular(temperature_gradient)
-        if isinstance(temp_grad_projected.components, np.ndarray):
-            heat_part = -thermal_conductivity * np.outer(
-                temp_grad_projected.components, temp_grad_projected.components
-            )
+        # Heat conduction correction:
+        # Heat flux q^μ doesn't directly contribute to viscous stress tensor π^μν
+        # In proper Israel-Stewart theory, heat flux is treated separately
+        # We set heat_part to zero and add a warning
+        warnings.warn(
+            "Heat conduction effects in viscous stress tensor are not physically correct "
+            "in this simplified implementation. Heat flux should be treated as separate vector quantity.",
+            stacklevel=2,
+        )
+
+        # Set heat conduction part to zero for physical correctness
+        if isinstance(delta.components, np.ndarray):
+            heat_part = np.zeros_like(delta.components)
         else:
-            heat_part = (
-                -thermal_conductivity
-                * temp_grad_projected.components
-                * temp_grad_projected.components.T
-            )
+            heat_part = sp.zeros(4, 4)
 
         # Total viscous tensor
         total_viscous = shear_part + bulk_part + heat_part
@@ -525,41 +646,135 @@ class ViscousStressTensor(TensorField):
         cov_deriv = CovariantDerivative(self.metric)
         material_derivative = cov_deriv.material_derivative(self, four_velocity, coordinates)
 
-        # First-order source terms (Navier-Stokes)
-        transport_coefficients.get("shear_viscosity", 0.0)
-        transport_coefficients.get("bulk_viscosity", 0.0)
+        # Extract transport coefficients
+        eta = transport_coefficients.get("shear_viscosity", 0.0)
+        zeta = transport_coefficients.get("bulk_viscosity", 0.0)
 
-        # Simplified source term construction
-        # In full implementation, would need velocity gradient and proper σ^μν
-        source_term = np.zeros_like(self.components)  # Placeholder
+        # Second-order coupling coefficients
+        lambda_pi_pi = transport_coefficients.get("lambda_pi_pi", 0.0)
+        xi_1 = transport_coefficients.get("xi_1", 0.0)
 
-        # Israel-Stewart evolution: τ D π^μν + π^μν = S^μν
-        evolved_components = (source_term - material_derivative) / (1.0 + relaxation_time)
+        # Import projection operator
+        from .derivatives import ProjectionOperator
+
+        proj_op = ProjectionOperator(four_velocity, self.metric)
+        delta = proj_op.perpendicular_projector()
+
+        # Construct Israel-Stewart source terms
+        # For full implementation, we need:
+        # 1. Shear rate tensor σ^μν from velocity gradients
+        # 2. Four-divergence ∇_α u^α from velocity field
+        # 3. Second-order coupling terms
+
+        warnings.warn(
+            "israel_stewart_evolution uses simplified source terms. "
+            "Full implementation requires velocity gradients and proper shear rate tensor construction.",
+            stacklevel=2,
+        )
+
+        # Simplified source term: S^μν = -η σ^μν - ζ Δ^μν ∇_α u^α + second-order terms
+        # Use zero for uncomputed terms
+        if isinstance(self.components, np.ndarray):
+            # First-order Navier-Stokes source (simplified)
+            source_term = np.zeros_like(self.components)
+
+            # Add second-order nonlinear terms (simplified)
+            # λ_ππ terms: quadratic in π^μν
+            if lambda_pi_pi != 0:
+                pi_squared_trace = np.trace(self.components @ self.components)
+                source_term += lambda_pi_pi * pi_squared_trace * delta.components
+        else:
+            # SymPy version
+            source_term = sp.zeros(4, 4)
+
+            # Add nonlinear coupling terms
+            if lambda_pi_pi != 0:
+                pi_squared = self.components * self.components
+                pi_squared_trace = pi_squared.trace()
+                source_term += lambda_pi_pi * pi_squared_trace * delta.components
+
+        # Israel-Stewart evolution equation: τ D π^μν + π^μν = S^μν
+        # Rearrange: D π^μν = (S^μν - π^μν) / τ
+        if isinstance(material_derivative, float | int):
+            # Handle scalar case
+            time_evolution = (source_term - self.components) / relaxation_time
+        else:
+            # Tensor case
+            time_evolution = (source_term - self.components) / relaxation_time
+
+        # For evolution, return time derivative (not updated tensor)
+        # In practice, this would be integrated by the solver
+        evolved_components = time_evolution
 
         return ViscousStressTensor(evolved_components, self.metric)
 
-    def causality_check(self, sound_speed: float | sp.Expr = 1.0 / 3.0) -> bool:
+    def causality_check(
+        self,
+        four_velocity: FourVector,
+        energy_density: float | sp.Expr,
+        pressure: float | sp.Expr,
+        sound_speed: float | sp.Expr = 1.0 / 3.0,
+    ) -> dict[str, bool]:
         """
         Check causality constraints for viscous tensor.
 
-        Israel-Stewart theory imposes constraints to ensure causality.
+        Israel-Stewart theory requires that viscous effects don't violate causality.
+        This includes checking characteristic speeds and stability conditions.
 
         Args:
+            four_velocity: Fluid four-velocity
+            energy_density: Background energy density ρ
+            pressure: Background pressure p
             sound_speed: Speed of sound c_s^2
 
         Returns:
-            True if causality constraints are satisfied
+            Dictionary with causality check results
         """
-        # Simplified causality check
-        # Full implementation would check eigenvalue structure and characteristic speeds
+        results = {
+            "eigenvalue_check": True,
+            "characteristic_speed_check": True,
+            "stability_check": True,
+            "overall_causality": True,
+        }
 
+        # Check 1: Eigenvalue analysis for characteristic speeds
         eigenvals = (
             np.linalg.eigvals(self.components) if isinstance(self.components, np.ndarray) else None
         )
 
         if eigenvals is not None:
-            # Check that viscous effects don't lead to superluminal speeds
+            # Check that viscous corrections don't dominate background
             max_eigenval = np.max(np.real(eigenvals))
-            return bool(max_eigenval <= sound_speed)
 
-        return True  # Conservative assumption for symbolic case
+            # Viscous effects should be small compared to background energy scale
+            if isinstance(energy_density, float | int) and energy_density > 0:
+                viscous_to_energy_ratio = abs(max_eigenval) / energy_density
+                if viscous_to_energy_ratio > 1.0:  # Viscous effects too large
+                    results["eigenvalue_check"] = False
+
+            # Check characteristic speeds don't exceed light speed
+            # For small perturbations: v_char^2 ≈ c_s^2 + (viscous corrections)
+            if isinstance(sound_speed, float | int):
+                effective_speed_squared = sound_speed + max_eigenval / energy_density
+                if effective_speed_squared > 1.0:  # Exceeds speed of light
+                    results["characteristic_speed_check"] = False
+
+        # Check 2: Stability condition (simplified)
+        # Extract bulk viscous part
+        bulk_viscous = self.bulk_part(four_velocity)
+        if isinstance(bulk_viscous, float | int):
+            # Bulk viscous pressure shouldn't be too large compared to background pressure
+            if isinstance(pressure, float | int) and pressure > 0:
+                if abs(bulk_viscous) > pressure:  # Unstable regime
+                    results["stability_check"] = False
+
+        # Overall causality assessment
+        results["overall_causality"] = all(
+            [
+                results["eigenvalue_check"],
+                results["characteristic_speed_check"],
+                results["stability_check"],
+            ]
+        )
+
+        return results

@@ -199,7 +199,8 @@ class ISRelaxationEquations:
             shear_contribution = self.coeffs.lambda_Pi_pi * pi_trace * theta
             nonlinear += shear_contribution
 
-        return linear + first_order + nonlinear
+        result: np.ndarray = linear + first_order + nonlinear
+        return result
 
     def _shear_rhs(
         self,
@@ -264,7 +265,8 @@ class ISRelaxationEquations:
             )
             nonlinear += vorticity_term
 
-        return linear + first_order + nonlinear
+        result: np.ndarray = linear + first_order + nonlinear
+        return result
 
     def _heat_rhs(
         self,
@@ -301,7 +303,8 @@ class ISRelaxationEquations:
             )
             nonlinear += shear_heat_term
 
-        return linear + first_order + nonlinear
+        result: np.ndarray = linear + first_order + nonlinear
+        return result
 
     def _compute_expansion_scalar(self, u_mu: np.ndarray) -> np.ndarray:
         """
@@ -329,7 +332,9 @@ class ISRelaxationEquations:
             # This is symbolic - for now use flat space approximation
             import warnings
 
-            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            warnings.warn(
+                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
+            )
             christoffel = np.zeros((4, 4, 4))
 
         # Compute partial derivatives ∂_μ u^μ
@@ -371,7 +376,9 @@ class ISRelaxationEquations:
             # This is symbolic - for now use flat space approximation
             import warnings
 
-            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            warnings.warn(
+                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
+            )
             christoffel = np.zeros((4, 4, 4))
 
         # Compute velocity gradients using finite differences
@@ -451,7 +458,9 @@ class ISRelaxationEquations:
             # This is symbolic - for now use flat space approximation
             import warnings
 
-            warnings.warn("Using flat space approximation for symbolic metric", UserWarning)
+            warnings.warn(
+                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
+            )
             christoffel = np.zeros((4, 4, 4))
 
         # Compute velocity gradients using finite differences

@@ -8,7 +8,7 @@ discretization utilities for relativistic hydrodynamics calculations.
 # Forward reference for metrics
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, cast
 
 import numpy as np
 
@@ -213,7 +213,7 @@ class SpacetimeGrid:
         else:
             raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
-    def meshgrid(self, indexing: str = "ij") -> tuple[np.ndarray, ...]:
+    def meshgrid(self, indexing: Literal["ij", "xy"] = "ij") -> tuple[np.ndarray, ...]:
         """
         Create coordinate meshgrids for the full 4D spacetime.
 
@@ -224,7 +224,7 @@ class SpacetimeGrid:
             Tuple of 4D coordinate arrays
         """
         coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
-        return np.meshgrid(*coord_arrays, indexing=indexing)  # type: ignore[arg-type]
+        return np.meshgrid(*coord_arrays, indexing=indexing)
 
     def coordinate_at_index(self, indices: tuple[int, int, int, int]) -> np.ndarray:
         """

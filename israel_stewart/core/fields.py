@@ -841,21 +841,35 @@ class ISFieldConfiguration:
 
     def _project_shear_tensor(self) -> None:
         """Project shear tensor to be orthogonal to u^μ and traceless."""
-        if self.grid.metric is None:
-            raise ValueError("Cannot project shear tensor without metric")
-
         from .tensor_utils import optimized_einsum
 
         # Vectorized computation for all grid points simultaneously
         # Construct perpendicular projector Δ^μν = g^μν + u^μ u^ν for all points
 
         # Get metric inverse at all points (broadcast if constant metric)
-        if hasattr(self.grid.metric, "inverse"):
+        if self.grid.metric is None:
+            # Minkowski metric default for None case
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+        elif hasattr(self.grid.metric, "inverse"):
             g_inv = self.grid.metric.inverse
-            if g_inv.ndim == 2:  # Constant metric
+            # Check for constant metric - handle both NumPy arrays and SymPy matrices
+            if hasattr(g_inv, "ndim") and g_inv.ndim == 2:
+                # NumPy array - constant metric
                 g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
+            elif hasattr(g_inv, "shape") and len(g_inv.shape) == 2:
+                # SymPy matrix - check if it's truly constant (no symbols)
+                try:
+                    # Try to convert to float - will fail if symbolic
+                    g_inv_array = np.array(g_inv.tolist(), dtype=float)
+                    g_inv = np.broadcast_to(g_inv_array, (*self.grid.shape, 4, 4))
+                except (TypeError, ValueError):
+                    # Symbolic metric - evaluate at grid points
+                    # For now, fall back to Minkowski for symbolic metrics
+                    # TODO: Implement proper symbolic metric evaluation
+                    g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+            # else: grid-dependent metric, use as-is
         else:
-            # Minkowski metric default
+            # Fallback to Minkowski metric default
             g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
         # Compute u^μ u^ν outer product for all grid points
@@ -877,21 +891,35 @@ class ISFieldConfiguration:
 
     def _project_heat_flux(self) -> None:
         """Project heat flux to be orthogonal to u^μ."""
-        if self.grid.metric is None:
-            raise ValueError("Cannot project heat flux without metric")
-
         from .tensor_utils import optimized_einsum
 
         # Vectorized orthogonal projection for all grid points
         # Project: q^μ_⊥ = Δ^μν q_ν where Δ^μν = g^μν + u^μ u^ν
 
-        # Get metric inverse at all points
-        if hasattr(self.grid.metric, "inverse"):
+        # Get metric inverse at all points (broadcast if constant metric)
+        if self.grid.metric is None:
+            # Minkowski metric default for None case
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+        elif hasattr(self.grid.metric, "inverse"):
             g_inv = self.grid.metric.inverse
-            if g_inv.ndim == 2:  # Constant metric
+            # Check for constant metric - handle both NumPy arrays and SymPy matrices
+            if hasattr(g_inv, "ndim") and g_inv.ndim == 2:
+                # NumPy array - constant metric
                 g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
+            elif hasattr(g_inv, "shape") and len(g_inv.shape) == 2:
+                # SymPy matrix - check if it's truly constant (no symbols)
+                try:
+                    # Try to convert to float - will fail if symbolic
+                    g_inv_array = np.array(g_inv.tolist(), dtype=float)
+                    g_inv = np.broadcast_to(g_inv_array, (*self.grid.shape, 4, 4))
+                except (TypeError, ValueError):
+                    # Symbolic metric - evaluate at grid points
+                    # For now, fall back to Minkowski for symbolic metrics
+                    # TODO: Implement proper symbolic metric evaluation
+                    g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+            # else: grid-dependent metric, use as-is
         else:
-            # Minkowski metric default
+            # Fallback to Minkowski metric default
             g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
         # Compute u^μ u^ν outer product

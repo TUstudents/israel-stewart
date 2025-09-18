@@ -138,6 +138,57 @@ class TestSpecializedMetrics:
         assert metric1.rs == 1.0
         assert metric2.rs == 2.0
 
+    def test_schwarzschild_components_use_configured_radius(self) -> None:
+        """Test that metric components actually contain the configured radius value."""
+        import sympy as sp
+
+        # Test with numeric radius
+        metric1 = SchwarzschildMetric(schwarzschild_radius=2.0)
+        components1 = metric1.components
+
+        # The metric should contain the value 2.0, not a symbol 'rs'
+        # Check that rs=2.0 appears in the metric components
+        r = sp.Symbol("r", real=True, positive=True)
+
+        # Expected Schwarzschild function: f = 1 - rs/r = 1 - 2.0/r
+        expected_f = 1 - 2.0 / r
+        assert (
+            components1[0, 0] == expected_f
+        ), f"Expected g_tt = {expected_f}, got {components1[0, 0]}"
+        assert (
+            components1[1, 1] == -1 / expected_f
+        ), f"Expected g_rr = {-1/expected_f}, got {components1[1, 1]}"
+
+        # Test with different radius to ensure they produce different metrics
+        metric2 = SchwarzschildMetric(schwarzschild_radius=1.5)
+        components2 = metric2.components
+
+        expected_f2 = 1 - 1.5 / r
+        assert components2[0, 0] == expected_f2
+        assert components2[1, 1] == -1 / expected_f2
+
+        # Verify the metrics are actually different
+        assert (
+            components1[0, 0] != components2[0, 0]
+        ), "Different radii should produce different metric components"
+
+    def test_schwarzschild_symbolic_radius(self) -> None:
+        """Test Schwarzschild metric with symbolic radius parameter."""
+        import sympy as sp
+
+        # Test with symbolic radius
+        M = sp.Symbol("M", positive=True)
+        symbolic_rs = 2 * M  # rs = 2GM/c² (with c=1)
+
+        metric = SchwarzschildMetric(schwarzschild_radius=symbolic_rs)
+        components = metric.components
+
+        r = sp.Symbol("r", real=True, positive=True)
+        expected_f = 1 - symbolic_rs / r
+
+        assert components[0, 0] == expected_f
+        assert components[1, 1] == -1 / expected_f
+
 
 class TestNumericalChristoffel:
     """Test numerical Christoffel symbol computation."""

@@ -217,9 +217,10 @@ def validate_tensor_dimensions(
         ValueError: If validation fails
     """
     if is_numpy_array(components):
-        # Check for NaN/infinity
-        if np.any(np.isnan(components)) or np.any(np.isinf(components)):
-            raise ValueError("Tensor components contain NaN or infinite values")
+        # Check for NaN/infinity (skip for object arrays containing symbolic expressions)
+        if components.dtype != object:
+            if np.any(np.isnan(components)) or np.any(np.isinf(components)):
+                raise ValueError("Tensor components contain NaN or infinite values")
 
         shape = components.shape
 
@@ -249,12 +250,14 @@ def validate_tensor_dimensions(
             raise ValueError(f"Expected shape {expected_shape}, got {shape}")
 
         # Check for extremely large values that might cause numerical issues
-        max_val = np.max(np.abs(components))
-        if max_val > 1e100:
-            warnings.warn(
-                f"Tensor components are very large (max={max_val:.2e}), may cause numerical issues",
-                stacklevel=2,
-            )
+        # (skip for object arrays containing symbolic expressions)
+        if components.dtype != object:
+            max_val = np.max(np.abs(components))
+            if max_val > 1e100:
+                warnings.warn(
+                    f"Tensor components are very large (max={max_val:.2e}), may cause numerical issues",
+                    stacklevel=2,
+                )
 
     elif is_sympy_matrix(components):
         shape = components.shape

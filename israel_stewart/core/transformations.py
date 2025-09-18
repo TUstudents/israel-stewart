@@ -259,8 +259,17 @@ class LorentzTransformation:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
         # Three-velocity: v^i = u^i / u^0 for timelike vectors
-        if not four_velocity.is_timelike():
-            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+        # Check if metric is available before calling is_timelike()
+        if four_velocity.metric is not None:
+            if not four_velocity.is_timelike():
+                raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+        # If no metric, assume Minkowski and check basic timelike condition: u^0 > |u_spatial|
+        else:
+            u_spatial_mag = np.sqrt(np.sum(four_velocity.spatial_components**2))
+            if gamma <= u_spatial_mag:
+                raise PhysicsError(
+                    "Four-velocity appears non-timelike (u^0 <= |u_spatial|) in Minkowski spacetime"
+                )
 
         three_velocity = four_velocity.spatial_components / gamma
 
@@ -283,8 +292,17 @@ class LorentzTransformation:
         if gamma < 1e-12:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
-        if not four_velocity.is_timelike():
-            raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+        # Check if metric is available before calling is_timelike()
+        if four_velocity.metric is not None:
+            if not four_velocity.is_timelike():
+                raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
+        # If no metric, assume Minkowski and check basic timelike condition: u^0 > |u_spatial|
+        else:
+            u_spatial_mag = np.sqrt(np.sum(four_velocity.spatial_components**2))
+            if gamma <= u_spatial_mag:
+                raise PhysicsError(
+                    "Four-velocity appears non-timelike (u^0 <= |u_spatial|) in Minkowski spacetime"
+                )
 
         three_velocity = four_velocity.spatial_components / gamma
 

@@ -49,8 +49,17 @@ class FourVector(TensorField):
         if isinstance(components, list):
             components = np.array(components)
 
-        # Validate four-vector components
-        validate_tensor_dimensions(components, expected_shape=(4,))
+        # Handle SymPy column vectors - convert (4,1) to (4,) for consistency
+        if hasattr(components, "shape") and components.shape == (4, 1):
+            if hasattr(components, "__class__") and "Matrix" in str(components.__class__):
+                # SymPy Matrix - convert to list and back to 1D matrix
+                components = sp.Matrix([components[i, 0] for i in range(4)])
+            elif hasattr(components, "squeeze"):
+                # NumPy array
+                components = components.squeeze()
+
+        # Validate four-vector components (accept both (4,) and (4,1) shapes)
+        validate_tensor_dimensions(components, tensor_rank=1)
 
         # Set up index notation
         index_str = "_mu" if is_covariant else "mu"
@@ -183,7 +192,12 @@ class FourVector(TensorField):
         if self.metric is None:
             raise ValueError("Cannot determine timelike nature without metric")
 
-        mag_sq = self.magnitude_squared()
+        try:
+            mag_sq = self.magnitude_squared()
+        except (TypeError, ValueError, AttributeError) as e:
+            # For symbolic expressions that cannot be processed (e.g., einsum incompatibility),
+            # we cannot determine timelike nature - return False as safe default
+            return False
 
         # Check metric signature to determine timelike condition
         signature = getattr(self.metric, "signature", (-1, 1, 1, 1))
@@ -195,9 +209,16 @@ class FourVector(TensorField):
         if isinstance(mag_sq, np.ndarray):
             return bool(timelike_condition)
         else:
-            return bool(
-                float(mag_sq) < -tolerance if signature[0] < 0 else float(mag_sq) > tolerance
-            )
+            # Handle symbolic expressions safely
+            try:
+                mag_sq_float = float(mag_sq)
+                return bool(
+                    mag_sq_float < -tolerance if signature[0] < 0 else mag_sq_float > tolerance
+                )
+            except (TypeError, ValueError):
+                # For symbolic expressions that cannot be evaluated to float,
+                # we cannot determine timelike nature - return False as safe default
+                return False
 
     def is_spacelike(self, tolerance: float = 1e-10) -> bool:
         """
@@ -214,7 +235,12 @@ class FourVector(TensorField):
         if self.metric is None:
             raise ValueError("Cannot determine spacelike nature without metric")
 
-        mag_sq = self.magnitude_squared()
+        try:
+            mag_sq = self.magnitude_squared()
+        except (TypeError, ValueError, AttributeError) as e:
+            # For symbolic expressions that cannot be processed (e.g., einsum incompatibility),
+            # we cannot determine spacelike nature - return False as safe default
+            return False
 
         # Check metric signature to determine spacelike condition
         signature = getattr(self.metric, "signature", (-1, 1, 1, 1))
@@ -226,9 +252,16 @@ class FourVector(TensorField):
         if isinstance(mag_sq, np.ndarray):
             return bool(spacelike_condition)
         else:
-            return bool(
-                float(mag_sq) > tolerance if signature[0] < 0 else float(mag_sq) < -tolerance
-            )
+            # Handle symbolic expressions safely
+            try:
+                mag_sq_float = float(mag_sq)
+                return bool(
+                    mag_sq_float > tolerance if signature[0] < 0 else mag_sq_float < -tolerance
+                )
+            except (TypeError, ValueError):
+                # For symbolic expressions that cannot be evaluated to float,
+                # we cannot determine spacelike nature - return False as safe default
+                return False
 
     def is_null(self, tolerance: float = 1e-10) -> bool:
         """
@@ -240,11 +273,23 @@ class FourVector(TensorField):
         Returns:
             True if null (magnitude squared ≈ 0)
         """
-        mag_sq = self.magnitude_squared()
+        try:
+            mag_sq = self.magnitude_squared()
+        except (TypeError, ValueError, AttributeError) as e:
+            # For symbolic expressions that cannot be processed (e.g., einsum incompatibility),
+            # we cannot determine null nature - return False as safe default
+            return False
+
         if isinstance(mag_sq, np.ndarray):
             return bool(np.abs(mag_sq) < tolerance)
         else:
-            return abs(float(mag_sq)) < tolerance
+            # Handle symbolic expressions safely
+            try:
+                return abs(float(mag_sq)) < tolerance
+            except (TypeError, ValueError):
+                # For symbolic expressions that cannot be evaluated to float,
+                # we cannot determine null nature - return False as safe default
+                return False
 
     @monitor_performance("lorentz_boost")
     def boost(self, velocity: np.ndarray | list[float]) -> "FourVector":

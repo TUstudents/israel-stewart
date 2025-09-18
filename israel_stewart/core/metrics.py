@@ -1111,7 +1111,9 @@ class SchwarzschildMetric(MetricBase):
     def components(self) -> sp.Matrix:
         """Return Schwarzschild metric components."""
         r, theta = sp.symbols("r theta", real=True, positive=True)
-        rs = sp.Symbol("rs", positive=True)
+
+        # Use the actual configured Schwarzschild radius
+        rs = self.rs
 
         f = 1 - rs / r  # Schwarzschild function
 

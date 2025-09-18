@@ -63,9 +63,10 @@ class TensorField:
             components = np.array(components)
 
         if is_numpy_array(components):
-            # Check for numerical stability
-            if np.any(np.isnan(components)) or np.any(np.isinf(components)):
-                raise ValueError("Tensor components contain NaN or infinite values")
+            # Check for numerical stability (skip for object arrays with symbolic expressions)
+            if components.dtype != object:
+                if np.any(np.isnan(components)) or np.any(np.isinf(components)):
+                    raise ValueError("Tensor components contain NaN or infinite values")
 
             # For tensor fields on grids, only the trailing dimensions must be 4 (spacetime indices)
             # Allow shapes like (*grid_shape, 4), (*grid_shape, 4, 4), etc.

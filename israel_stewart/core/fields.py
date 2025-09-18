@@ -646,7 +646,7 @@ class ISFieldConfiguration:
 
         # Cache for derived quantities
         self._energy_momentum_tensor = None
-        self._total_stress_tensor = None
+        self._total_stress_tensor: np.ndarray | None = None
 
         # Validation flags
         self._constraints_enforced = False
@@ -844,47 +844,64 @@ class ISFieldConfiguration:
         if self.grid.metric is None:
             raise ValueError("Cannot project shear tensor without metric")
 
-        from .derivatives import ProjectionOperator
-        from .four_vectors import FourVector
         from .tensor_utils import optimized_einsum
 
-        # For each grid point, apply projection
-        for indices in np.ndindex(self.grid.shape):
-            u_at_point = FourVector(self.u_mu[indices], False, self.grid.metric)
-            projector = ProjectionOperator(u_at_point, self.grid.metric)
+        # Vectorized computation for all grid points simultaneously
+        # Construct perpendicular projector Δ^μν = g^μν + u^μ u^ν for all points
 
-            # Get perpendicular projector Δ^μν
-            delta = projector.perpendicular_projector()
-            pi_at_point = self.pi_munu[indices]
+        # Get metric inverse at all points (broadcast if constant metric)
+        if hasattr(self.grid.metric, 'inverse'):
+            g_inv = self.grid.metric.inverse
+            if g_inv.ndim == 2:  # Constant metric
+                g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
+        else:
+            # Minkowski metric default
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
-            # Project: π^μν = Δ^μα Δ^νβ π_αβ - (1/3) Δ^μν Δ_γδ π^γδ
-            pi_projected = optimized_einsum(
-                "ma,nb,ab->mn", delta.components, delta.components, pi_at_point
-            )
+        # Compute u^μ u^ν outer product for all grid points
+        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
 
-            # Remove trace
-            trace = optimized_einsum("mn,mn->", delta.components, pi_at_point)
-            pi_traceless = pi_projected - (1.0 / 3.0) * trace * delta.components
+        # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        delta = g_inv + u_outer
 
-            self.pi_munu[indices] = pi_traceless
+        # Project shear tensor: π^μν = Δ^μα Δ^νβ π_αβ
+        pi_projected = optimized_einsum('...ma,...nb,...ab->...mn', delta, delta, self.pi_munu)
+
+        # Compute trace: Tr(π) = Δ_μν π^μν
+        pi_trace = optimized_einsum('...mn,...mn->...', delta, self.pi_munu)
+
+        # Remove trace: π^μν_traceless = π^μν_projected - (1/3) Δ^μν Tr(π)
+        pi_traceless = pi_projected - (1.0 / 3.0) * pi_trace[..., np.newaxis, np.newaxis] * delta
+
+        self.pi_munu = pi_traceless
 
     def _project_heat_flux(self) -> None:
         """Project heat flux to be orthogonal to u^μ."""
         if self.grid.metric is None:
             raise ValueError("Cannot project heat flux without metric")
 
-        from .derivatives import ProjectionOperator
-        from .four_vectors import FourVector
+        from .tensor_utils import optimized_einsum
 
-        # For each grid point, apply projection
-        for indices in np.ndindex(self.grid.shape):
-            u_at_point = FourVector(self.u_mu[indices], False, self.grid.metric)
-            projector = ProjectionOperator(u_at_point, self.grid.metric)
+        # Vectorized orthogonal projection for all grid points
+        # Project: q^μ_⊥ = Δ^μν q_ν where Δ^μν = g^μν + u^μ u^ν
 
-            q_at_point = FourVector(self.q_mu[indices], False, self.grid.metric)
-            q_projected = projector.project_vector_perpendicular(q_at_point)
+        # Get metric inverse at all points
+        if hasattr(self.grid.metric, 'inverse'):
+            g_inv = self.grid.metric.inverse
+            if g_inv.ndim == 2:  # Constant metric
+                g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
+        else:
+            # Minkowski metric default
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
-            self.q_mu[indices] = q_projected.components
+        # Compute u^μ u^ν outer product
+        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
+
+        # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        delta = g_inv + u_outer
+
+        # Project heat flux: q^μ_⊥ = Δ^μν q_ν
+        self.q_mu = optimized_einsum('...mn,...n->...m', delta, self.q_mu)
 
     def _enforce_thermodynamic_constraints(self) -> None:
         """Enforce thermodynamic positivity and consistency constraints."""
@@ -915,29 +932,29 @@ class ISFieldConfiguration:
                 "Computing stress-energy tensor without enforcing constraints", stacklevel=2
             )
 
-        T_total = np.zeros((*self.grid.shape, 4, 4))
-
+        # Vectorized computation for all grid points
         # Perfect fluid part: T^μν_perfect = (ρ + p) u^μ u^ν + p g^μν
         enthalpy_density = self.rho + self.pressure
 
-        for indices in np.ndindex(self.grid.shape):
-            rho_h = enthalpy_density[indices]
-            p = self.pressure[indices]
-            u = self.u_mu[indices]
+        # Compute u^μ u^ν outer product for all grid points
+        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
 
-            # u^μ u^ν outer product
-            u_outer = np.outer(u, u)
+        # Get metric tensor at all points
+        if self.grid.metric is None:
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+        else:
+            g_inv = self.grid.metric.inverse
+            if g_inv.ndim == 2:  # Constant metric
+                g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
 
-            # Metric tensor
-            if self.grid.metric is None:
-                g_inv = np.diag([-1, 1, 1, 1])  # Minkowski
-            else:
-                g_inv = self.grid.metric.inverse
+        # Perfect fluid tensor: (ρ + p) u^μ u^ν + p g^μν
+        perfect_fluid = (enthalpy_density[..., np.newaxis, np.newaxis] * u_outer +
+                        self.pressure[..., np.newaxis, np.newaxis] * g_inv)
 
-            # Perfect fluid + viscous corrections
-            T_total[indices] = rho_h * u_outer + p * g_inv + self.pi_munu[indices]
+        # Total stress-energy tensor with viscous corrections
+        T_total: np.ndarray = perfect_fluid + self.pi_munu
 
-        self._total_stress_tensor = T_total  # type: ignore[assignment]
+        self._total_stress_tensor = T_total
         return T_total
 
     def compute_conserved_charges(self) -> dict[str, np.ndarray]:
@@ -964,19 +981,14 @@ class ISFieldConfiguration:
 
         # Total conserved charges (integrated over spatial volume)
         if self.grid.ndim == 4:
-            spatial_volume = np.prod([self.grid.spatial_spacing])
-            charges["total_energy"] = (
-                np.sum(charges["energy_density"] * volume_element) * spatial_volume
+            # Fix: volume_element already includes proper volume measure, don't double-count
+            charges["total_energy"] = np.sum(charges["energy_density"] * volume_element)
+            charges["total_momentum"] = np.sum(
+                charges["momentum_density"] * volume_element[..., np.newaxis],
+                axis=(1, 2, 3),
             )
-            charges["total_momentum"] = (
-                np.sum(
-                    charges["momentum_density"] * volume_element[..., np.newaxis],
-                    axis=(1, 2, 3),
-                )
-                * spatial_volume
-            )
-            charges["total_particle_number"] = (
-                np.sum(charges["particle_current"][..., 0] * volume_element) * spatial_volume
+            charges["total_particle_number"] = np.sum(
+                charges["particle_current"][..., 0] * volume_element
             )
 
         return charges

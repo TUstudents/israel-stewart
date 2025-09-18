@@ -136,10 +136,31 @@ class FourVector(TensorField):
         """
         Normalize four-vector to unit magnitude.
 
+        For null vectors (magnitude = 0), returns the original vector unchanged
+        since normalization is undefined.
+
         Returns:
             Normalized four-vector
+
+        Raises:
+            PhysicsError: If vector magnitude is zero (null vector)
         """
         mag = self.magnitude()
+
+        # Handle null vectors (magnitude ≈ 0)
+        tolerance = 1e-15
+        if isinstance(mag, np.ndarray):
+            is_null = bool(np.abs(mag) < tolerance)
+        else:
+            is_null = abs(float(mag)) < tolerance
+
+        if is_null:
+            raise PhysicsError(
+                "Cannot normalize null vector (magnitude = 0). "
+                "Use is_null() to check for null vectors before normalizing."
+            )
+
+        # Safe normalization for non-null vectors
         if isinstance(self.components, np.ndarray):
             normalized_components = self.components / mag
         else:

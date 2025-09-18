@@ -29,7 +29,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -66,9 +66,9 @@ class WaveProperties:
         if self.frequency < 0:
             raise ValueError("Frequency must be non-negative")
         if self.sound_speed < 0 or self.sound_speed > 1:
-            warnings.warn("Sound speed outside physical range [0,1]")
+            warnings.warn("Sound speed outside physical range [0,1]", stacklevel=2)
         if self.attenuation < 0:
-            warnings.warn("Negative attenuation indicates instability")
+            warnings.warn("Negative attenuation indicates instability", stacklevel=2)
 
 
 class SoundWaveAnalysis:
@@ -162,7 +162,7 @@ class SoundWaveAnalysis:
                 if properties is not None:
                     wave_modes.append(properties)
             except Exception as e:
-                warnings.warn(f"Failed to solve for omega={omega}: {e}")
+                warnings.warn(f"Failed to solve for omega={omega}: {e}", stacklevel=2)
 
         # Find physical modes (positive group velocity)
         physical_modes = [mode for mode in wave_modes if self._is_physical_mode(mode)]

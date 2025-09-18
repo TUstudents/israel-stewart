@@ -29,7 +29,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -73,7 +73,7 @@ class EquilibrationProperties:
                 raise ValueError(f"Relaxation time {key} must be positive")
 
         if self.entropy_production_rate < 0:
-            warnings.warn("Negative entropy production violates second law")
+            warnings.warn("Negative entropy production violates second law", stacklevel=2)
 
 
 class EquilibrationAnalysis:
@@ -227,7 +227,7 @@ class EquilibrationAnalysis:
         # Check four-velocity normalization
         u_squared = np.sum(fields.four_velocity.data**2, axis=-1)
         if not np.allclose(u_squared[..., 0] - u_squared[..., 1:].sum(axis=-1), 1.0, rtol=1e-3):
-            warnings.warn("Four-velocity not properly normalized")
+            warnings.warn("Four-velocity not properly normalized", stacklevel=2)
 
     def _copy_fields(self, fields: ISFieldConfiguration) -> ISFieldConfiguration:
         """Create a deep copy of field configuration."""

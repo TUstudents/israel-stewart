@@ -7,7 +7,7 @@ It provides rigorous validation of numerical implementations against known solut
 """
 
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import scipy.integrate as integrate
@@ -165,30 +165,30 @@ class BjorkenFlowSolution:
         lambda_PiPi = getattr(coefficients, "lambda_Pi_Pi", 0.0)
         xi_1 = getattr(coefficients, "xi_1", 0.0)
 
-    def ode_system(y: np.ndarray, tau: float) -> np.ndarray:
-        # ODE system for Israel-Stewart Bjorken flow. Variables: y = [T, Pi, pi^eta_tau]
-        T, Pi, pi_tau_eta = y
+        def ode_system(y: np.ndarray, tau_val: float) -> np.ndarray:
+            """ODE system for Israel-Stewart Bjorken flow. Variables: y = [T, Pi, pi^eta_tau]"""
+            T, Pi, pi_tau_eta = y
 
-        # Thermodynamic quantities
-        epsilon = self.a * T**4
-        pressure = epsilon / 3.0
+            # Thermodynamic quantities
+            epsilon = self.a * T**4
+            pressure = epsilon / 3.0
 
-        # Temperature evolution with viscous corrections
-        dT_dtau = -(T / (3 * tau)) - Pi / (3 * epsilon * tau)
+            # Temperature evolution with viscous corrections
+            dT_dtau = -(T / (3 * tau_val)) - Pi / (3 * epsilon * tau_val)
 
-        # Bulk pressure evolution
-        theta = -1.0 / tau  # Expansion rate
-        source_Pi = -zeta * theta
-        nonlinear_Pi = -lambda_PiPi * Pi**2 / (epsilon * tau) if lambda_PiPi > 0 else 0.0
-        dPi_dtau = -Pi / tau_Pi + source_Pi + nonlinear_Pi
+            # Bulk pressure evolution
+            theta = -1.0 / tau_val  # Expansion rate
+            source_Pi = -zeta * theta
+            nonlinear_Pi = -lambda_PiPi * Pi**2 / (epsilon * tau_val) if lambda_PiPi > 0 else 0.0
+            dPi_dtau = -Pi / tau_Pi + source_Pi + nonlinear_Pi
 
-        # Shear stress evolution (simplified for 1+1D)
-        # In full 3+1D, this would be more complex
-        shear_rate = (4.0 / (3 * tau)) * (dT_dtau / T)
-        source_pi = eta * shear_rate
-        dpi_dtau = -pi_tau_eta / tau_pi + source_pi
+            # Shear stress evolution (simplified for 1+1D)
+            # In full 3+1D, this would be more complex
+            shear_rate = (4.0 / (3 * tau_val)) * (dT_dtau / T)
+            source_pi = eta * shear_rate
+            dpi_dtau = -pi_tau_eta / tau_pi + source_pi
 
-        return np.array([dT_dtau, dPi_dtau, dpi_dtau])
+            return np.array([dT_dtau, dPi_dtau, dpi_dtau])
 
         # Initial conditions
         T_init = self.T0
@@ -219,7 +219,7 @@ class BjorkenFlowSolution:
             )
 
             if not sol.success:
-                warnings.warn("ODE integration failed", UserWarning)
+                warnings.warn("ODE integration failed", UserWarning, stacklevel=2)
 
             T_interp = sol.y[0]
             Pi_interp = sol.y[1]

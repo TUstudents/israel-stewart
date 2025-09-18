@@ -6,7 +6,7 @@ causality, and stability in second-order viscous hydrodynamics simulations.
 """
 
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import scipy.linalg as la

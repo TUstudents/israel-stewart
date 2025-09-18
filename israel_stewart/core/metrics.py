@@ -590,8 +590,8 @@ class MetricBase(ABC):
             rank1, rank2 = tensor1.ndim, tensor2.ndim
 
             # Create index strings
-            indices1 = list(chr(ord("a") + i) for i in range(rank1))
-            indices2 = list(chr(ord("a") + rank1 + i) for i in range(rank2))
+            indices1 = [chr(ord("a") + i) for i in range(rank1)]
+            indices2 = [chr(ord("a") + rank1 + i) for i in range(rank2)]
 
             # Apply contractions
             for i1, i2 in index_pairs:

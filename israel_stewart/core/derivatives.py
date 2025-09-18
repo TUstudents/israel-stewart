@@ -73,7 +73,20 @@ class CovariantDerivative:
             for mu in range(4):
                 gradient_components.append(sp.diff(scalar_field, coord_symbols[mu]))
 
-            return FourVector(sp.Matrix(gradient_components), True, self.metric)
+            # Convert to proper format for FourVector (needs shape (4,) not (4,1))
+            # Use sp.Array for proper 1D symbolic vector that FourVector can handle
+            try:
+                import sympy.tensor.array as sp_array
+
+                gradient_array = sp_array.Array(gradient_components)
+                return FourVector(gradient_array, True, self.metric)
+            except ImportError:
+                # Fallback: convert SymPy Matrix to NumPy array to get proper shape
+                gradient_matrix = sp.Matrix(gradient_components)
+                # For symbolic expressions, keep as SymPy Matrix but flatten correctly
+                # Convert (4,1) SymPy Matrix to proper format for FourVector
+                gradient_flat = np.array([gradient_matrix[i] for i in range(4)])
+                return FourVector(gradient_flat, True, self.metric)
 
         else:
             # Numerical gradient using numpy
@@ -104,9 +117,19 @@ class CovariantDerivative:
         partial_deriv_trace = np.zeros(components.shape[:-1])
         for mu in range(4):
             # Only compute diagonal terms we need for the trace
-            partial_deriv_trace += np.gradient(
-                components[..., mu], coordinates[mu], axis=mu, edge_order=2
-            )
+            # Check grid size to determine appropriate edge_order
+            grid_size_mu = components.shape[mu]
+
+            if grid_size_mu >= 3:
+                # Use second-order accurate edges for grids with sufficient points
+                partial_deriv_trace += np.gradient(
+                    components[..., mu], coordinates[mu], axis=mu, edge_order=2
+                )
+            else:
+                # Fall back to first-order for minimal grids (2 points)
+                partial_deriv_trace += np.gradient(
+                    components[..., mu], coordinates[mu], axis=mu, edge_order=1
+                )
 
         # 2. Compute the Christoffel term Γ^μ_μλ V^λ, vectorized over the grid
         # christoffel shape: (4, 4, 4) -> extract trace Γ^μ_μλ
@@ -381,7 +404,11 @@ class ProjectionOperator:
 
     def project_vector_parallel(self, vector: FourVector) -> FourVector:
         """
-        Project vector parallel to four-velocity: V_∥^μ = -(u · V) u^μ.
+        Project vector parallel to four-velocity: V_∥^μ = (u · V / u · u) u^μ.
+
+        The sign convention depends on metric signature:
+        - Mostly plus (-,+,+,+): u · u = -c², so V_∥^μ = -(u · V) u^μ
+        - Mostly minus (+,-,-,-): u · u = +c², so V_∥^μ = +(u · V) u^μ
 
         Args:
             vector: Input four-vector
@@ -392,8 +419,12 @@ class ProjectionOperator:
         # Compute u · V = u_μ V^μ
         dot_product = self.u.dot(vector)
 
-        # Parallel projection: V_∥^μ = -(u · V) u^μ
-        parallel_components = -dot_product * self.u.components
+        # Compute u · u = u_μ u^μ for normalization
+        u_dot_u = self.u.dot(self.u)
+
+        # Parallel projection: V_∥^μ = (u · V / u · u) u^μ
+        # This automatically handles the metric signature correctly
+        parallel_components = (dot_product / u_dot_u) * self.u.components
 
         return FourVector(parallel_components, False, self.metric)
 

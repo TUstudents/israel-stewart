@@ -524,7 +524,7 @@ class ThermodynamicConstraints:
         elif method == "rescale":
             constrained_fields = self._rescale_dissipative_fluxes(constrained_fields, coefficients)
         else:
-            warnings.warn(f"Unknown constraint enforcement method: {method}", UserWarning)
+            warnings.warn(f"Unknown constraint enforcement method: {method}", UserWarning, stacklevel=2)
 
         # Constrain transport coefficients
         constrained_coeffs = self._constrain_transport_coefficients(coefficients)
@@ -609,7 +609,7 @@ class ThermodynamicConstraints:
 
         # Overall assessment
         critical_violations = []
-        for check_name, check_result in results.items():
+        for _check_name, check_result in results.items():
             if "violations" in check_result:
                 critical_violations.extend(
                     [v for v in check_result["violations"] if v.get("severity") == "critical"]

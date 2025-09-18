@@ -322,19 +322,26 @@ class SpacetimeGrid:
 
         # Use covariant divergence if metric is available
         if self.metric is not None:
-            # Import here to avoid circular imports
-            from .derivatives import CovariantDerivative
-            from .four_vectors import FourVector
+            # Compute covariant divergence directly for grid-based fields
+            # ∇_μ V^μ = ∂_μ V^μ + Γ^μ_{μν} V^ν (sum over repeated indices)
 
-            # Create coordinate arrays for covariant derivative
-            coord_arrays = [self.coordinates[name] for name in self.coordinate_names]
+            # Start with partial derivative contributions
+            divergence = np.zeros(self.shape)
+            for mu in range(4):
+                # ∂_μ V^μ contribution
+                partial_deriv = self.gradient(vector_field[..., mu], axis=mu)
+                divergence += partial_deriv
 
-            # Create CovariantDerivative instance
-            covariant_deriv = CovariantDerivative(self.metric)
+            # Add Christoffel symbol contributions: Γ^μ_{μν} V^ν
+            # For each point in the grid, add the correction terms
+            christoffel = self.metric.christoffel_symbols
+            for mu in range(4):
+                for nu in range(4):
+                    # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
+                    gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
+                    divergence += gamma_trace * vector_field[..., nu]
 
-            # Convert to FourVector format and compute covariant divergence
-            four_vector = FourVector(vector_field, is_covariant=False, metric=self.metric)
-            return covariant_deriv.vector_divergence(four_vector, coord_arrays)  # type: ignore[no-any-return]
+            return divergence
         else:
             # Flat-space approximation - warn for non-Cartesian coordinates
             if self.coordinate_system != "cartesian":
@@ -380,13 +387,21 @@ class SpacetimeGrid:
             covariant_deriv = CovariantDerivative(self.metric)
 
             # Compute covariant Laplacian: ∇² φ = ∇_μ ∇^μ φ
-            # First compute gradient
+            # First compute gradient (covariant): ∇_μ φ
             gradient_field = np.zeros((*self.shape, 4))
             for mu in range(4):
                 gradient_field[..., mu] = self.gradient(field, axis=mu)
 
-            # Then compute divergence of gradient
-            return self.divergence(gradient_field)
+            # Raise index to get contravariant gradient: ∇^μ φ = g^μν ∇_ν φ
+            # Contract with inverse metric tensor for all grid points
+            from .tensor_utils import optimized_einsum
+
+            contravariant_gradient = optimized_einsum(
+                "ij,...j->...i", self.metric.inverse, gradient_field
+            )
+
+            # Then compute divergence of contravariant gradient
+            return self.divergence(contravariant_gradient)
         else:
             # Flat-space approximation - warn for non-Cartesian coordinates
             if self.coordinate_system != "cartesian":

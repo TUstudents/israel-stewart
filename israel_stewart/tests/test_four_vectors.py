@@ -138,6 +138,33 @@ class TestFourVectorBoost:
         # Should recover original vector
         np.testing.assert_allclose(recovered.components, components, rtol=1e-12)
 
+    def test_covariant_transformation_formula(self, minkowski_metric: MinkowskiMetric) -> None:
+        """Test that covariant vectors transform with the correct mathematical formula.
+
+        This test specifically verifies the fix for the bug where covariant vectors
+        were incorrectly transformed using left multiplication instead of right multiplication.
+        """
+        # Create covariant four-vector
+        components = np.array([1.0, 2.0, 0.0, 0.0])
+        vector = FourVector(components, is_covariant=True, metric=minkowski_metric)
+
+        # Apply boost in x-direction
+        velocity = np.array([0.5, 0.0, 0.0])
+        gamma = 1.0 / np.sqrt(1.0 - 0.5**2)  # γ = 2/√3 ≈ 1.1547
+
+        # Get the boost transformation
+        boosted = vector.boost(velocity)
+
+        # Manually compute expected result using correct covariant formula
+        # u'_μ = u_ν (Λ^{-1})^ν_μ
+        boost_matrix = vector._lorentz_boost_matrix(velocity, gamma)
+        inv_boost_matrix = np.linalg.inv(boost_matrix)
+
+        # For covariant vectors, we use right multiplication: u_μ @ (Λ^{-1})
+        expected = components @ inv_boost_matrix
+
+        np.testing.assert_allclose(boosted.components, expected, rtol=1e-14)
+
     def test_boost_composition(self, minkowski_metric: MinkowskiMetric) -> None:
         """Test that successive boosts work correctly."""
         # Create vector

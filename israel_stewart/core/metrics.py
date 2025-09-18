@@ -480,7 +480,7 @@ class MetricBase(ABC):
             return optimized_einsum(einsum_pattern, self.inverse, tensor_components)
 
         elif isinstance(tensor_components, sp.Matrix):
-            # Handle symbolic tensors (keep existing implementation for matrices)
+            # Handle symbolic tensors
             if tensor_components.shape[1] == 1:  # Vector
                 return self.inverse * tensor_components
             else:  # Matrix
@@ -492,6 +492,54 @@ class MetricBase(ABC):
                     raise NotImplementedError(
                         "Symbolic index raising for rank > 2 not yet implemented"
                     )
+
+        elif hasattr(tensor_components, "rank") and tensor_components.rank() > 2:
+            # Handle SymPy Array objects for higher-rank tensors
+            try:
+                import sympy.tensor.array as sp_array
+
+                # Convert to Array if needed
+                if not isinstance(tensor_components, sp_array.Array):
+                    tensor_components = sp_array.Array(tensor_components)
+
+                # For higher-rank tensors, we need to contract with the inverse metric
+                # T'^μ_{ν₁...νₙ} = g^{μλ} T_λ_{ν₁...νₙ} (raising first index)
+                # This is a generalization using SymPy's tensor algebra
+
+                shape = tensor_components.shape
+                rank = len(shape)
+
+                if index_position >= rank or index_position < 0:
+                    raise ValueError(
+                        f"Index position {index_position} out of bounds for rank-{rank} tensor"
+                    )
+
+                # Create contraction pattern for raising the specified index
+                # We contract the index_position with the first index of the inverse metric
+                inv_metric_array = sp_array.Array(self.inverse)
+
+                # Perform the contraction
+                # This contracts tensor_components[..., index_position, ...] with inv_metric_array[i, index_position]
+                # In SymPy tensorcontraction, axes should be pairs of integers, not lists of lists
+                product = sp_array.tensorproduct(inv_metric_array, tensor_components)
+
+                # The contraction axes: index_position+2 in product (since inv_metric adds 2 dims at start)
+                # contracts with index 1 of inv_metric (which is at position 1 in product)
+                result = sp_array.tensorcontraction(product, (1, index_position + 2))
+
+                # Move the contracted index to the correct position
+                if index_position > 0:
+                    # Need to transpose to put the new index in the right place
+                    perm = list(range(len(result.shape)))
+                    perm[0], perm[index_position] = perm[index_position], perm[0]
+                    result = sp_array.permutedims(result, perm)
+
+                return result
+
+            except ImportError:
+                raise NotImplementedError(
+                    "Higher-rank symbolic tensor operations require SymPy tensor array support"
+                ) from None
 
         raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
 
@@ -551,7 +599,7 @@ class MetricBase(ABC):
             return optimized_einsum(einsum_pattern, self.components, tensor_components)
 
         elif isinstance(tensor_components, sp.Matrix):
-            # Handle symbolic tensors (keep existing implementation for matrices)
+            # Handle symbolic tensors
             if tensor_components.shape[1] == 1:  # Vector
                 return self.components * tensor_components
             else:  # Matrix
@@ -563,6 +611,49 @@ class MetricBase(ABC):
                     raise NotImplementedError(
                         "Symbolic index lowering for rank > 2 not yet implemented"
                     )
+
+        elif hasattr(tensor_components, "rank") and tensor_components.rank() > 2:
+            # Handle SymPy Array objects for higher-rank tensors
+            try:
+                import sympy.tensor.array as sp_array
+
+                # Convert to Array if needed
+                if not isinstance(tensor_components, sp_array.Array):
+                    tensor_components = sp_array.Array(tensor_components)
+
+                # For higher-rank tensors, we need to contract with the metric
+                # T'_{μν₁...νₙ} = g_{μλ} T^λ_{ν₁...νₙ} (lowering first index)
+
+                shape = tensor_components.shape
+                rank = len(shape)
+
+                if index_position >= rank or index_position < 0:
+                    raise ValueError(
+                        f"Index position {index_position} out of bounds for rank-{rank} tensor"
+                    )
+
+                # Create contraction pattern for lowering the specified index
+                metric_array = sp_array.Array(self.components)
+
+                # Perform the contraction with metric
+                product = sp_array.tensorproduct(metric_array, tensor_components)
+
+                # Contract the specified index of tensor with second index of metric
+                result = sp_array.tensorcontraction(product, (1, index_position + 2))
+
+                # Move the contracted index to the correct position
+                if index_position > 0:
+                    # Need to transpose to put the new index in the right place
+                    perm = list(range(len(result.shape)))
+                    perm[0], perm[index_position] = perm[index_position], perm[0]
+                    result = sp_array.permutedims(result, perm)
+
+                return result
+
+            except ImportError:
+                raise NotImplementedError(
+                    "Higher-rank symbolic tensor operations require SymPy tensor array support"
+                ) from None
 
         raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
 
@@ -612,8 +703,67 @@ class MetricBase(ABC):
             pattern = f"{''.join(indices1)},{''.join(indices2)}->{''.join(output_indices)}"
             return optimized_einsum(pattern, tensor1, tensor2)
 
+        elif isinstance(tensor1, sp.Matrix) and isinstance(tensor2, sp.Matrix):
+            # Handle basic SymPy matrix contractions
+            if len(index_pairs) == 1:
+                i1, i2 = index_pairs[0]
+
+                # For matrices, we can only contract if dimensions are compatible
+                if tensor1.shape[i1] == tensor2.shape[i2]:
+                    if i1 == 1 and i2 == 0:
+                        # Contract columns of tensor1 with rows of tensor2
+                        return tensor1 * tensor2
+                    elif i1 == 0 and i2 == 1:
+                        # Contract rows of tensor1 with columns of tensor2
+                        return tensor1.T * tensor2
+                    else:
+                        # More complex contractions require conversion to arrays
+                        try:
+                            import sympy.tensor.array as sp_array
+
+                            array1 = sp_array.Array(tensor1)
+                            array2 = sp_array.Array(tensor2)
+
+                            # Perform tensor contraction
+                            axes = ([i1], [i2])
+                            result = sp_array.tensorcontraction(
+                                sp_array.tensorproduct(array1, array2), axes
+                            )
+                            return result
+                        except ImportError:
+                            raise NotImplementedError(
+                                "Complex symbolic tensor contractions require SymPy tensor array support"
+                            ) from None
+                else:
+                    raise ValueError(
+                        f"Cannot contract indices of different dimensions: {tensor1.shape[i1]} vs {tensor2.shape[i2]}"
+                    )
+            else:
+                # Multiple contractions require array operations
+                try:
+                    import sympy.tensor.array as sp_array
+
+                    array1 = sp_array.Array(tensor1)
+                    array2 = sp_array.Array(tensor2)
+
+                    # Perform multiple tensor contractions
+                    for i1, i2 in index_pairs:
+                        axes = ([i1], [i2])
+                        result = sp_array.tensorcontraction(
+                            sp_array.tensorproduct(array1, array2), axes
+                        )
+                        array1 = result  # Update for next contraction if any
+
+                    return result
+                except ImportError:
+                    raise NotImplementedError(
+                        "Multiple symbolic tensor contractions require SymPy tensor array support"
+                    ) from None
+
         else:
-            raise NotImplementedError("Symbolic tensor contraction not yet implemented")
+            raise NotImplementedError(
+                f"Symbolic tensor contraction not supported for types {type(tensor1)}, {type(tensor2)}"
+            )
 
     def inner_product(
         self, vector1: np.ndarray | sp.Matrix, vector2: np.ndarray | sp.Matrix

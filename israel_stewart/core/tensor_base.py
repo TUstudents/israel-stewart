@@ -231,15 +231,30 @@ class TensorField:
             elif self.rank == 2 and axis_order == (1, 0):
                 new_components = self.components.T
             else:
-                # For higher rank SymPy tensors, convert to numpy, transpose, then back
-                # This is less efficient but provides full functionality
-                warnings.warn(
-                    "SymPy higher-rank tensor transposition requires conversion to NumPy",
-                    stacklevel=2,
-                )
-                temp_array = np.array(self.components).astype(complex)
-                transposed_array = np.transpose(temp_array, axis_order)
-                new_components = sp.Matrix(transposed_array)
+                # For higher rank SymPy tensors, use SymPy Array operations for efficiency
+                try:
+                    import sympy.tensor.array as sp_array
+
+                    # Convert to SymPy Array if not already
+                    if hasattr(self.components, "rank") and self.components.rank() > 2:
+                        # Already a SymPy Array
+                        array_comp = self.components
+                    else:
+                        # Convert SymPy Matrix to Array
+                        array_comp = sp_array.Array(self.components)
+
+                    # Transpose using SymPy's permutedims
+                    new_components = sp_array.permutedims(array_comp, axis_order)
+
+                except ImportError:
+                    # Fallback to NumPy conversion if SymPy Array not available
+                    warnings.warn(
+                        "SymPy higher-rank tensor transposition requires conversion to NumPy (SymPy Array not available)",
+                        stacklevel=2,
+                    )
+                    temp_array = np.array(self.components).astype(complex)
+                    transposed_array = np.transpose(temp_array, axis_order)
+                    new_components = sp.Matrix(transposed_array)
 
         # Reorder indices accordingly
         new_indices = [self.indices[i] for i in axis_order]
@@ -474,10 +489,121 @@ class TensorField:
                     ]
                 )
 
-        raise NotImplementedError(
-            f"Manual contraction not implemented for ranks {self.rank} and {other.rank} "
-            f"with indices {self_index} and {other_index}"
-        )
+        # Additional common contraction patterns
+        elif self.rank == 3 and other.rank == 1:  # Rank-3 tensor with vector
+            if other_index == 0:
+                # Contract rank-3 tensor T_{ijk} with vector V^i at specified self_index
+                if self_index == 0:  # T_{ijk} V^i -> T'_{jk}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[i, j, k] * other_comp[i] for i in range(4))
+                                for k in range(4)
+                            ]
+                            for j in range(4)
+                        ]
+                    )
+                elif self_index == 1:  # T_{ijk} V^j -> T'_{ik}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[i, j, k] * other_comp[j] for j in range(4))
+                                for k in range(4)
+                            ]
+                            for i in range(4)
+                        ]
+                    )
+                elif self_index == 2:  # T_{ijk} V^k -> T'_{ij}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[i, j, k] * other_comp[k] for k in range(4))
+                                for j in range(4)
+                            ]
+                            for i in range(4)
+                        ]
+                    )
+
+        elif self.rank == 1 and other.rank == 3:  # Vector with rank-3 tensor
+            if self_index == 0:
+                # Contract vector V_i with rank-3 tensor T^{ijk} at specified other_index
+                if other_index == 0:  # V_i T^{ijk} -> T'_{jk}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[i] * other_comp[i, j, k] for i in range(4))
+                                for k in range(4)
+                            ]
+                            for j in range(4)
+                        ]
+                    )
+                elif other_index == 1:  # V_j T^{ijk} -> T'_{ik}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[j] * other_comp[i, j, k] for j in range(4))
+                                for k in range(4)
+                            ]
+                            for i in range(4)
+                        ]
+                    )
+                elif other_index == 2:  # V_k T^{ijk} -> T'_{ij}
+                    return sp.Matrix(
+                        [
+                            [
+                                sum(self_comp[k] * other_comp[i, j, k] for k in range(4))
+                                for j in range(4)
+                            ]
+                            for i in range(4)
+                        ]
+                    )
+
+        elif self.rank == 2 and other.rank == 3:  # Matrix with rank-3 tensor
+            # Common case: Matrix A_{ij} with rank-3 tensor T^{klm}
+            if self_index == 1 and other_index == 0:  # A_{ij} T^{jkl} -> R_{ikl}
+                # This would result in a rank-3 tensor, which is complex to represent as SymPy Matrix
+                # Use SymPy Array operations if available
+                try:
+                    import sympy.tensor.array as sp_array
+
+                    self_array = sp_array.Array(self_comp)
+                    other_array = sp_array.Array(other_comp)
+
+                    # Perform contraction
+                    axes = ([self_index], [other_index])
+                    result = sp_array.tensorcontraction(
+                        sp_array.tensorproduct(self_array, other_array), axes
+                    )
+                    return result
+
+                except ImportError:
+                    raise NotImplementedError(
+                        "Matrix-rank3 tensor contraction requires SymPy Array support"
+                    ) from None
+
+        # Fall back to generic SymPy Array operations if available
+        try:
+            import sympy.tensor.array as sp_array
+
+            # Convert both tensors to Arrays
+            self_array = sp_array.Array(self_comp) if not hasattr(self_comp, "rank") else self_comp
+            other_array = (
+                sp_array.Array(other_comp) if not hasattr(other_comp, "rank") else other_comp
+            )
+
+            # Perform tensor contraction
+            axes = ([self_index], [other_index])
+            result = sp_array.tensorcontraction(
+                sp_array.tensorproduct(self_array, other_array), axes
+            )
+            return result
+
+        except ImportError:
+            raise NotImplementedError(
+                f"Manual contraction not implemented for ranks {self.rank} and {other.rank} "
+                f"with indices {self_index} and {other_index}. "
+                f"Install SymPy Array support for general tensor contractions."
+            ) from None
 
     @monitor_performance("raise_index")
     def raise_index(self, index_pos: int) -> "TensorField":
@@ -656,12 +782,54 @@ class TensorField:
         else:
             # SymPy implementation for higher rank
             if self.rank > 2:
-                # Convert to numpy for computation, then back to SymPy if needed
-                temp_array = np.array(self.components).astype(complex)
-                result = np.trace(temp_array, axis1=i, axis2=j)
-                # Convert back to SymPy if the result is symbolic
-                if np.any(np.iscomplex(result)) or isinstance(result, complex):
-                    return complex(result)
-                return float(result)
+                # Use pure SymPy operations for higher-rank tensors to preserve precision
+                try:
+                    import sympy.tensor.array as sp_array
+
+                    # Convert to SymPy Array if needed
+                    if hasattr(self.components, "rank") and self.components.rank() > 2:
+                        array_comp = self.components
+                    else:
+                        array_comp = sp_array.Array(self.components)
+
+                    # Compute trace by summing diagonal elements
+                    # For a rank-n tensor, trace over indices i and j means:
+                    # result[k1, k2, ..., k_{n-2}] = sum_m tensor[k1, ..., m, ..., m, ..., k_{n-2}]
+
+                    shape = array_comp.shape
+                    if shape[i] != shape[j]:
+                        raise ValueError(
+                            f"Cannot trace indices of different dimensions: {shape[i]} vs {shape[j]}"
+                        )
+
+                    # Create a symbolic sum over the diagonal
+                    result: sp.Expr | int = 0
+                    for m in range(shape[i]):
+                        # Create index tuple with m at positions i and j
+                        indices: list[slice | int] = [slice(None)] * len(shape)
+                        indices[i] = m
+                        indices[j] = m
+                        result += array_comp[tuple(indices)]
+
+                    return result
+
+                except ImportError:
+                    # Fallback to NumPy conversion if SymPy Array not available
+                    warnings.warn(
+                        "SymPy higher-rank tensor trace requires conversion to NumPy (SymPy Array not available)",
+                        stacklevel=2,
+                    )
+                    temp_array = np.array(self.components).astype(complex)
+                    result = np.trace(temp_array, axis1=i, axis2=j)
+                    # Convert back to SymPy if the result is symbolic
+                    if np.any(np.iscomplex(result)) or isinstance(result, complex):
+                        return complex(result)
+                    return float(result)
             else:
+                # Manual trace for rank-3 and higher tensors without Array support
+                if self.rank == 3:
+                    # For 3rd rank tensor T_{ijk}, trace over indices (i,j) gives vector
+                    # But this shouldn't happen since we check rank > 2, so fall through
+                    pass
+
                 raise NotImplementedError("SymPy trace for rank > 2 not implemented")

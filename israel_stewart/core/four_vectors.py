@@ -278,7 +278,7 @@ class FourVector(TensorField):
 
         # Apply correct transformation based on vector type
         if is_covariant:
-            # Covariant vectors transform with inverse-transpose: u'_μ = (Λ^-1)_μ^ν u_ν = Λ_ν^μ u_ν
+            # Covariant vectors transform as: u'_μ = u_ν (Λ^{-1})^ν_μ
             # This preserves the duality relationship: if u_μ = η_μν u^ν, then u'_μ = η_μν u'^ν
             transform_matrix = np.linalg.inv(boost_matrix)
         else:
@@ -287,10 +287,21 @@ class FourVector(TensorField):
 
         # Apply transformation
         if isinstance(self.components, np.ndarray):
-            boosted_components = np.dot(transform_matrix, self.components)
+            if is_covariant:
+                # Covariant vectors: u'_μ = u_ν (Λ^{-1})^ν_μ (right multiplication)
+                boosted_components = np.dot(self.components, transform_matrix)
+            else:
+                # Contravariant vectors: u'^μ = Λ^μ_ν u^ν (left multiplication)
+                boosted_components = np.dot(transform_matrix, self.components)
         else:
             transform_matrix_sp = sp.Matrix(transform_matrix)
-            boosted_components = transform_matrix_sp * self.components
+            if is_covariant:
+                # SymPy covariant vectors: right multiplication
+                boosted_components = self.components.T * transform_matrix_sp
+                boosted_components = boosted_components.T  # Convert back to column vector
+            else:
+                # SymPy contravariant vectors: left multiplication
+                boosted_components = transform_matrix_sp * self.components
 
         return FourVector(boosted_components, self.indices[0][0], self.metric)
 

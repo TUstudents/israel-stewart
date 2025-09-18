@@ -850,7 +850,7 @@ class ISFieldConfiguration:
         # Construct perpendicular projector Δ^μν = g^μν + u^μ u^ν for all points
 
         # Get metric inverse at all points (broadcast if constant metric)
-        if hasattr(self.grid.metric, 'inverse'):
+        if hasattr(self.grid.metric, "inverse"):
             g_inv = self.grid.metric.inverse
             if g_inv.ndim == 2:  # Constant metric
                 g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
@@ -859,16 +859,16 @@ class ISFieldConfiguration:
             g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
         # Compute u^μ u^ν outer product for all grid points
-        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
+        u_outer = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
 
         # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
         delta = g_inv + u_outer
 
         # Project shear tensor: π^μν = Δ^μα Δ^νβ π_αβ
-        pi_projected = optimized_einsum('...ma,...nb,...ab->...mn', delta, delta, self.pi_munu)
+        pi_projected = optimized_einsum("...ma,...nb,...ab->...mn", delta, delta, self.pi_munu)
 
         # Compute trace: Tr(π) = Δ_μν π^μν
-        pi_trace = optimized_einsum('...mn,...mn->...', delta, self.pi_munu)
+        pi_trace = optimized_einsum("...mn,...mn->...", delta, self.pi_munu)
 
         # Remove trace: π^μν_traceless = π^μν_projected - (1/3) Δ^μν Tr(π)
         pi_traceless = pi_projected - (1.0 / 3.0) * pi_trace[..., np.newaxis, np.newaxis] * delta
@@ -886,7 +886,7 @@ class ISFieldConfiguration:
         # Project: q^μ_⊥ = Δ^μν q_ν where Δ^μν = g^μν + u^μ u^ν
 
         # Get metric inverse at all points
-        if hasattr(self.grid.metric, 'inverse'):
+        if hasattr(self.grid.metric, "inverse"):
             g_inv = self.grid.metric.inverse
             if g_inv.ndim == 2:  # Constant metric
                 g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
@@ -895,13 +895,13 @@ class ISFieldConfiguration:
             g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
 
         # Compute u^μ u^ν outer product
-        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
+        u_outer = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
 
         # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
         delta = g_inv + u_outer
 
         # Project heat flux: q^μ_⊥ = Δ^μν q_ν
-        self.q_mu = optimized_einsum('...mn,...n->...m', delta, self.q_mu)
+        self.q_mu = optimized_einsum("...mn,...n->...m", delta, self.q_mu)
 
     def _enforce_thermodynamic_constraints(self) -> None:
         """Enforce thermodynamic positivity and consistency constraints."""
@@ -937,7 +937,7 @@ class ISFieldConfiguration:
         enthalpy_density = self.rho + self.pressure
 
         # Compute u^μ u^ν outer product for all grid points
-        u_outer = np.einsum('...i,...j->...ij', self.u_mu, self.u_mu)
+        u_outer = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
 
         # Get metric tensor at all points
         if self.grid.metric is None:
@@ -948,8 +948,10 @@ class ISFieldConfiguration:
                 g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
 
         # Perfect fluid tensor: (ρ + p) u^μ u^ν + p g^μν
-        perfect_fluid = (enthalpy_density[..., np.newaxis, np.newaxis] * u_outer +
-                        self.pressure[..., np.newaxis, np.newaxis] * g_inv)
+        perfect_fluid = (
+            enthalpy_density[..., np.newaxis, np.newaxis] * u_outer
+            + self.pressure[..., np.newaxis, np.newaxis] * g_inv
+        )
 
         # Total stress-energy tensor with viscous corrections
         T_total: np.ndarray = perfect_fluid + self.pi_munu

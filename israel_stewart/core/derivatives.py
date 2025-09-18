@@ -182,7 +182,7 @@ class CovariantDerivative:
 
         # Build new index string with robust index handling
         # Add derivative index as the last covariant index
-        if hasattr(tensor_field, 'add_covariant_index'):
+        if hasattr(tensor_field, "add_covariant_index"):
             # Use proper method if available
             new_indices = tensor_field.add_covariant_index("d")
         else:
@@ -288,7 +288,7 @@ class CovariantDerivative:
             "Missing tensor index contraction terms (∇_μ V^ν) for proper Lie derivative. "
             "Use with caution for physics calculations.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
         # Lie derivative: L_V T = V^μ ∇_μ T + (∇_μ V^ν) T terms

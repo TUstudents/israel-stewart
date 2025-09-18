@@ -25,6 +25,7 @@ JOULE_TO_GEV = 1.0 / GEV_TO_JOULE  # Inverse conversion
 
 class PhysicalConstants(TypedDict):
     """Type definition for physical constants dictionaries."""
+
     c: float
     hbar: float
     k_B: float
@@ -36,7 +37,7 @@ NATURAL_UNITS: PhysicalConstants = {
     "c": C_LIGHT,
     "hbar": HBAR,
     "k_B": BOLTZMANN_K,
-    "system": "natural"
+    "system": "natural",
 }
 
 # SI units (for dimensional analysis and conversion)
@@ -75,6 +76,7 @@ MELECTRON = 0.000511  # Electron mass in GeV
 # Convenience aliases for natural units
 KBOLTZ = BOLTZMANN_K  # Alias for Boltzmann constant
 
+
 # Additional conversion utilities
 def si_to_natural_energy(energy_si: float) -> float:
     """Convert energy from SI (Joules) to natural units (GeV)."""
@@ -96,6 +98,7 @@ def si_to_natural_length(length_si: float) -> float:
     """Convert length from SI (meters) to natural units (GeV^-1)."""
     hbar_c = SI_CONSTANTS["hbar"] * SI_CONSTANTS["c"]
     return length_si * GEV_TO_JOULE / hbar_c
+
 
 # Numerical stability parameters
 CONDITION_NUMBER_WARN = 1e12  # Warn if matrix condition number exceeds this
@@ -240,6 +243,7 @@ def validate_transport_coefficient(coefficient: float, name: str) -> bool:
 # Energy scale: 1 GeV = 1.602176634e-10 J
 # Length scale: 1 GeV^-1 = ħc/GeV ≈ 1.973e-16 m
 # Time scale: 1 GeV^-1 = ħ/GeV ≈ 6.582e-25 s
+
 
 def natural_to_si_energy(energy_natural: float) -> float:
     """Convert energy from natural units (GeV) to SI (Joules).

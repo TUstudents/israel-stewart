@@ -59,21 +59,21 @@ class BjorkenFlowSolution:
         self.s0 = self.b * self.T0**3  # Initial entropy density
 
     @monitor_performance("bjorken_ideal_solution")
-    def ideal_solution(self, tau: Union[float, np.ndarray]) -> Dict[str, np.ndarray]:
+    def ideal_solution(self, tau: float | np.ndarray) -> dict[str, np.ndarray]:
         """
         Compute ideal Bjorken flow solution.
 
         For ideal hydrodynamics with adiabatic expansion:
-        T(�) = T� * (Ā/�)^(1/3)
-        �(�) = �� * (Ā/�)^(4/3)
+        T(τ) = T₀ * (τ₀/τ)^(1/3)
+        ρ(τ) = ρ₀ * (τ₀/τ)^(4/3)
         """
         tau_array = np.atleast_1d(tau)
 
         # Temperature evolution
-        temperature = self.T0 * (self.tau0 / tau_array)**(1/3)
+        temperature = self.T0 * (self.tau0 / tau_array) ** (1 / 3)
 
         # Energy density evolution
-        energy_density = self.epsilon0 * (self.tau0 / tau_array)**(4/3)
+        energy_density = self.epsilon0 * (self.tau0 / tau_array) ** (4 / 3)
 
         # Pressure from ideal gas EOS
         pressure = energy_density / 3.0
@@ -86,71 +86,71 @@ class BjorkenFlowSolution:
         u_eta = np.zeros_like(tau_array)
 
         return {
-            'time': tau_array,
-            'temperature': temperature,
-            'energy_density': energy_density,
-            'pressure': pressure,
-            'entropy_density': entropy_density,
-            'u_tau': u_tau,
-            'u_eta': u_eta,
-            'expansion_rate': -1.0 / tau_array,  # � = -1/� for Bjorken flow
+            "time": tau_array,
+            "temperature": temperature,
+            "energy_density": energy_density,
+            "pressure": pressure,
+            "entropy_density": entropy_density,
+            "u_tau": u_tau,
+            "u_eta": u_eta,
+            "expansion_rate": -1.0 / tau_array,  # θ = -1/τ for Bjorken flow
         }
 
     @monitor_performance("bjorken_first_order_solution")
     def first_order_viscous_solution(
         self,
-        tau: Union[float, np.ndarray],
+        tau: float | np.ndarray,
         shear_viscosity: float,
         bulk_viscosity: float = 0.0,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """
         Compute first-order viscous Bjorken flow solution.
 
         Includes Navier-Stokes corrections:
-        � = -� * � = �/�
-        �^ķ = (4�/3�) * (dT/d�) * (1/T)
+        Π = -ζ * θ = ζ/τ
+        π^μν = (4η/3τ) * (dT/dτ) * (1/T)
         """
         # Get ideal solution as baseline
         ideal = self.ideal_solution(tau)
-        tau_array = ideal['time']
+        tau_array = ideal["time"]
 
         # First-order viscous corrections
-        expansion_rate = ideal['expansion_rate']
+        expansion_rate = ideal["expansion_rate"]
 
-        # Bulk pressure: � = -� * �
+        # Bulk pressure: Π = -ζ * θ
         bulk_pressure = -bulk_viscosity * expansion_rate
 
-        # Shear stress: �^��  ^� u^��
-        # For Bjorken flow: �^ķ = (4�/3�) * (1/T) * (dT/d�)
-        temperature = ideal['temperature']
-        dT_dtau = -(1/3) * self.T0 * (self.tau0)**(1/3) * tau_array**(-4/3)
+        # Shear stress: π^μν ∇⟨μ u^ν⟩
+        # For Bjorken flow: π^ητ = (4η/3τ) * (1/T) * (dT/dτ)
+        temperature = ideal["temperature"]
+        dT_dtau = -(1 / 3) * self.T0 * (self.tau0) ** (1 / 3) * tau_array ** (-4 / 3)
 
         shear_stress = (4 * shear_viscosity / (3 * tau_array)) * (dT_dtau / temperature)
 
         # Energy density with viscous corrections
-        energy_density_corrected = ideal['energy_density'] - bulk_pressure
+        energy_density_corrected = ideal["energy_density"] - bulk_pressure
 
         return {
             **ideal,
-            'bulk_pressure': bulk_pressure,
-            'shear_stress': shear_stress,
-            'energy_density_corrected': energy_density_corrected,
-            'viscous_contribution': -bulk_pressure,
+            "bulk_pressure": bulk_pressure,
+            "shear_stress": shear_stress,
+            "energy_density_corrected": energy_density_corrected,
+            "viscous_contribution": -bulk_pressure,
         }
 
     @monitor_performance("bjorken_second_order_solution")
     def israel_stewart_solution(
         self,
-        tau: Union[float, np.ndarray],
+        tau: float | np.ndarray,
         coefficients: TransportCoefficients,
         numerical_method: str = "odeint",
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """
         Compute second-order Israel-Stewart Bjorken flow solution.
 
         Solves the coupled ODEs for temperature and dissipative fluxes:
-        dT/d� + T/(3�) = -�/(3��)
-        d�/d� + �/�_� = -�/� - �_�� ��/(��)
+        dT/dτ + T/(3τ) = -Π/(3ρτ)
+        dΠ/dτ + Π/τ_Π = -θ/τ - λ_ΠΠ Π²/(ρτ)
         """
         tau_array = np.atleast_1d(tau)
         tau_min, tau_max = float(np.min(tau_array)), float(np.max(tau_array))
@@ -162,37 +162,33 @@ class BjorkenFlowSolution:
         tau_Pi = coefficients.bulk_relaxation_time or 0.1
 
         # Second-order coefficients
-        lambda_PiPi = getattr(coefficients, 'lambda_Pi_Pi', 0.0)
-        xi_1 = getattr(coefficients, 'xi_1', 0.0)
+        lambda_PiPi = getattr(coefficients, "lambda_Pi_Pi", 0.0)
+        xi_1 = getattr(coefficients, "xi_1", 0.0)
 
-        def ode_system(y: np.ndarray, tau: float) -> np.ndarray:
-            """
-            ODE system for Israel-Stewart Bjorken flow.
+    def ode_system(y: np.ndarray, tau: float) -> np.ndarray:
+        # ODE system for Israel-Stewart Bjorken flow. Variables: y = [T, Pi, pi^eta_tau]
+        T, Pi, pi_tau_eta = y
 
-            Variables: y = [T, �, �^ķ]
-            """
-            T, Pi, pi_tau_eta = y
+        # Thermodynamic quantities
+        epsilon = self.a * T**4
+        pressure = epsilon / 3.0
 
-            # Thermodynamic quantities
-            epsilon = self.a * T**4
-            pressure = epsilon / 3.0
+        # Temperature evolution with viscous corrections
+        dT_dtau = -(T / (3 * tau)) - Pi / (3 * epsilon * tau)
 
-            # Temperature evolution with viscous corrections
-            dT_dtau = -(T / (3 * tau)) - Pi / (3 * epsilon * tau)
+        # Bulk pressure evolution
+        theta = -1.0 / tau  # Expansion rate
+        source_Pi = -zeta * theta
+        nonlinear_Pi = -lambda_PiPi * Pi**2 / (epsilon * tau) if lambda_PiPi > 0 else 0.0
+        dPi_dtau = -Pi / tau_Pi + source_Pi + nonlinear_Pi
 
-            # Bulk pressure evolution
-            theta = -1.0 / tau  # Expansion rate
-            source_Pi = -zeta * theta
-            nonlinear_Pi = -lambda_PiPi * Pi**2 / (epsilon * tau) if lambda_PiPi > 0 else 0.0
-            dPi_dtau = -Pi / tau_Pi + source_Pi + nonlinear_Pi
+        # Shear stress evolution (simplified for 1+1D)
+        # In full 3+1D, this would be more complex
+        shear_rate = (4.0 / (3 * tau)) * (dT_dtau / T)
+        source_pi = eta * shear_rate
+        dpi_dtau = -pi_tau_eta / tau_pi + source_pi
 
-            # Shear stress evolution (simplified for 1+1D)
-            # In full 3+1D, this would be more complex
-            shear_rate = (4.0 / (3 * tau)) * (dT_dtau / T)
-            source_pi = eta * shear_rate
-            dpi_dtau = -pi_tau_eta / tau_pi + source_pi
-
-            return np.array([dT_dtau, dPi_dtau, dpi_dtau])
+        return np.array([dT_dtau, dPi_dtau, dpi_dtau])
 
         # Initial conditions
         T_init = self.T0
@@ -217,9 +213,9 @@ class BjorkenFlowSolution:
                 [self.tau0, tau_max],
                 y0,
                 t_eval=tau_array,
-                method='DOP853',
+                method="DOP853",
                 rtol=1e-8,
-                atol=1e-10
+                atol=1e-10,
             )
 
             if not sol.success:
@@ -242,47 +238,47 @@ class BjorkenFlowSolution:
         u_eta = np.zeros_like(tau_array)
 
         return {
-            'time': tau_array,
-            'temperature': T_interp,
-            'energy_density': energy_density,
-            'pressure': pressure,
-            'entropy_density': entropy_density,
-            'bulk_pressure': Pi_interp,
-            'shear_stress': pi_interp,
-            'u_tau': u_tau,
-            'u_eta': u_eta,
-            'expansion_rate': -1.0 / tau_array,
+            "time": tau_array,
+            "temperature": T_interp,
+            "energy_density": energy_density,
+            "pressure": pressure,
+            "entropy_density": entropy_density,
+            "bulk_pressure": Pi_interp,
+            "shear_stress": pi_interp,
+            "u_tau": u_tau,
+            "u_eta": u_eta,
+            "expansion_rate": -1.0 / tau_array,
         }
 
     def effective_temperature(
         self,
-        tau: Union[float, np.ndarray],
+        tau: float | np.ndarray,
         total_energy_density: np.ndarray,
     ) -> np.ndarray:
         """
         Compute effective temperature from total energy density.
 
-        T_eff = (�_total / a)^(1/4)
+        T_eff = (rho_total / a)^(1/4)
         """
         tau_array = np.atleast_1d(tau)
-        return (total_energy_density / self.a)**(1/4)
+        return (total_energy_density / self.a) ** (1 / 4)
 
     def compute_observables(
         self,
-        solution: Dict[str, np.ndarray],
-        coefficients: Optional[TransportCoefficients] = None,
-    ) -> Dict[str, np.ndarray]:
+        solution: dict[str, np.ndarray],
+        coefficients: TransportCoefficients | None = None,
+    ) -> dict[str, np.ndarray]:
         """
         Compute physical observables from Bjorken flow solution.
 
         Includes temperature, particle multiplicity, elliptic flow, etc.
         """
-        tau = solution['time']
-        T = solution['temperature']
-        s = solution['entropy_density']
+        tau = solution["time"]
+        T = solution["temperature"]
+        s = solution["entropy_density"]
 
         # Particle multiplicity (assuming pions)
-        # dN/dy  � * s at freeze-out
+        # dN/dy ∝ s at freeze-out
         tau_fo = 5.0  # fm/c (typical freeze-out time)
         T_fo = 0.14  # GeV (freeze-out temperature)
 
@@ -295,22 +291,22 @@ class BjorkenFlowSolution:
             multiplicity = np.nan
 
         # Momentum anisotropy (for viscous case)
-        if 'shear_stress' in solution:
-            pi_tau_eta = solution['shear_stress']
-            epsilon = solution['energy_density']
+        if "shear_stress" in solution:
+            pi_tau_eta = solution["shear_stress"]
+            epsilon = solution["energy_density"]
             # Simplified anisotropy measure
             momentum_anisotropy = pi_tau_eta / (epsilon + 1e-12)
         else:
             momentum_anisotropy = np.zeros_like(tau)
 
         # Energy loss rate
-        energy_loss_rate = np.gradient(solution['energy_density'], tau)
+        energy_loss_rate = np.gradient(solution["energy_density"], tau)
 
         return {
-            'multiplicity': multiplicity,
-            'momentum_anisotropy': momentum_anisotropy,
-            'energy_loss_rate': energy_loss_rate,
-            'freeze_out_time': tau_fo_actual if not np.isnan(multiplicity) else np.nan,
+            "multiplicity": multiplicity,
+            "momentum_anisotropy": momentum_anisotropy,
+            "energy_loss_rate": energy_loss_rate,
+            "freeze_out_time": tau_fo_actual if not np.isnan(multiplicity) else np.nan,
         }
 
 
@@ -345,7 +341,7 @@ class BjorkenBenchmark:
         self.relaxation_eq = ISRelaxationEquations(grid, self.metric, coefficients)
 
         # Results storage
-        self.results: Dict[str, Any] = {}
+        self.results: dict[str, Any] = {}
 
     @monitor_performance("bjorken_numerical_simulation")
     def run_numerical_simulation(
@@ -353,7 +349,7 @@ class BjorkenBenchmark:
         final_time: float = 10.0,
         timestep: float = 0.01,
         solver_method: str = "explicit",
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """
         Run numerical Bjorken flow simulation.
 
@@ -372,11 +368,11 @@ class BjorkenBenchmark:
         # Time evolution
         time_points: list[float] = []
         solutions: dict[str, list[float]] = {
-            'temperature': [],
-            'energy_density': [],
-            'pressure': [],
-            'bulk_pressure': [],
-            'shear_stress': [],
+            "temperature": [],
+            "energy_density": [],
+            "pressure": [],
+            "bulk_pressure": [],
+            "shear_stress": [],
         }
 
         current_time = self.analytical.tau0
@@ -403,7 +399,7 @@ class BjorkenBenchmark:
 
         # Convert lists to arrays
         result = {
-            'time': np.array(time_points),
+            "time": np.array(time_points),
         }
         for key, values in solutions.items():
             result[key] = np.array(values)
@@ -416,45 +412,43 @@ class BjorkenBenchmark:
         ideal_ic = self.analytical.ideal_solution(self.analytical.tau0)
 
         # Set thermodynamic quantities
-        fields.temperature.fill(ideal_ic['temperature'][0])
-        fields.rho.fill(ideal_ic['energy_density'][0])
-        fields.pressure.fill(ideal_ic['pressure'][0])
+        fields.temperature.fill(ideal_ic["temperature"][0])
+        fields.rho.fill(ideal_ic["energy_density"][0])
+        fields.pressure.fill(ideal_ic["pressure"][0])
 
         # Set four-velocity (boost-invariant)
-        fields.u_mu[..., 0] = 1.0  # u^� = 1
-        fields.u_mu[..., 1] = 0.0  # u^� = 0
+        fields.u_mu[..., 0] = 1.0  # u^τ = 1
+        fields.u_mu[..., 1] = 0.0  # u^η = 0
         fields.u_mu[..., 2] = 0.0  # u^x = 0
         fields.u_mu[..., 3] = 0.0  # u^y = 0
 
         # Initialize dissipative fluxes to zero
         fields.Pi.fill(0.0)
         fields.pi_munu.fill(0.0)
-        if hasattr(fields, 'q_mu'):
+        if hasattr(fields, "q_mu"):
             fields.q_mu.fill(0.0)
 
     def _record_solution_state(
-        self,
-        fields: ISFieldConfiguration,
-        solutions: Dict[str, List[float]]
+        self, fields: ISFieldConfiguration, solutions: dict[str, list[float]]
     ) -> None:
         """Record current solution state."""
         # Take spatial average (for Bjorken flow, fields should be uniform)
-        solutions['temperature'].append(float(np.mean(fields.temperature)))
-        solutions['energy_density'].append(float(np.mean(fields.rho)))
-        solutions['pressure'].append(float(np.mean(fields.pressure)))
-        solutions['bulk_pressure'].append(float(np.mean(fields.Pi)))
+        solutions["temperature"].append(float(np.mean(fields.temperature)))
+        solutions["energy_density"].append(float(np.mean(fields.rho)))
+        solutions["pressure"].append(float(np.mean(fields.pressure)))
+        solutions["bulk_pressure"].append(float(np.mean(fields.Pi)))
 
         # Shear stress (take trace norm for scalar measure)
         pi_norm = np.sqrt(np.mean(fields.pi_munu**2))
-        solutions['shear_stress'].append(float(pi_norm))
+        solutions["shear_stress"].append(float(pi_norm))
 
     @monitor_performance("bjorken_comparison")
     def compare_solutions(
         self,
-        numerical_result: Dict[str, np.ndarray],
+        numerical_result: dict[str, np.ndarray],
         analytical_type: str = "israel_stewart",
         relative_tolerance: float = 0.05,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compare numerical and analytical solutions.
 
@@ -468,23 +462,23 @@ class BjorkenBenchmark:
         """
         # Get analytical solution at numerical time points
         if analytical_type == "ideal":
-            analytical_result = self.analytical.ideal_solution(numerical_result['time'])
+            analytical_result = self.analytical.ideal_solution(numerical_result["time"])
         elif analytical_type == "first_order":
             eta = self.coefficients.shear_viscosity or 0.0
             zeta = self.coefficients.bulk_viscosity or 0.0
             analytical_result = self.analytical.first_order_viscous_solution(
-                numerical_result['time'], eta, zeta
+                numerical_result["time"], eta, zeta
             )
         elif analytical_type == "israel_stewart":
             analytical_result = self.analytical.israel_stewart_solution(
-                numerical_result['time'], self.coefficients
+                numerical_result["time"], self.coefficients
             )
         else:
             raise ValueError(f"Unknown analytical type: {analytical_type}")
 
         # Compute errors for each quantity
         errors = {}
-        for key in ['temperature', 'energy_density', 'pressure']:
+        for key in ["temperature", "energy_density", "pressure"]:
             if key in numerical_result and key in analytical_result:
                 numerical = numerical_result[key]
                 analytical = analytical_result[key]
@@ -492,38 +486,36 @@ class BjorkenBenchmark:
                 # Relative error
                 rel_error = np.abs(numerical - analytical) / (np.abs(analytical) + 1e-12)
                 errors[key] = {
-                    'max_relative_error': np.max(rel_error),
-                    'mean_relative_error': np.mean(rel_error),
-                    'rms_relative_error': np.sqrt(np.mean(rel_error**2)),
-                    'passes_tolerance': np.max(rel_error) < relative_tolerance,
+                    "max_relative_error": np.max(rel_error),
+                    "mean_relative_error": np.mean(rel_error),
+                    "rms_relative_error": np.sqrt(np.mean(rel_error**2)),
+                    "passes_tolerance": np.max(rel_error) < relative_tolerance,
                 }
 
         # Special handling for dissipative quantities
-        if 'bulk_pressure' in numerical_result and 'bulk_pressure' in analytical_result:
-            num_Pi = numerical_result['bulk_pressure']
-            ana_Pi = analytical_result['bulk_pressure']
+        if "bulk_pressure" in numerical_result and "bulk_pressure" in analytical_result:
+            num_Pi = numerical_result["bulk_pressure"]
+            ana_Pi = analytical_result["bulk_pressure"]
 
             # Use absolute error for small quantities
             abs_error = np.abs(num_Pi - ana_Pi)
             characteristic_scale = np.max(np.abs(ana_Pi)) + 1e-6
 
-            errors['bulk_pressure'] = {
-                'max_absolute_error': np.max(abs_error),
-                'scaled_error': np.max(abs_error) / characteristic_scale,
-                'passes_tolerance': np.max(abs_error) / characteristic_scale < relative_tolerance,
+            errors["bulk_pressure"] = {
+                "max_absolute_error": np.max(abs_error),
+                "scaled_error": np.max(abs_error) / characteristic_scale,
+                "passes_tolerance": np.max(abs_error) / characteristic_scale < relative_tolerance,
             }
 
         # Overall assessment
-        all_pass = all(
-            err_data.get('passes_tolerance', True) for err_data in errors.values()
-        )
+        all_pass = all(err_data.get("passes_tolerance", True) for err_data in errors.values())
 
         comparison_result = {
-            'errors': errors,
-            'overall_agreement': 'good' if all_pass else 'poor',
-            'analytical_type': analytical_type,
-            'relative_tolerance': relative_tolerance,
-            'comparison_time_points': len(numerical_result['time']),
+            "errors": errors,
+            "overall_agreement": "good" if all_pass else "poor",
+            "analytical_type": analytical_type,
+            "relative_tolerance": relative_tolerance,
+            "comparison_time_points": len(numerical_result["time"]),
         }
 
         return comparison_result
@@ -531,10 +523,10 @@ class BjorkenBenchmark:
     @monitor_performance("bjorken_convergence_study")
     def convergence_study(
         self,
-        timesteps: List[float],
+        timesteps: list[float],
         final_time: float = 5.0,
-        reference_solution: Optional[Dict[str, np.ndarray]] = None,
-    ) -> Dict[str, Any]:
+        reference_solution: dict[str, np.ndarray] | None = None,
+    ) -> dict[str, Any]:
         """
         Perform convergence study with different timesteps.
 
@@ -558,21 +550,17 @@ class BjorkenBenchmark:
         for dt in timesteps:
             # Run simulation with this timestep
             numerical_result = self.run_numerical_simulation(
-                final_time=final_time,
-                timestep=dt,
-                solver_method="explicit"
+                final_time=final_time, timestep=dt, solver_method="explicit"
             )
 
             # Interpolate to reference time points for comparison
-            ref_time = reference_solution['time']
+            ref_time = reference_solution["time"]
             interpolated_result = {}
 
-            for key in ['temperature', 'energy_density', 'pressure']:
+            for key in ["temperature", "energy_density", "pressure"]:
                 if key in numerical_result:
                     interpolated_result[key] = np.interp(
-                        ref_time,
-                        numerical_result['time'],
-                        numerical_result[key]
+                        ref_time, numerical_result["time"], numerical_result[key]
                     )
 
             # Compute errors
@@ -583,32 +571,31 @@ class BjorkenBenchmark:
                     rel_error = np.abs(values - ref_values) / (np.abs(ref_values) + 1e-12)
                     errors[key] = np.max(rel_error)
 
-            convergence_data.append({
-                'timestep': dt,
-                'errors': errors,
-                'max_error': max(errors.values()) if errors else np.inf,
-            })
+            convergence_data.append(
+                {
+                    "timestep": dt,
+                    "errors": errors,
+                    "max_error": max(errors.values()) if errors else np.inf,
+                }
+            )
 
         # Estimate convergence order
         convergence_order = self._estimate_convergence_order(convergence_data)
 
         return {
-            'convergence_data': convergence_data,
-            'convergence_order': convergence_order,
-            'is_converging': convergence_order > 0.5,  # At least first-order
+            "convergence_data": convergence_data,
+            "convergence_order": convergence_order,
+            "is_converging": convergence_order > 0.5,  # At least first-order
         }
 
-    def _estimate_convergence_order(
-        self,
-        convergence_data: List[Dict[str, Any]]
-    ) -> float:
+    def _estimate_convergence_order(self, convergence_data: list[dict[str, Any]]) -> float:
         """Estimate convergence order from error data."""
         if len(convergence_data) < 2:
             return 0.0
 
         # Use temperature error for convergence order estimation
-        timesteps = [data['timestep'] for data in convergence_data]
-        errors = [data['errors'].get('temperature', np.inf) for data in convergence_data]
+        timesteps = [data["timestep"] for data in convergence_data]
+        errors = [data["errors"].get("temperature", np.inf) for data in convergence_data]
 
         # Filter out infinite errors
         valid_indices = [i for i, err in enumerate(errors) if np.isfinite(err) and err > 0]
@@ -631,8 +618,8 @@ class BjorkenBenchmark:
         self,
         timestep: float = 0.01,
         final_time: float = 10.0,
-        convergence_timesteps: Optional[List[float]] = None,
-    ) -> Dict[str, Any]:
+        convergence_timesteps: list[float] | None = None,
+    ) -> dict[str, Any]:
         """
         Run complete Bjorken flow benchmark suite.
 
@@ -649,9 +636,7 @@ class BjorkenBenchmark:
 
         # Main numerical simulation
         numerical_result = self.run_numerical_simulation(
-            final_time=final_time,
-            timestep=timestep,
-            solver_method="explicit"
+            final_time=final_time, timestep=timestep, solver_method="explicit"
         )
 
         # Compare against different analytical solutions
@@ -659,28 +644,25 @@ class BjorkenBenchmark:
         is_comparison = self.compare_solutions(numerical_result, "israel_stewart")
 
         # Convergence study
-        convergence_results = self.convergence_study(
-            convergence_timesteps,
-            final_time=final_time
-        )
+        convergence_results = self.convergence_study(convergence_timesteps, final_time=final_time)
 
         # Performance metrics
         performance_stats = {
-            'simulation_timestep': timestep,
-            'total_time_points': len(numerical_result['time']),
-            'final_time': final_time,
+            "simulation_timestep": timestep,
+            "total_time_points": len(numerical_result["time"]),
+            "final_time": final_time,
         }
 
         # Overall benchmark assessment
         benchmark_result = {
-            'numerical_solution': numerical_result,
-            'ideal_comparison': ideal_comparison,
-            'israel_stewart_comparison': is_comparison,
-            'convergence_study': convergence_results,
-            'performance': performance_stats,
-            'benchmark_passed': (
-                is_comparison['overall_agreement'] == 'good' and
-                convergence_results['is_converging']
+            "numerical_solution": numerical_result,
+            "ideal_comparison": ideal_comparison,
+            "israel_stewart_comparison": is_comparison,
+            "convergence_study": convergence_results,
+            "performance": performance_stats,
+            "benchmark_passed": (
+                is_comparison["overall_agreement"] == "good"
+                and convergence_results["is_converging"]
             ),
         }
 
@@ -700,29 +682,29 @@ class BjorkenBenchmark:
         report.append("=" * 60)
 
         # Overall status
-        passed = self.results.get('benchmark_passed', False)
+        passed = self.results.get("benchmark_passed", False)
         status = "PASSED" if passed else "FAILED"
         report.append(f"Overall Status: {status}")
         report.append("")
 
         # Israel-Stewart comparison
-        is_comp = self.results.get('israel_stewart_comparison', {})
+        is_comp = self.results.get("israel_stewart_comparison", {})
         report.append("Israel-Stewart Comparison:")
-        for quantity, error_data in is_comp.get('errors', {}).items():
-            max_err = error_data.get('max_relative_error', 0.0)
-            passes = error_data.get('passes_tolerance', False)
+        for quantity, error_data in is_comp.get("errors", {}).items():
+            max_err = error_data.get("max_relative_error", 0.0)
+            passes = error_data.get("passes_tolerance", False)
             report.append(f"  {quantity}: {max_err:.3e} ({'PASS' if passes else 'FAIL'})")
         report.append("")
 
         # Convergence study
-        conv_study = self.results.get('convergence_study', {})
-        conv_order = conv_study.get('convergence_order', 0.0)
-        is_conv = conv_study.get('is_converging', False)
+        conv_study = self.results.get("convergence_study", {})
+        conv_order = conv_study.get("convergence_order", 0.0)
+        is_conv = conv_study.get("is_converging", False)
         report.append(f"Convergence Order: {conv_order:.2f} ({'PASS' if is_conv else 'FAIL'})")
         report.append("")
 
         # Performance
-        perf = self.results.get('performance', {})
+        perf = self.results.get("performance", {})
         report.append(f"Simulation Points: {perf.get('total_time_points', 0)}")
         report.append(f"Final Time: {perf.get('final_time', 0.0):.2f} fm/c")
 
@@ -734,7 +716,7 @@ def create_standard_bjorken_benchmark(
     tau0: float = 0.6,
     T0: float = 0.3,
     eta_over_s: float = 0.08,
-    grid_points: Tuple[int, int, int, int] = (8, 4, 4, 4),
+    grid_points: tuple[int, int, int, int] = (8, 4, 4, 4),
 ) -> BjorkenBenchmark:
     """
     Create a standard Bjorken flow benchmark setup.
@@ -748,7 +730,7 @@ def create_standard_bjorken_benchmark(
     Returns:
         Configured Bjorken benchmark
     """
-    # Create grid (only � direction matters for Bjorken flow)
+    # Create grid (only tau direction matters for Bjorken flow)
     grid = SpacetimeGrid(
         coordinate_system="milne",
         time_range=(tau0, 10.0),

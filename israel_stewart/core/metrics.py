@@ -274,11 +274,11 @@ class MetricBase(ABC):
         # Vectorized Christoffel computation: Γ^λ_μν = (1/2) g^λρ (∂_μ g_ρν + ∂_ν g_μρ - ∂_ρ g_μν)
         # Einstein summation over ρ index
         christoffel = 0.5 * optimized_einsum(
-            '...lr,...mrn,...nmr,...rmn->...lmn',
-            g_inv,      # g^λρ
-            term1,      # ∂_μ g_ρν
-            term2,      # ∂_ν g_μρ
-            -term3      # -∂_ρ g_μν
+            "...lr,...mrn,...nmr,...rmn->...lmn",
+            g_inv,  # g^λρ
+            term1,  # ∂_μ g_ρν
+            term2,  # ∂_ν g_μρ
+            -term3,  # -∂_ρ g_μν
         )
 
         return christoffel
@@ -320,9 +320,7 @@ class MetricBase(ABC):
                 if direction < len(coordinates):
                     coord_array = coordinates[direction]
                     # Compute gradient for entire metric tensor at once
-                    derivs[..., direction, :, :] = np.gradient(
-                        metric, coord_array, axis=direction
-                    )
+                    derivs[..., direction, :, :] = np.gradient(metric, coord_array, axis=direction)
 
         else:
             # Handle other grid shapes (2D, 3D) efficiently
@@ -330,9 +328,7 @@ class MetricBase(ABC):
                 if direction < len(coordinates):
                     coord_array = coordinates[direction]
                     # Vectorized gradient for all metric components
-                    derivs[..., direction, :, :] = np.gradient(
-                        metric, coord_array, axis=direction
-                    )
+                    derivs[..., direction, :, :] = np.gradient(metric, coord_array, axis=direction)
 
         return derivs
 
@@ -458,26 +454,29 @@ class MetricBase(ABC):
             # Example: for rank-3 tensor raising index 1: 'ij,kajb->kiab'
 
             # Input indices: alphabetic sequence for tensor dimensions
-            input_indices = ''.join(chr(ord('a') + i) for i in range(rank))
+            input_indices = "".join(chr(ord("a") + i) for i in range(rank))
 
             # Metric indices: 'ij' where 'i' contracts with the index to raise
-            metric_char = 'i'
-            replacement_char = 'j'
+            metric_char = "i"
+            replacement_char = "j"
 
             # Replace the character at index_position in input_indices
             input_list = list(input_indices)
             input_list[index_position] = metric_char
-            contracted_indices = ''.join(input_list)
+            contracted_indices = "".join(input_list)
 
             # Output indices: same as input but with raised index
             output_list = list(input_indices)
             output_list[index_position] = replacement_char
-            output_indices = ''.join(output_list)
+            output_indices = "".join(output_list)
 
             # Construct einsum pattern
-            einsum_pattern = f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+            einsum_pattern = (
+                f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+            )
 
             from .tensor_utils import optimized_einsum
+
             return optimized_einsum(einsum_pattern, self.inverse, tensor_components)
 
         elif isinstance(tensor_components, sp.Matrix):
@@ -491,7 +490,7 @@ class MetricBase(ABC):
                     return tensor_components * self.inverse.T
                 else:
                     raise NotImplementedError(
-                        f"Symbolic index raising for rank > 2 not yet implemented"
+                        "Symbolic index raising for rank > 2 not yet implemented"
                     )
 
         raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
@@ -526,26 +525,29 @@ class MetricBase(ABC):
             # Example: for rank-3 tensor lowering index 1: 'ij,kajb->kiab'
 
             # Input indices: alphabetic sequence for tensor dimensions
-            input_indices = ''.join(chr(ord('a') + i) for i in range(rank))
+            input_indices = "".join(chr(ord("a") + i) for i in range(rank))
 
             # Metric indices: 'ij' where 'i' contracts with the index to lower
-            metric_char = 'i'
-            replacement_char = 'j'
+            metric_char = "i"
+            replacement_char = "j"
 
             # Replace the character at index_position in input_indices
             input_list = list(input_indices)
             input_list[index_position] = metric_char
-            contracted_indices = ''.join(input_list)
+            contracted_indices = "".join(input_list)
 
             # Output indices: same as input but with lowered index
             output_list = list(input_indices)
             output_list[index_position] = replacement_char
-            output_indices = ''.join(output_list)
+            output_indices = "".join(output_list)
 
             # Construct einsum pattern
-            einsum_pattern = f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+            einsum_pattern = (
+                f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+            )
 
             from .tensor_utils import optimized_einsum
+
             return optimized_einsum(einsum_pattern, self.components, tensor_components)
 
         elif isinstance(tensor_components, sp.Matrix):
@@ -559,7 +561,7 @@ class MetricBase(ABC):
                     return tensor_components * self.components.T
                 else:
                     raise NotImplementedError(
-                        f"Symbolic index lowering for rank > 2 not yet implemented"
+                        "Symbolic index lowering for rank > 2 not yet implemented"
                     )
 
         raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
@@ -568,7 +570,7 @@ class MetricBase(ABC):
         self,
         tensor1: np.ndarray | sp.Matrix,
         tensor2: np.ndarray | sp.Matrix,
-        index_pairs: list[tuple[int, int]]
+        index_pairs: list[tuple[int, int]],
     ) -> np.ndarray | sp.Matrix:
         """
         Contract indices between two tensors using the metric.
@@ -588,8 +590,8 @@ class MetricBase(ABC):
             rank1, rank2 = tensor1.ndim, tensor2.ndim
 
             # Create index strings
-            indices1 = list(chr(ord('a') + i) for i in range(rank1))
-            indices2 = list(chr(ord('a') + rank1 + i) for i in range(rank2))
+            indices1 = list(chr(ord("a") + i) for i in range(rank1))
+            indices2 = list(chr(ord("a") + rank1 + i) for i in range(rank2))
 
             # Apply contractions
             for i1, i2 in index_pairs:
@@ -628,6 +630,7 @@ class MetricBase(ABC):
         """
         if isinstance(vector1, np.ndarray) and isinstance(vector2, np.ndarray):
             from .tensor_utils import optimized_einsum
+
             return optimized_einsum("ij,i,j", self.components, vector1, vector2)
         elif isinstance(vector1, sp.Matrix) and isinstance(vector2, sp.Matrix):
             return (vector1.T * self.components * vector2)[0]

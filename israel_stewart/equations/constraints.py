@@ -648,10 +648,10 @@ class ThermodynamicConstraints:
     ) -> np.ndarray:
         """Compute speed of sound squared."""
         if self.eos == "ideal":
-            # For ideal gas: csrho = P/rho = 1/3
+            # For ideal gas: csrho = P/rho = 1/3
             return np.full_like(temperature, 1.0 / 3.0)
         else:
-            # General case: csrho = P/rho (finite difference approximation)
+            # General case: csrho = P/rho (finite difference approximation)
             return np.full_like(temperature, 1.0 / 3.0)  # Simplified
 
     def _compute_entropy_density(self, temperature: np.ndarray) -> np.ndarray:
@@ -667,7 +667,7 @@ class ThermodynamicConstraints:
         """
         Compute entropy production rate.
 
-        rho = (1/T) * [rho^rhorho _{rho} u_{rho} + rho rho + q^rho _rho(1/T)]
+        rho = (1/T) * [rho^rhorho _{rho} u_{rho} + rho rho + q^rho _rho(1/T)]
         """
         temperature = fields.temperature
 

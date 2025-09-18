@@ -254,22 +254,32 @@ class MetricBase(ABC):
         metric_derivs = self._compute_metric_derivatives(g, coordinates)
 
         # Compute Christoffel symbols: Γ^λ_μν = (1/2) g^λρ (∂_μ g_ρν + ∂_ν g_μρ - ∂_ρ g_μν)
-        for lam in range(4):
-            for mu in range(4):
-                for nu in range(4):
-                    # Sum over ρ index
-                    for rho in range(4):
-                        # ∂_μ g_ρν
-                        term1 = metric_derivs[..., mu, rho, nu]
-                        # ∂_ν g_μρ
-                        term2 = metric_derivs[..., nu, mu, rho]
-                        # ∂_ρ g_μν
-                        term3 = metric_derivs[..., rho, mu, nu]
+        # Vectorized computation using Einstein summation for massive speedup
+        from .tensor_utils import optimized_einsum
 
-                        # Γ^λ_μν += (1/2) g^λρ (∂_μ g_ρν + ∂_ν g_μρ - ∂_ρ g_μν)
-                        christoffel[..., lam, mu, nu] += (
-                            0.5 * g_inv[..., lam, rho] * (term1 + term2 - term3)
-                        )
+        # Extract derivative terms for all indices simultaneously
+        # metric_derivs has shape (..., direction, μ, ν) for ∂_direction g_μν
+        # We need: ∂_μ g_ρν, ∂_ν g_μρ, ∂_ρ g_μν
+
+        # Rearrange metric_derivs for vectorized computation
+        # ∂_μ g_ρν: swap axes to get (..., μ, ρ, ν)
+        term1 = metric_derivs.swapaxes(-3, -2)  # (..., μ, ρ, ν)
+
+        # ∂_ν g_μρ: permute axes to get (..., ν, μ, ρ)
+        term2 = metric_derivs.swapaxes(-3, -1).swapaxes(-2, -1)  # (..., ν, μ, ρ)
+
+        # ∂_ρ g_μν: already in correct form (..., ρ, μ, ν)
+        term3 = metric_derivs  # (..., ρ, μ, ν)
+
+        # Vectorized Christoffel computation: Γ^λ_μν = (1/2) g^λρ (∂_μ g_ρν + ∂_ν g_μρ - ∂_ρ g_μν)
+        # Einstein summation over ρ index
+        christoffel = 0.5 * optimized_einsum(
+            '...lr,...mrn,...nmr,...rmn->...lmn',
+            g_inv,      # g^λρ
+            term1,      # ∂_μ g_ρν
+            term2,      # ∂_ν g_μρ
+            -term3      # -∂_ρ g_μν
+        )
 
         return christoffel
 
@@ -279,6 +289,9 @@ class MetricBase(ABC):
         """
         Compute partial derivatives of metric tensor using finite differences.
 
+        Vectorized implementation for massive performance improvement over
+        the original nested loop approach.
+
         Args:
             metric: Metric tensor with shape (*grid_shape, 4, 4)
             coordinates: List of coordinate arrays [t, x, y, z]
@@ -287,48 +300,39 @@ class MetricBase(ABC):
             Metric derivatives with shape (*grid_shape, 4, 4, 4) where indices are [derivative_direction, μ, ν] for ∂_{derivative_direction} g_μν
         """
         grid_shape = metric.shape[:-2]
-        derivs = np.zeros(
-            (*grid_shape, 4, 4, 4)
-        )  # Shape: (*grid, direction, μ, ν) for ∂_direction g_μν
+        derivs = np.zeros((*grid_shape, 4, 4, 4))  # Shape: (*grid, direction, μ, ν)
 
-        # For each coordinate direction
-        for direction in range(4):
-            coord_array = coordinates[direction]
+        # Handle different grid shapes efficiently
+        if len(grid_shape) == 0:  # Constant metric
+            # All derivatives are zero for constant metrics
+            return derivs
 
-            # Handle different grid shapes
-            if len(grid_shape) == 0:  # Constant metric
-                # All derivatives are zero for constant metrics
-                pass  # derivs is already initialized to zeros
+        elif len(grid_shape) == 1:  # 1D grid (e.g., time-dependent metric)
+            # Only time derivatives are non-zero
+            if len(coordinates) > 0:
+                coord_array = coordinates[0]
+                # Vectorized gradient computation for all metric components
+                derivs[:, 0, :, :] = np.gradient(metric, coord_array, axis=0)
 
-            elif len(grid_shape) == 1:  # 1D grid (e.g., time-dependent metric)
-                if direction == 0:  # Time derivative
-                    for mu in range(4):
-                        for nu in range(4):
-                            grad_components = np.gradient(metric[:, mu, nu], coord_array)
-                            derivs[:, direction, mu, nu] = grad_components
+        elif len(grid_shape) == 4:  # Full 4D grid
+            # Vectorized computation for all directions and metric components
+            for direction in range(4):
+                if direction < len(coordinates):
+                    coord_array = coordinates[direction]
+                    # Compute gradient for entire metric tensor at once
+                    derivs[..., direction, :, :] = np.gradient(
+                        metric, coord_array, axis=direction
+                    )
 
-            elif len(grid_shape) == 4:  # Full 4D grid
-                # Compute gradient along the specified direction
-                axis = direction
-                for mu in range(4):
-                    for nu in range(4):
-                        # Use numpy gradient for finite differences
-                        grad_components = np.gradient(metric[..., mu, nu], coord_array, axis=axis)
-                        derivs[..., direction, mu, nu] = grad_components
-
-            else:
-                # Handle other grid shapes (2D, 3D)
-                if direction < len(grid_shape):
-                    axis = direction
-                    for mu in range(4):
-                        for nu in range(4):
-                            grad_components = np.gradient(
-                                metric[..., mu, nu], coord_array, axis=axis
-                            )
-                            derivs[..., direction, mu, nu] = grad_components
-                else:
-                    # Derivative direction beyond grid dimensions - derivatives are zero
-                    pass
+        else:
+            # Handle other grid shapes (2D, 3D) efficiently
+            for direction in range(min(4, len(grid_shape))):
+                if direction < len(coordinates):
+                    coord_array = coordinates[direction]
+                    # Vectorized gradient for all metric components
+                    derivs[..., direction, :, :] = np.gradient(
+                        metric, coord_array, axis=direction
+                    )
 
         return derivs
 
@@ -430,22 +434,54 @@ class MetricBase(ABC):
         """
         Raise a tensor index using the inverse metric.
 
+        Now supports tensors of arbitrary rank with optimized implementation.
+
         Args:
             tensor_components: Tensor with covariant index to raise
-            index_position: Position of index to raise
+            index_position: Position of index to raise (0-indexed)
 
         Returns:
             Tensor with raised index
+
+        Raises:
+            ValueError: If index_position is out of bounds
         """
         if isinstance(tensor_components, np.ndarray):
-            if tensor_components.ndim == 1:  # Vector
-                return np.einsum("ij,j->i", self.inverse, tensor_components)
-            elif tensor_components.ndim == 2:  # Rank-2 tensor
-                if index_position == 0:
-                    return np.einsum("ij,jk->ik", self.inverse, tensor_components)
-                elif index_position == 1:
-                    return np.einsum("ij,ki->kj", self.inverse, tensor_components)
+            rank = tensor_components.ndim
+
+            if index_position >= rank or index_position < 0:
+                raise ValueError(
+                    f"Index position {index_position} out of bounds for rank-{rank} tensor"
+                )
+
+            # Build einsum string dynamically based on tensor rank and index position
+            # Example: for rank-3 tensor raising index 1: 'ij,kajb->kiab'
+
+            # Input indices: alphabetic sequence for tensor dimensions
+            input_indices = ''.join(chr(ord('a') + i) for i in range(rank))
+
+            # Metric indices: 'ij' where 'i' contracts with the index to raise
+            metric_char = 'i'
+            replacement_char = 'j'
+
+            # Replace the character at index_position in input_indices
+            input_list = list(input_indices)
+            input_list[index_position] = metric_char
+            contracted_indices = ''.join(input_list)
+
+            # Output indices: same as input but with raised index
+            output_list = list(input_indices)
+            output_list[index_position] = replacement_char
+            output_indices = ''.join(output_list)
+
+            # Construct einsum pattern
+            einsum_pattern = f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+
+            from .tensor_utils import optimized_einsum
+            return optimized_einsum(einsum_pattern, self.inverse, tensor_components)
+
         elif isinstance(tensor_components, sp.Matrix):
+            # Handle symbolic tensors (keep existing implementation for matrices)
             if tensor_components.shape[1] == 1:  # Vector
                 return self.inverse * tensor_components
             else:  # Matrix
@@ -453,10 +489,12 @@ class MetricBase(ABC):
                     return self.inverse * tensor_components
                 elif index_position == 1:
                     return tensor_components * self.inverse.T
+                else:
+                    raise NotImplementedError(
+                        f"Symbolic index raising for rank > 2 not yet implemented"
+                    )
 
-        raise NotImplementedError(
-            f"Index raising not implemented for rank > 2 or position {index_position}"
-        )
+        raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
 
     def lower_index(
         self, tensor_components: np.ndarray | sp.Matrix, index_position: int
@@ -464,22 +502,54 @@ class MetricBase(ABC):
         """
         Lower a tensor index using the metric.
 
+        Now supports tensors of arbitrary rank with optimized implementation.
+
         Args:
             tensor_components: Tensor with contravariant index to lower
-            index_position: Position of index to lower
+            index_position: Position of index to lower (0-indexed)
 
         Returns:
             Tensor with lowered index
+
+        Raises:
+            ValueError: If index_position is out of bounds
         """
         if isinstance(tensor_components, np.ndarray):
-            if tensor_components.ndim == 1:  # Vector
-                return np.einsum("ij,j->i", self.components, tensor_components)
-            elif tensor_components.ndim == 2:  # Rank-2 tensor
-                if index_position == 0:
-                    return np.einsum("ij,jk->ik", self.components, tensor_components)
-                elif index_position == 1:
-                    return np.einsum("ij,ki->kj", self.components, tensor_components)
+            rank = tensor_components.ndim
+
+            if index_position >= rank or index_position < 0:
+                raise ValueError(
+                    f"Index position {index_position} out of bounds for rank-{rank} tensor"
+                )
+
+            # Build einsum string dynamically based on tensor rank and index position
+            # Example: for rank-3 tensor lowering index 1: 'ij,kajb->kiab'
+
+            # Input indices: alphabetic sequence for tensor dimensions
+            input_indices = ''.join(chr(ord('a') + i) for i in range(rank))
+
+            # Metric indices: 'ij' where 'i' contracts with the index to lower
+            metric_char = 'i'
+            replacement_char = 'j'
+
+            # Replace the character at index_position in input_indices
+            input_list = list(input_indices)
+            input_list[index_position] = metric_char
+            contracted_indices = ''.join(input_list)
+
+            # Output indices: same as input but with lowered index
+            output_list = list(input_indices)
+            output_list[index_position] = replacement_char
+            output_indices = ''.join(output_list)
+
+            # Construct einsum pattern
+            einsum_pattern = f"{metric_char}{replacement_char},{contracted_indices}->{output_indices}"
+
+            from .tensor_utils import optimized_einsum
+            return optimized_einsum(einsum_pattern, self.components, tensor_components)
+
         elif isinstance(tensor_components, sp.Matrix):
+            # Handle symbolic tensors (keep existing implementation for matrices)
             if tensor_components.shape[1] == 1:  # Vector
                 return self.components * tensor_components
             else:  # Matrix
@@ -487,10 +557,61 @@ class MetricBase(ABC):
                     return self.components * tensor_components
                 elif index_position == 1:
                     return tensor_components * self.components.T
+                else:
+                    raise NotImplementedError(
+                        f"Symbolic index lowering for rank > 2 not yet implemented"
+                    )
 
-        raise NotImplementedError(
-            f"Index lowering not implemented for rank > 2 or position {index_position}"
-        )
+        raise TypeError(f"Unsupported tensor type: {type(tensor_components)}")
+
+    def contract_indices(
+        self,
+        tensor1: np.ndarray | sp.Matrix,
+        tensor2: np.ndarray | sp.Matrix,
+        index_pairs: list[tuple[int, int]]
+    ) -> np.ndarray | sp.Matrix:
+        """
+        Contract indices between two tensors using the metric.
+
+        Args:
+            tensor1: First tensor
+            tensor2: Second tensor
+            index_pairs: List of (tensor1_index, tensor2_index) pairs to contract
+
+        Returns:
+            Contracted tensor
+        """
+        if isinstance(tensor1, np.ndarray) and isinstance(tensor2, np.ndarray):
+            from .tensor_utils import optimized_einsum
+
+            # Build einsum pattern for general tensor contraction
+            rank1, rank2 = tensor1.ndim, tensor2.ndim
+
+            # Create index strings
+            indices1 = list(chr(ord('a') + i) for i in range(rank1))
+            indices2 = list(chr(ord('a') + rank1 + i) for i in range(rank2))
+
+            # Apply contractions
+            for i1, i2 in index_pairs:
+                if i1 >= rank1 or i2 >= rank2:
+                    raise ValueError(f"Index out of bounds: ({i1}, {i2})")
+                # Use same letter for contracted indices
+                indices2[i2] = indices1[i1]
+
+            # Build output indices (non-contracted indices only)
+            output_indices = []
+            for i, idx in enumerate(indices1):
+                if not any(pair[0] == i for pair in index_pairs):
+                    output_indices.append(idx)
+            for i, idx in enumerate(indices2):
+                if not any(pair[1] == i for pair in index_pairs):
+                    output_indices.append(idx)
+
+            pattern = f"{''.join(indices1)},{''.join(indices2)}->{''.join(output_indices)}"
+            return optimized_einsum(pattern, tensor1, tensor2)
+
+        else:
+            raise NotImplementedError("Symbolic tensor contraction not yet implemented")
 
     def inner_product(
         self, vector1: np.ndarray | sp.Matrix, vector2: np.ndarray | sp.Matrix
@@ -506,7 +627,8 @@ class MetricBase(ABC):
             Scalar inner product
         """
         if isinstance(vector1, np.ndarray) and isinstance(vector2, np.ndarray):
-            return np.einsum("ij,i,j", self.components, vector1, vector2)
+            from .tensor_utils import optimized_einsum
+            return optimized_einsum("ij,i,j", self.components, vector1, vector2)
         elif isinstance(vector1, sp.Matrix) and isinstance(vector2, sp.Matrix):
             return (vector1.T * self.components * vector2)[0]
         else:

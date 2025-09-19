@@ -265,8 +265,10 @@ class MetricBase(ABC):
         # ∂_μ g_ρν: swap axes to get (..., μ, ρ, ν)
         term1 = metric_derivs.swapaxes(-3, -2)  # (..., μ, ρ, ν)
 
-        # ∂_ν g_μρ: permute axes to get (..., ν, μ, ρ)
-        term2 = metric_derivs.swapaxes(-3, -1).swapaxes(-2, -1)  # (..., ν, μ, ρ)
+        # FIXED: ∂_ν g_μρ: correct arrangement to get (..., ν, μ, ρ)
+        # metric_derivs has shape (..., direction, μ, ν) for ∂_direction g_μν
+        # For ∂_ν g_μρ we need (..., ν, μ, ρ): swap direction and last index
+        term2 = metric_derivs.swapaxes(-3, -1)  # (..., ν, μ, ρ)
 
         # ∂_ρ g_μν: already in correct form (..., ρ, μ, ν)
         term3 = metric_derivs  # (..., ρ, μ, ν)

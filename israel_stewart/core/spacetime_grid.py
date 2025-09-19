@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Optional, cast
 
 import numpy as np
+import sympy as sp
 
 from .performance import monitor_performance
 
@@ -333,13 +334,66 @@ class SpacetimeGrid:
                 divergence += partial_deriv
 
             # Add Christoffel symbol contributions: Γ^μ_{μν} V^ν
-            # For each point in the grid, add the correction terms
+            # Vectorized computation using Einstein summation
             christoffel = self.metric.christoffel_symbols
-            for mu in range(4):
-                for nu in range(4):
-                    # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
-                    gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
-                    divergence += gamma_trace * vector_field[..., nu]
+
+            # Extract Christoffel trace tensor: gamma_trace[μ, ν] = Γ^μ_{μν}
+            # This extracts the diagonal elements along the first two indices
+
+            # Check if we have numerical (NumPy) or symbolic (SymPy) Christoffel symbols
+            is_numerical = hasattr(christoffel, "shape") and isinstance(christoffel, np.ndarray)
+            is_symbolic = hasattr(christoffel, "__getitem__") and not isinstance(
+                christoffel, np.ndarray
+            )
+
+            if is_numerical and len(christoffel.shape) >= 3:
+                # Numerical Christoffel symbols (NumPy array) - use vectorized computation
+                # Use advanced indexing to extract Γ^μ_{μν} for all μ,ν
+                mu_indices = np.arange(4)
+                gamma_trace = christoffel[mu_indices, mu_indices, :]  # Shape: (4, 4) → (μ=ν, all ν)
+
+                # Vectorized Einstein summation: Σ_μ Σ_ν Γ^μ_{μν} V^ν
+                from .tensor_utils import optimized_einsum
+
+                christoffel_correction = optimized_einsum("ij,...j->...", gamma_trace, vector_field)
+                divergence += christoffel_correction
+
+            elif is_symbolic:
+                # Symbolic Christoffel symbols (SymPy Array) - try vectorized approach first
+                try:
+                    # For symbolic arrays, we can still extract the trace efficiently
+                    # Create gamma_trace matrix: gamma_trace[μ, ν] = Γ^μ_{μν}
+                    gamma_trace_list = []
+                    for mu in range(4):
+                        row = [christoffel[mu, mu, nu] for nu in range(4)]
+                        gamma_trace_list.append(row)
+
+                    # Convert to SymPy Array for vectorized operations
+                    gamma_trace = sp.Array(gamma_trace_list)
+
+                    # For symbolic computation, we need to handle the contraction manually
+                    # Σ_μ Σ_ν Γ^μ_{μν} V^ν = sum over μ and ν
+                    christoffel_correction = 0
+                    for mu in range(4):
+                        for nu in range(4):
+                            christoffel_correction += gamma_trace[mu, nu] * vector_field[..., nu]
+
+                    divergence += christoffel_correction
+
+                except (AttributeError, TypeError, IndexError):
+                    # Fall back to element-wise loop if vectorized approach fails
+                    for mu in range(4):
+                        for nu in range(4):
+                            # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
+                            gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
+                            divergence += gamma_trace * vector_field[..., nu]
+            else:
+                # Fallback for unknown Christoffel symbol types
+                for mu in range(4):
+                    for nu in range(4):
+                        # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
+                        gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
+                        divergence += gamma_trace * vector_field[..., nu]
 
             return divergence
         else:
@@ -503,21 +557,41 @@ class SpacetimeGrid:
 
         coord_name, side = parts
 
-        # Map coordinate names to axis indices
+        # Map coordinate names to axis indices based on coordinate system
         # Note: Coordinate ordering is (t, spatial1, spatial2, spatial3)
-        coord_to_axis = {
-            "t": 0,
-            "time": 0,
-            "tau": 0,
-            "x": 1,
-            "y": 2,
-            "z": 3,
-            "r": 1,  # spherical: (t, r, theta, phi)
-            "theta": 2,
-            "phi": 3,  # Fixed: phi is at index 3 in spherical coordinates
-            "rho": 1,  # cylindrical: (t, rho, phi, z)
-            "eta": 1,  # milne: (tau, eta, x, y)
-        }
+        if self.coordinate_system == "cartesian":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "x": 1,
+                "y": 2,
+                "z": 3,
+            }
+        elif self.coordinate_system == "spherical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "r": 1,
+                "theta": 2,
+                "phi": 3,  # spherical: (t, r, theta, phi)
+            }
+        elif self.coordinate_system == "cylindrical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "rho": 1,
+                "phi": 2,
+                "z": 3,  # cylindrical: (t, rho, phi, z)
+            }
+        elif self.coordinate_system == "milne":
+            coord_to_axis = {
+                "tau": 0,
+                "eta": 1,
+                "x": 2,
+                "y": 3,  # milne: (tau, eta, x, y)
+            }
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
         if coord_name not in coord_to_axis:
             raise ValueError(f"Unknown coordinate: {coord_name}")
@@ -607,19 +681,39 @@ class SpacetimeGrid:
         coord_name, side = parts
 
         # Use same coordinate mapping as periodic BC
-        coord_to_axis = {
-            "t": 0,
-            "time": 0,
-            "tau": 0,
-            "x": 1,
-            "y": 2,
-            "z": 3,
-            "r": 1,
-            "theta": 2,
-            "phi": 3,
-            "rho": 1,
-            "eta": 1,
-        }
+        if self.coordinate_system == "cartesian":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "x": 1,
+                "y": 2,
+                "z": 3,
+            }
+        elif self.coordinate_system == "spherical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "r": 1,
+                "theta": 2,
+                "phi": 3,  # spherical: (t, r, theta, phi)
+            }
+        elif self.coordinate_system == "cylindrical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "rho": 1,
+                "phi": 2,
+                "z": 3,  # cylindrical: (t, rho, phi, z)
+            }
+        elif self.coordinate_system == "milne":
+            coord_to_axis = {
+                "tau": 0,
+                "eta": 1,
+                "x": 2,
+                "y": 3,  # milne: (tau, eta, x, y)
+            }
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
         if coord_name not in coord_to_axis:
             raise ValueError(f"Unknown coordinate: {coord_name}")
@@ -675,19 +769,39 @@ class SpacetimeGrid:
         coord_name, side = parts
 
         # Use same coordinate mapping as periodic BC
-        coord_to_axis = {
-            "t": 0,
-            "time": 0,
-            "tau": 0,
-            "x": 1,
-            "y": 2,
-            "z": 3,
-            "r": 1,
-            "theta": 2,
-            "phi": 3,
-            "rho": 1,
-            "eta": 1,
-        }
+        if self.coordinate_system == "cartesian":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "x": 1,
+                "y": 2,
+                "z": 3,
+            }
+        elif self.coordinate_system == "spherical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "r": 1,
+                "theta": 2,
+                "phi": 3,  # spherical: (t, r, theta, phi)
+            }
+        elif self.coordinate_system == "cylindrical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "rho": 1,
+                "phi": 2,
+                "z": 3,  # cylindrical: (t, rho, phi, z)
+            }
+        elif self.coordinate_system == "milne":
+            coord_to_axis = {
+                "tau": 0,
+                "eta": 1,
+                "x": 2,
+                "y": 3,  # milne: (tau, eta, x, y)
+            }
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
         if coord_name not in coord_to_axis:
             raise ValueError(f"Unknown coordinate: {coord_name}")
@@ -741,19 +855,39 @@ class SpacetimeGrid:
         coord_name, side = parts
 
         # Use same coordinate mapping as periodic BC
-        coord_to_axis = {
-            "t": 0,
-            "time": 0,
-            "tau": 0,
-            "x": 1,
-            "y": 2,
-            "z": 3,
-            "r": 1,
-            "theta": 2,
-            "phi": 3,
-            "rho": 1,
-            "eta": 1,
-        }
+        if self.coordinate_system == "cartesian":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "x": 1,
+                "y": 2,
+                "z": 3,
+            }
+        elif self.coordinate_system == "spherical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "r": 1,
+                "theta": 2,
+                "phi": 3,  # spherical: (t, r, theta, phi)
+            }
+        elif self.coordinate_system == "cylindrical":
+            coord_to_axis = {
+                "t": 0,
+                "time": 0,
+                "rho": 1,
+                "phi": 2,
+                "z": 3,  # cylindrical: (t, rho, phi, z)
+            }
+        elif self.coordinate_system == "milne":
+            coord_to_axis = {
+                "tau": 0,
+                "eta": 1,
+                "x": 2,
+                "y": 3,  # milne: (tau, eta, x, y)
+            }
+        else:
+            raise ValueError(f"Unknown coordinate system: {self.coordinate_system}")
 
         if coord_name not in coord_to_axis:
             raise ValueError(f"Unknown coordinate: {coord_name}")
@@ -809,7 +943,58 @@ class SpacetimeGrid:
         else:
             # General coordinate system with metric
             metric_determinant = self.metric.determinant
-            return np.sqrt(-metric_determinant)  # type: ignore[no-any-return]
+
+            # Handle both symbolic and numeric determinants
+            if isinstance(metric_determinant, sp.Basic | sp.Expr):
+                # Symbolic determinant - use SymPy sqrt and convert to numeric if possible
+                symbolic_volume = sp.sqrt(-metric_determinant)
+                try:
+                    # Try to evaluate symbolically if coordinates are available
+                    if hasattr(self, "coordinates"):
+                        # Create symbolic coordinate substitution dictionary
+                        coord_subs = {}
+                        coord_names = self.coordinate_names
+                        coord_arrays = [self.coordinates[name] for name in coord_names]
+
+                        # Create meshgrid for all coordinates
+                        coord_meshes = np.meshgrid(*coord_arrays, indexing="ij")
+
+                        # Substitute coordinate values into symbolic expression
+                        volume_numeric = np.zeros(self.shape)
+                        for idx in np.ndindex(self.shape):
+                            # Create substitution dict for this grid point
+                            for i, name in enumerate(coord_names):
+                                coord_subs[sp.Symbol(name)] = coord_meshes[i][idx]
+
+                            # Evaluate at this point
+                            try:
+                                volume_numeric[idx] = float(symbolic_volume.subs(coord_subs))
+                            except (ValueError, TypeError):
+                                # If evaluation fails, use 1.0 as fallback
+                                volume_numeric[idx] = 1.0
+
+                        return volume_numeric
+                    else:
+                        # No coordinate arrays available, return symbolic expression as array
+                        warnings.warn(
+                            "Cannot evaluate symbolic volume element without coordinate arrays. "
+                            "Returning array of ones.",
+                            stacklevel=2,
+                        )
+                        return np.ones(self.shape)
+
+                except Exception:
+                    # If symbolic evaluation fails, fall back to ones
+                    warnings.warn(
+                        "Failed to evaluate symbolic volume element. Returning array of ones.",
+                        stacklevel=2,
+                    )
+                    return np.ones(self.shape)
+            else:
+                # Numeric determinant - use NumPy sqrt
+                volume_scalar = np.sqrt(-metric_determinant)
+                # Convert scalar to array with correct shape
+                return np.full(self.shape, volume_scalar)
 
     def coordinate_transformation_jacobian(self, target_system: str) -> np.ndarray:
         """

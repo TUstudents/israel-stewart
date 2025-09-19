@@ -241,5 +241,260 @@ class TestPerformanceAndWarnings:
         pytest.skip("SymPy Array support not yet implemented")
 
 
+class TestSymPyArrayFunctionality:
+    """Test the new SymPy Array-based tensor operations."""
+
+    def test_sympy_tensor_contraction_basic(self) -> None:
+        """Test basic SymPy tensor contraction using Array operations."""
+        # Vector-vector contraction (dot product)
+        v1_comp = sp.Matrix([sp.Symbol(f"v1_{i}") for i in range(4)])
+        v2_comp = sp.Matrix([sp.Symbol(f"v2_{i}") for i in range(4)])
+
+        v1 = TensorField(v1_comp, "mu")
+        v2 = TensorField(v2_comp, "_mu")
+
+        try:
+            # This should use the new unified SymPy Array approach
+            result = v1._sympy_tensor_contraction(v2, 0, 0)
+
+            # Result should be a symbolic sum
+            assert isinstance(result, sp.Basic)
+
+            # Check that it's equivalent to manual dot product
+            manual_result = sum(v1_comp[i] * v2_comp[i] for i in range(4))
+            assert sp.simplify(result - manual_result) == 0
+
+        except ImportError:
+            pytest.skip("SymPy Array module not available")
+
+    def test_sympy_tensor_contraction_matrix_vector(self) -> None:
+        """Test matrix-vector contraction using SymPy Arrays."""
+        # Create symbolic matrix and vector
+        matrix_comp = sp.Matrix([[sp.Symbol(f"M_{i}_{j}") for j in range(4)] for i in range(4)])
+        vector_comp = sp.Matrix([sp.Symbol(f"v_{i}") for i in range(4)])
+
+        matrix = TensorField(matrix_comp, "mu nu")
+        vector = TensorField(vector_comp, "_nu")
+
+        try:
+            # Contract second index of matrix with vector
+            result = matrix._sympy_tensor_contraction(vector, 1, 0)
+
+            # Result should be a vector (Matrix)
+            assert isinstance(result, sp.Matrix)
+            assert result.shape == (4, 1) or result.shape == (4,)
+
+            # Verify specific element
+            expected_first = sum(matrix_comp[0, j] * vector_comp[j] for j in range(4))
+            actual_first = result[0] if result.shape == (4,) else result[0, 0]
+            assert sp.simplify(actual_first - expected_first) == 0
+
+        except ImportError:
+            pytest.skip("SymPy Array module not available")
+
+    def test_sympy_tensor_contraction_higher_rank(self) -> None:
+        """Test contraction with higher-rank tensors using SymPy Arrays."""
+        # Create rank-3 tensor and vector
+        tensor3_comp = sp.Array(
+            [[[sp.Symbol(f"T_{i}_{j}_{k}") for k in range(4)] for j in range(4)] for i in range(4)]
+        )
+        vector_comp = sp.Matrix([sp.Symbol(f"v_{i}") for i in range(4)])
+
+        tensor3 = TensorField(tensor3_comp, "mu nu rho")
+        vector = TensorField(vector_comp, "_rho")
+
+        try:
+            # Contract third index of rank-3 tensor with vector
+            result = tensor3._sympy_tensor_contraction(vector, 2, 0)
+
+            # Result should be a rank-2 tensor (Matrix or Array)
+            assert isinstance(result, sp.Matrix | sp.Array)
+
+            # Check dimensions
+            if isinstance(result, sp.Matrix):
+                assert result.shape == (4, 4)
+            else:
+                assert result.shape == (4, 4)
+
+        except ImportError:
+            pytest.skip("SymPy Array module not available")
+
+    def test_sympy_metric_contraction_vector(self) -> None:
+        """Test metric contraction for vector index raising/lowering."""
+        # Create symbolic vector and metric
+        vector_comp = sp.Matrix([sp.Symbol(f"v_{i}") for i in range(4)])
+        metric_comp = sp.Matrix([[sp.Symbol(f"g_{i}_{j}") for j in range(4)] for i in range(4)])
+
+        vector = TensorField(vector_comp, "_mu")
+
+        try:
+            # Raise index using metric contraction
+            result = vector._sympy_metric_contraction(metric_comp, 0, raise_index=True)
+
+            # Result should be a vector
+            assert isinstance(result, sp.Matrix)
+            assert result.shape == (4, 1) or result.shape == (4,)
+
+            # Verify specific element
+            expected_first = sum(metric_comp[0, j] * vector_comp[j] for j in range(4))
+            actual_first = result[0] if result.shape == (4,) else result[0, 0]
+            assert sp.simplify(actual_first - expected_first) == 0
+
+        except ImportError:
+            pytest.skip("SymPy Array module not available")
+
+    def test_sympy_metric_contraction_matrix(self) -> None:
+        """Test metric contraction for matrix index raising/lowering."""
+        # Create symbolic matrix and metric
+        matrix_comp = sp.Matrix([[sp.Symbol(f"T_{i}_{j}") for j in range(4)] for i in range(4)])
+        metric_comp = sp.Matrix([[sp.Symbol(f"g_{i}_{j}") for j in range(4)] for i in range(4)])
+
+        matrix = TensorField(matrix_comp, "_mu nu")
+
+        try:
+            # Raise first index
+            result = matrix._sympy_metric_contraction(metric_comp, 0, raise_index=True)
+
+            # Result should be a matrix
+            assert isinstance(result, sp.Matrix)
+            assert result.shape == (4, 4)
+
+            # Verify specific element
+            expected_00 = sum(metric_comp[0, i] * matrix_comp[i, 0] for i in range(4))
+            assert sp.simplify(result[0, 0] - expected_00) == 0
+
+        except ImportError:
+            pytest.skip("SymPy Array module not available")
+
+    def test_enhanced_raise_index_sympy(self) -> None:
+        """Test enhanced raise_index method with SymPy components."""
+        metric = MinkowskiMetric()
+
+        # Create symbolic vector
+        vector_comp = sp.Matrix([sp.Symbol(f"v_{i}") for i in range(4)])
+        vector = TensorField(vector_comp, "_mu", metric)
+
+        try:
+            # This should use the new SymPy path
+            raised = vector.raise_index(0)
+
+            # Check that index is now contravariant
+            assert not raised.indices[0][0]  # Should be contravariant
+            assert raised.indices[0][1] == "mu"  # Same name
+
+            # Result should be symbolic
+            assert isinstance(raised.components, sp.Matrix)
+
+        except ImportError:
+            # Should fall back to einsum with warning
+            with pytest.warns(UserWarning, match="SymPy Array not available"):
+                raised = vector.raise_index(0)
+                assert not raised.indices[0][0]  # Should still work
+
+    def test_enhanced_lower_index_sympy(self) -> None:
+        """Test enhanced lower_index method with SymPy components."""
+        metric = MinkowskiMetric()
+
+        # Create symbolic vector
+        vector_comp = sp.Matrix([sp.Symbol(f"v_{i}") for i in range(4)])
+        vector = TensorField(vector_comp, "mu", metric)
+
+        try:
+            # This should use the new SymPy path
+            lowered = vector.lower_index(0)
+
+            # Check that index is now covariant
+            assert lowered.indices[0][0]  # Should be covariant
+            assert lowered.indices[0][1] == "mu"  # Same name
+
+            # Result should be symbolic
+            assert isinstance(lowered.components, sp.Matrix)
+
+        except ImportError:
+            # Should fall back to einsum with warning
+            with pytest.warns(UserWarning, match="SymPy Array not available"):
+                lowered = vector.lower_index(0)
+                assert lowered.indices[0][0]  # Should still work
+
+    def test_einsum_metric_contraction_arbitrary_rank(self) -> None:
+        """Test the new einsum metric contraction for arbitrary tensor ranks."""
+        metric = MinkowskiMetric()
+
+        # Test with rank-5 tensor (previously unsupported)
+        rank5_components = np.random.random((4, 4, 4, 4, 4))
+        rank5_tensor = TensorField(rank5_components, "_mu _nu _rho _sigma _tau", metric)
+
+        # This should now work using the generalized einsum approach
+        raised = rank5_tensor.raise_index(2)  # Raise third index (rho)
+
+        # Check that only the third index (rho) was raised
+        assert not raised.indices[2][0]  # Third index should be contravariant
+        assert all(raised.indices[i][0] for i in [0, 1, 3, 4])  # Others still covariant
+        assert raised.components.shape == rank5_components.shape
+
+        # Check index names are preserved
+        expected_indices = [
+            (True, "mu"),
+            (True, "nu"),
+            (False, "rho"),
+            (True, "sigma"),
+            (True, "tau"),
+        ]
+        assert raised.indices == expected_indices
+
+    def test_manual_contraction_fallback_behavior(self) -> None:
+        """Test the refactored manual contraction fallback behavior."""
+        # Create simple SymPy vectors for dot product
+        v1_comp = sp.Matrix([1, 2, 3, 4])
+        v2_comp = sp.Matrix([4, 3, 2, 1])
+
+        v1 = TensorField(v1_comp, "mu")
+        v2 = TensorField(v2_comp, "_mu")
+
+        # This should first try the unified approach, then fall back to manual
+        result = v1._manual_contraction(v2, 0, 0)
+
+        # Should get the correct dot product result
+        expected = 1 * 4 + 2 * 3 + 3 * 2 + 4 * 1  # = 20
+
+        # Handle both scalar and 1x1 matrix results
+        if isinstance(result, sp.Matrix) and result.shape == (1, 1):
+            actual_value = result[0, 0]
+        elif isinstance(result, sp.Matrix) and result.shape == (1,):
+            actual_value = result[0]
+        else:
+            actual_value = result
+
+        assert actual_value == expected
+
+    def test_sympy_array_import_error_handling(self) -> None:
+        """Test proper error handling when SymPy Array is not available."""
+        # Create vectors
+        v1_comp = sp.Matrix([sp.Symbol(f"v1_{i}") for i in range(4)])
+        v2_comp = sp.Matrix([sp.Symbol(f"v2_{i}") for i in range(4)])
+
+        v1 = TensorField(v1_comp, "mu")
+        v2 = TensorField(v2_comp, "_mu")
+
+        # Mock the ImportError scenario
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "sympy.tensor.array":
+                raise ImportError("Mock: SymPy Array not available")
+            return original_import(name, *args, **kwargs)
+
+        builtins.__import__ = mock_import
+
+        try:
+            # Should raise ImportError with helpful message
+            with pytest.raises(ImportError, match="SymPy Array operations require"):
+                v1._sympy_tensor_contraction(v2, 0, 0)
+        finally:
+            builtins.__import__ = original_import
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

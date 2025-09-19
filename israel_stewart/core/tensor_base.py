@@ -496,19 +496,280 @@ class TensorField:
             # Subclasses may have rank-specific requirements
             return TensorField(result_components, result_index_str, self.metric)
 
-    def _manual_contraction(
+    def _sympy_tensor_contraction(
         self, other: "TensorField", self_index: int, other_index: int
-    ) -> np.ndarray | sp.Matrix:
-        """Manual tensor contraction for SymPy compatibility."""
-        if not (is_sympy_matrix(self.components) or is_sympy_matrix(other.components)):
-            raise ValueError("Manual contraction should only be used for SymPy tensors")
+    ) -> sp.Basic:
+        """
+        Unified SymPy tensor contraction using Array operations.
 
-        # Convert to SymPy if needed
+        This method uses sympy.tensor.array.tensorcontraction and tensorproduct
+        for general tensor contractions, replacing the many manual rank-specific
+        implementations with a single, general approach.
+
+        Args:
+            other: Tensor to contract with
+            self_index: Index position in self to contract
+            other_index: Index position in other to contract
+
+        Returns:
+            Contracted tensor as SymPy Array or Matrix
+
+        Raises:
+            ImportError: If SymPy Array support is not available
+            NotImplementedError: If contraction pattern is not supported
+        """
+        try:
+            import sympy.tensor.array as sp_array
+        except ImportError:
+            raise ImportError(
+                "SymPy Array operations require sympy.tensor.array module. "
+                "Please upgrade SymPy to a version that includes tensor array support."
+            ) from None
+
+        # Convert components to SymPy if needed
         self_comp = convert_to_sympy(self.components)
         other_comp = convert_to_sympy(other.components)
 
-        # Handle different tensor ranks and contraction patterns
-        if self.rank == 1 and other.rank == 1:  # Vector-vector contraction
+        # Convert to SymPy Arrays for general tensor operations
+        if hasattr(self_comp, "rank") and self_comp.rank() > 2:
+            # Already a SymPy Array
+            self_array = self_comp
+        else:
+            # Convert Matrix/vector to Array
+            self_array = sp_array.Array(self_comp)
+
+        if hasattr(other_comp, "rank") and other_comp.rank() > 2:
+            # Already a SymPy Array
+            other_array = other_comp
+        else:
+            # Convert Matrix/vector to Array
+            other_array = sp_array.Array(other_comp)
+
+        # Perform tensor contraction using SymPy Array operations
+        # tensorproduct creates the full outer product, then tensorcontraction contracts specified axes
+        # For tensorproduct(A, B), the indices are: [A_indices, B_indices]
+        # So B's indices start at len(A.shape)
+
+        # Get the shapes to determine the correct axis mapping
+        self_shape = self_array.shape
+        other_shape = other_array.shape
+
+        # The axes to contract: self_index from first tensor, other_index from second tensor
+        # In the combined tensor, the second tensor's indices start after the first tensor's indices
+        combined_self_axis = self_index
+        combined_other_axis = len(self_shape) + other_index
+
+        result = sp_array.tensorcontraction(
+            sp_array.tensorproduct(self_array, other_array),
+            (combined_self_axis, combined_other_axis),
+        )
+
+        # Convert result back to appropriate SymPy type based on shape and rank
+        if hasattr(result, "shape"):
+            shape = result.shape
+            if len(shape) == 0 or shape == ():
+                # Scalar result - extract the value
+                # For SymPy Arrays, scalars might be wrapped, so extract them
+                if hasattr(result, "as_immutable"):
+                    return result.as_immutable()
+                elif hasattr(result, "__iter__") and not isinstance(result, str):
+                    # Try to extract scalar from iterable
+                    try:
+                        return next(iter(result))
+                    except (StopIteration, TypeError):
+                        return result
+                else:
+                    return result
+            elif len(shape) == 1:
+                # Vector result - convert to Matrix for compatibility
+                return sp.Matrix([result[i] for i in range(shape[0])])
+            elif len(shape) == 2:
+                # Matrix result - convert to Matrix for compatibility
+                rows, cols = shape
+                return sp.Matrix([[result[i, j] for j in range(cols)] for i in range(rows)])
+            else:
+                # Higher rank - return as Array
+                return result
+        elif hasattr(result, "rank"):
+            # Handle SymPy Arrays with rank method
+            result_rank = result.rank()
+            if result_rank == 0:
+                # Scalar result - try different extraction methods
+                if hasattr(result, "as_immutable"):
+                    return result.as_immutable()
+                else:
+                    return result
+            else:
+                # Use shape-based logic above
+                return result
+        else:
+            # Already in appropriate form or unknown type
+            return result
+
+    def _sympy_metric_contraction(
+        self, metric_tensor: sp.Matrix, index_pos: int, raise_index: bool = True
+    ) -> sp.Basic:
+        """
+        Specialized metric contraction for index raising/lowering using SymPy Arrays.
+
+        This method performs metric contractions g^μν T_ν (raising) or g_μν T^ν (lowering)
+        using SymPy Array operations for arbitrary tensor ranks.
+
+        Args:
+            metric_tensor: Metric tensor components (g_μν or g^μν)
+            index_pos: Position of index to raise/lower
+            raise_index: True for raising (use inverse metric), False for lowering
+
+        Returns:
+            Tensor with raised/lowered index as SymPy Array or Matrix
+
+        Raises:
+            ImportError: If SymPy Array support is not available
+        """
+        try:
+            import sympy.tensor.array as sp_array
+        except ImportError:
+            raise ImportError(
+                "SymPy metric contractions require sympy.tensor.array module. "
+                "Please upgrade SymPy to a version that includes tensor array support."
+            ) from None
+
+        # Convert components to SymPy
+        tensor_comp = convert_to_sympy(self.components)
+        metric_comp = convert_to_sympy(metric_tensor)
+
+        # Convert to SymPy Arrays
+        if hasattr(tensor_comp, "rank") and tensor_comp.rank() > 2:
+            tensor_array = tensor_comp
+        else:
+            tensor_array = sp_array.Array(tensor_comp)
+
+        metric_array = sp_array.Array(metric_comp)
+
+        # Perform metric contraction: g^μν T_...ν... (or g_μν T^...ν...)
+        # The metric contracts with the specified index position
+        axes = ([1], [index_pos])  # Metric's second index contracts with tensor's index_pos
+        result = sp_array.tensorcontraction(
+            sp_array.tensorproduct(metric_array, tensor_array), axes
+        )
+
+        # Convert result back to appropriate SymPy type
+        if hasattr(result, "rank"):
+            result_rank = result.rank()
+            if result_rank == 1:
+                # Vector result
+                return sp.Matrix([result[i] for i in range(result.shape[0])])
+            elif result_rank == 2:
+                # Matrix result
+                rows, cols = result.shape
+                return sp.Matrix([[result[i, j] for j in range(cols)] for i in range(rows)])
+            else:
+                # Higher rank - return as Array
+                return result
+        else:
+            return result
+
+    def _einsum_metric_contraction(
+        self, metric_tensor: np.ndarray | sp.Matrix, index_pos: int, is_raise: bool = True
+    ) -> np.ndarray | sp.Matrix:
+        """
+        Perform metric contraction using optimized einsum for arbitrary tensor ranks.
+
+        This method generalizes the einsum patterns for index raising/lowering
+        and supports tensors of any rank, not just up to rank 4.
+
+        Args:
+            metric_tensor: Metric or inverse metric tensor
+            index_pos: Position of index to raise/lower
+            is_raise: True for raising (use inverse metric), False for lowering
+
+        Returns:
+            Tensor with raised/lowered index
+        """
+        if self.rank <= 4:
+            # Use optimized patterns for common low-rank cases
+            if self.rank == 1:  # Vector
+                return optimized_einsum("ij,j->i", metric_tensor, self.components)
+            elif self.rank == 2:  # Matrix
+                if index_pos == 0:
+                    return optimized_einsum("ij,jk->ik", metric_tensor, self.components)
+                else:
+                    return optimized_einsum("ij,ki->kj", metric_tensor, self.components)
+            elif self.rank == 3:  # Rank-3 tensor
+                if index_pos == 0:
+                    return optimized_einsum("ij,jkl->ikl", metric_tensor, self.components)
+                elif index_pos == 1:
+                    return optimized_einsum("ij,kij->kil", metric_tensor, self.components)
+                else:  # index_pos == 2
+                    return optimized_einsum("ij,kli->klj", metric_tensor, self.components)
+            elif self.rank == 4:  # Rank-4 tensor
+                # General einsum for rank-4 tensors
+                indices = list("abcd")
+                indices[index_pos] = "x"
+                output_indices = list("abcd")
+                output_indices[index_pos] = "y"
+                einsum_str = f"xy,{''.join(indices)}->{''.join(output_indices)}"
+                return optimized_einsum(einsum_str, metric_tensor, self.components)
+
+        # General case for arbitrary rank tensors
+        # Build einsum string dynamically
+        alphabet = "abcdefghijklmnopqrstuvwxyz"
+        if self.rank > len(alphabet) - 2:
+            raise ValueError(f"Tensor rank {self.rank} exceeds maximum supported rank")
+
+        # Create index strings
+        tensor_indices = list(alphabet[: self.rank])
+        contracted_index = "z"  # Use 'z' for the contracted index
+        metric_indices = ["y", contracted_index]  # Metric: g^{y,z} or g_{y,z}
+
+        # Replace the index to be raised/lowered with the contracted index
+        tensor_indices[index_pos] = contracted_index
+
+        # Build einsum string: "yz,a...z...->ya..." where z is contracted
+        output_indices = tensor_indices.copy()
+        output_indices[index_pos] = "y"
+
+        einsum_str = (
+            f"{''.join(metric_indices)},{''.join(tensor_indices)}->{''.join(output_indices)}"
+        )
+        return optimized_einsum(einsum_str, metric_tensor, self.components)
+
+    def _manual_contraction(
+        self, other: "TensorField", self_index: int, other_index: int
+    ) -> np.ndarray | sp.Matrix:
+        """
+        Manual tensor contraction for SymPy compatibility using unified Array operations.
+
+        This method first attempts to use the new unified SymPy Array approach,
+        and falls back to optimized manual implementations for simple, common cases
+        to maintain performance and compatibility.
+
+        Args:
+            other: Tensor to contract with
+            self_index: Index position in self to contract
+            other_index: Index position in other to contract
+
+        Returns:
+            Contracted tensor result
+        """
+        if not (is_sympy_matrix(self.components) or is_sympy_matrix(other.components)):
+            raise ValueError("Manual contraction should only be used for SymPy tensors")
+
+        # First try the unified SymPy Array approach for general contractions
+        try:
+            result = self._sympy_tensor_contraction(other, self_index, other_index)
+            return result
+        except ImportError:
+            # SymPy Array not available - fall back to manual implementations for common cases
+            pass
+
+        # Convert to SymPy if needed for fallback manual implementations
+        self_comp = convert_to_sympy(self.components)
+        other_comp = convert_to_sympy(other.components)
+
+        # Optimized manual implementations for common, simple cases
+        # These are faster than Array operations for low-rank tensors
+        if self.rank == 1 and other.rank == 1:  # Vector-vector contraction (dot product)
             return sum(self_comp[i] * other_comp[i] for i in range(4))
 
         elif self.rank == 2 and other.rank == 1:  # Matrix-vector contraction
@@ -534,152 +795,14 @@ class TensorField:
         elif self.rank == 2 and other.rank == 2:  # Matrix-matrix contraction
             if self_index == 1 and other_index == 0:  # Standard matrix multiplication
                 return self_comp * other_comp
-            elif self_index == 0 and other_index == 0:  # Contract first indices
-                return sp.Matrix(
-                    [
-                        [
-                            sum(self_comp[k, i] * other_comp[k, j] for k in range(4))
-                            for j in range(4)
-                        ]
-                        for i in range(4)
-                    ]
-                )
-            elif self_index == 1 and other_index == 1:  # Contract second indices
-                return sp.Matrix(
-                    [
-                        [
-                            sum(self_comp[i, k] * other_comp[j, k] for k in range(4))
-                            for j in range(4)
-                        ]
-                        for i in range(4)
-                    ]
-                )
-            elif self_index == 0 and other_index == 1:  # Contract first with second
-                return sp.Matrix(
-                    [
-                        [
-                            sum(self_comp[k, i] * other_comp[j, k] for k in range(4))
-                            for j in range(4)
-                        ]
-                        for i in range(4)
-                    ]
-                )
+            # For other matrix-matrix contractions, the unified approach is more reliable
 
-        # Additional common contraction patterns
-        elif self.rank == 3 and other.rank == 1:  # Rank-3 tensor with vector
-            if other_index == 0:
-                # Contract rank-3 tensor T_{ijk} with vector V^i at specified self_index
-                if self_index == 0:  # T_{ijk} V^i -> T'_{jk}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[i, j, k] * other_comp[i] for i in range(4))
-                                for k in range(4)
-                            ]
-                            for j in range(4)
-                        ]
-                    )
-                elif self_index == 1:  # T_{ijk} V^j -> T'_{ik}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[i, j, k] * other_comp[j] for j in range(4))
-                                for k in range(4)
-                            ]
-                            for i in range(4)
-                        ]
-                    )
-                elif self_index == 2:  # T_{ijk} V^k -> T'_{ij}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[i, j, k] * other_comp[k] for k in range(4))
-                                for j in range(4)
-                            ]
-                            for i in range(4)
-                        ]
-                    )
-
-        elif self.rank == 1 and other.rank == 3:  # Vector with rank-3 tensor
-            if self_index == 0:
-                # Contract vector V_i with rank-3 tensor T^{ijk} at specified other_index
-                if other_index == 0:  # V_i T^{ijk} -> T'_{jk}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[i] * other_comp[i, j, k] for i in range(4))
-                                for k in range(4)
-                            ]
-                            for j in range(4)
-                        ]
-                    )
-                elif other_index == 1:  # V_j T^{ijk} -> T'_{ik}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[j] * other_comp[i, j, k] for j in range(4))
-                                for k in range(4)
-                            ]
-                            for i in range(4)
-                        ]
-                    )
-                elif other_index == 2:  # V_k T^{ijk} -> T'_{ij}
-                    return sp.Matrix(
-                        [
-                            [
-                                sum(self_comp[k] * other_comp[i, j, k] for k in range(4))
-                                for j in range(4)
-                            ]
-                            for i in range(4)
-                        ]
-                    )
-
-        elif self.rank == 2 and other.rank == 3:  # Matrix with rank-3 tensor
-            # Common case: Matrix A_{ij} with rank-3 tensor T^{klm}
-            if self_index == 1 and other_index == 0:  # A_{ij} T^{jkl} -> R_{ikl}
-                # This would result in a rank-3 tensor, which is complex to represent as SymPy Matrix
-                # Use SymPy Array operations if available
-                try:
-                    import sympy.tensor.array as sp_array
-
-                    self_array = sp_array.Array(self_comp)
-                    other_array = sp_array.Array(other_comp)
-
-                    # Perform contraction
-                    axes = ([self_index], [other_index])
-                    result = sp_array.tensorcontraction(
-                        sp_array.tensorproduct(self_array, other_array), axes
-                    )
-                    return result
-
-                except ImportError:
-                    raise NotImplementedError(
-                        "Matrix-rank3 tensor contraction requires SymPy Array support"
-                    ) from None
-
-        # Fall back to generic SymPy Array operations if available
-        try:
-            import sympy.tensor.array as sp_array
-
-            # Convert both tensors to Arrays
-            self_array = sp_array.Array(self_comp) if not hasattr(self_comp, "rank") else self_comp
-            other_array = (
-                sp_array.Array(other_comp) if not hasattr(other_comp, "rank") else other_comp
-            )
-
-            # Perform tensor contraction
-            axes = ([self_index], [other_index])
-            result = sp_array.tensorcontraction(
-                sp_array.tensorproduct(self_array, other_array), axes
-            )
-            return result
-
-        except ImportError:
-            raise NotImplementedError(
-                f"Manual contraction not implemented for ranks {self.rank} and {other.rank} "
-                f"with indices {self_index} and {other_index}. "
-                f"Install SymPy Array support for general tensor contractions."
-            ) from None
+        # For all other cases, SymPy Array support is required
+        raise NotImplementedError(
+            f"Manual contraction for ranks {self.rank} and {other.rank} "
+            f"with indices {self_index} and {other_index} requires SymPy Array support. "
+            f"Please upgrade SymPy to a version that includes sympy.tensor.array module."
+        )
 
     @monitor_performance("raise_index")
     def raise_index(self, index_pos: int) -> "TensorField":
@@ -706,31 +829,27 @@ class TensorField:
         # Contract with inverse metric
         metric_inverse = self.metric.inverse
 
-        # Build contraction based on tensor rank and index position
-        if self.rank == 1:  # Vector
-            result_components = optimized_einsum("ij,j->i", metric_inverse, self.components)
-        elif self.rank == 2:  # Matrix
-            if index_pos == 0:
-                result_components = optimized_einsum("ij,jk->ik", metric_inverse, self.components)
-            else:
-                result_components = optimized_einsum("ij,ki->kj", metric_inverse, self.components)
-        elif self.rank == 3:  # Rank-3 tensor
-            if index_pos == 0:
-                result_components = optimized_einsum("ij,jkl->ikl", metric_inverse, self.components)
-            elif index_pos == 1:
-                result_components = optimized_einsum("ij,kij->kil", metric_inverse, self.components)
-            else:  # index_pos == 2
-                result_components = optimized_einsum("ij,kli->klj", metric_inverse, self.components)
-        elif self.rank == 4:  # Rank-4 tensor
-            # General einsum for rank-4 tensors
-            indices = list("abcd")
-            indices[index_pos] = "x"
-            output_indices = list("abcd")
-            output_indices[index_pos] = "y"
-            einsum_str = f"xy,{''.join(indices)}->{''.join(output_indices)}"
-            result_components = optimized_einsum(einsum_str, metric_inverse, self.components)
+        # Use dedicated SymPy path for symbolic computations to preserve precision
+        if is_sympy_matrix(self.components) or is_sympy_matrix(metric_inverse):
+            try:
+                result_components = self._sympy_metric_contraction(
+                    metric_inverse, index_pos, raise_index=True
+                )
+            except ImportError:
+                # Fall back to optimized_einsum if SymPy Array not available
+                warnings.warn(
+                    "SymPy Array not available for symbolic index raising, "
+                    "falling back to numerical conversion which may lose precision",
+                    stacklevel=2,
+                )
+                result_components = self._einsum_metric_contraction(
+                    metric_inverse, index_pos, is_raise=True
+                )
         else:
-            raise NotImplementedError(f"Index raising not implemented for rank {self.rank} > 4")
+            # Use optimized einsum for numerical computations
+            result_components = self._einsum_metric_contraction(
+                metric_inverse, index_pos, is_raise=True
+            )
 
         # Update indices
         new_indices: list[tuple[bool, str]] = self.indices.copy()
@@ -765,41 +884,27 @@ class TensorField:
         # Contract with metric
         metric_components = self.metric.components
 
-        # Build contraction based on tensor rank and index position
-        if self.rank == 1:  # Vector
-            result_components = optimized_einsum("ij,j->i", metric_components, self.components)
-        elif self.rank == 2:  # Matrix
-            if index_pos == 0:
-                result_components = optimized_einsum(
-                    "ij,jk->ik", metric_components, self.components
+        # Use dedicated SymPy path for symbolic computations to preserve precision
+        if is_sympy_matrix(self.components) or is_sympy_matrix(metric_components):
+            try:
+                result_components = self._sympy_metric_contraction(
+                    metric_components, index_pos, raise_index=False
                 )
-            else:
-                result_components = optimized_einsum(
-                    "ij,ki->kj", metric_components, self.components
+            except ImportError:
+                # Fall back to optimized_einsum if SymPy Array not available
+                warnings.warn(
+                    "SymPy Array not available for symbolic index lowering, "
+                    "falling back to numerical conversion which may lose precision",
+                    stacklevel=2,
                 )
-        elif self.rank == 3:  # Rank-3 tensor
-            if index_pos == 0:
-                result_components = optimized_einsum(
-                    "ij,jkl->ikl", metric_components, self.components
+                result_components = self._einsum_metric_contraction(
+                    metric_components, index_pos, is_raise=False
                 )
-            elif index_pos == 1:
-                result_components = optimized_einsum(
-                    "ij,kij->kil", metric_components, self.components
-                )
-            else:  # index_pos == 2
-                result_components = optimized_einsum(
-                    "ij,kli->klj", metric_components, self.components
-                )
-        elif self.rank == 4:  # Rank-4 tensor
-            # General einsum for rank-4 tensors
-            indices = list("abcd")
-            indices[index_pos] = "x"
-            output_indices = list("abcd")
-            output_indices[index_pos] = "y"
-            einsum_str = f"xy,{''.join(indices)}->{''.join(output_indices)}"
-            result_components = optimized_einsum(einsum_str, metric_components, self.components)
         else:
-            raise NotImplementedError(f"Index lowering not implemented for rank {self.rank} > 4")
+            # Use optimized einsum for numerical computations
+            result_components = self._einsum_metric_contraction(
+                metric_components, index_pos, is_raise=False
+            )
 
         # Update indices
         new_indices: list[tuple[bool, str]] = self.indices.copy()

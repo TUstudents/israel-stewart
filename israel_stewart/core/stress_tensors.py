@@ -96,10 +96,12 @@ class StressEnergyTensor(TensorField):
         if isinstance(self.components, np.ndarray):
             momentum = -np.einsum("j,ij->i", u_cov.components, self.components)
         else:
-            momentum = sp.zeros(4, 1)
+            # Create proper 4-element vector for SymPy (avoid (4,1) matrix)
+            momentum = [0, 0, 0, 0]
             for mu in range(4):
                 for nu in range(4):
                     momentum[mu] -= u_cov.components[nu] * self.components[mu, nu]
+            # Keep as list - FourVector constructor will handle the conversion
 
         return FourVector(momentum, False, self.metric)
 
@@ -486,10 +488,12 @@ class ViscousStressTensor(TensorField):
         if isinstance(self.components, np.ndarray):
             heat_flux = -np.einsum("j,ij->i", u_cov.components, self.components)
         else:
-            heat_flux = sp.zeros(4, 1)
+            # Create proper 4-element vector for SymPy (avoid (4,1) matrix)
+            heat_flux = [0, 0, 0, 0]
             for mu in range(4):
                 for nu in range(4):
                     heat_flux[mu] -= u_cov.components[nu] * self.components[mu, nu]
+            # Keep as list - FourVector constructor will handle the conversion
 
         return FourVector(heat_flux, False, self.metric)
 

@@ -190,13 +190,71 @@ class TensorField:
         """Convert indices back to string format."""
         return " ".join(f"{'_' if cov else ''}{name}" for cov, name in self.indices)
 
+    def _create_subclass_instance(
+        self, new_components: np.ndarray | sp.Matrix, index_str: str | None = None
+    ) -> "TensorField":
+        """
+        Create new instance preserving subclass type with proper constructor signature.
+
+        Args:
+            new_components: New tensor components
+            index_str: Index string (only used for TensorField base class)
+
+        Returns:
+            New instance of the same subclass type
+        """
+        if type(self) is TensorField:
+            # Base class uses the standard constructor
+            return TensorField(new_components, index_str or self._index_string(), self.metric)
+        else:
+            # For subclasses, use introspection to match constructor signature
+            import inspect
+
+            sig = inspect.signature(type(self).__init__)
+            params = list(sig.parameters.keys())[1:]  # Skip 'self'
+
+            if len(params) == 2:
+                # Stress tensor classes: (components, metric)
+                from typing import Any, cast
+
+                constructor = cast(Any, type(self))
+                return cast("TensorField", constructor(new_components, self.metric))
+            elif len(params) == 3 and "is_covariant" in params:
+                # FourVector: (components, is_covariant, metric)
+                # For FourVector, determine covariance from the index_str if provided,
+                # otherwise preserve from current indices
+                if index_str and index_str.startswith("_"):
+                    # Index string indicates covariant (starts with '_')
+                    is_covariant = True
+                elif index_str and not index_str.startswith("_"):
+                    # Index string indicates contravariant (doesn't start with '_')
+                    is_covariant = False
+                else:
+                    # Fallback to current indices
+                    is_covariant = self.indices[0][0] if self.indices else False
+                from typing import Any, cast
+
+                constructor = cast(Any, type(self))
+                return cast("TensorField", constructor(new_components, is_covariant, self.metric))
+            else:
+                # Fallback to standard constructor for other subclasses
+                from typing import Any, cast
+
+                constructor = cast(Any, type(self))
+                return cast(
+                    "TensorField",
+                    constructor(new_components, index_str or self._index_string(), self.metric),
+                )
+
     def copy(self) -> "TensorField":
         """Create a deep copy of the tensor."""
         if isinstance(self.components, np.ndarray):
             new_components = self.components.copy()
         else:
             new_components = self.components.copy()
-        return TensorField(new_components, self._index_string(), self.metric)
+
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(new_components)
 
     @monitor_performance("tensor_transpose")
     def transpose(self, axis_order: tuple[int, ...] | None = None) -> "TensorField":
@@ -261,7 +319,8 @@ class TensorField:
         new_indices = [self.indices[i] for i in axis_order]
         new_index_string = " ".join(f"{'_' if cov else ''}{name}" for cov, name in new_indices)
 
-        return TensorField(new_components, new_index_string, self.metric)
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(new_components, new_index_string)
 
     @monitor_performance("tensor_symmetrize")
     def symmetrize(self, indices_pair: tuple[int, int] | None = None) -> "TensorField":
@@ -292,7 +351,8 @@ class TensorField:
         transposed = self.transpose(tuple(axis_order))
         symmetrized_components = 0.5 * (self.components + transposed.components)
 
-        return TensorField(symmetrized_components, self._index_string(), self.metric)
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(symmetrized_components)
 
     @monitor_performance("tensor_antisymmetrize")
     def antisymmetrize(self, indices_pair: tuple[int, int] | None = None) -> "TensorField":
@@ -323,7 +383,8 @@ class TensorField:
         transposed = self.transpose(tuple(axis_order))
         antisymmetrized_components = 0.5 * (self.components - transposed.components)
 
-        return TensorField(antisymmetrized_components, self._index_string(), self.metric)
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(antisymmetrized_components)
 
     @monitor_performance("tensor_contract")
     def contract(
@@ -419,7 +480,21 @@ class TensorField:
             f"{'_' if cov else ''}{name}" for cov, name in result_index_list
         )
 
-        return TensorField(result_components, result_index_str, self.metric)
+        # For contract(), be conservative about subclass preservation
+        # Only preserve subclass if result rank is compatible with subclass requirements
+        result_rank = len(result_index_list)
+
+        # Check if subclass can handle the result rank
+        if type(self) is TensorField:
+            # Base class can handle any rank
+            return TensorField(result_components, result_index_str, self.metric)
+        elif result_rank == self.rank:
+            # Same rank - safe to preserve subclass
+            return self._create_subclass_instance(result_components, result_index_str)
+        else:
+            # Different rank - use base TensorField to be safe
+            # Subclasses may have rank-specific requirements
+            return TensorField(result_components, result_index_str, self.metric)
 
     def _manual_contraction(
         self, other: "TensorField", self_index: int, other_index: int
@@ -662,7 +737,8 @@ class TensorField:
         new_indices[index_pos] = (False, index_name)  # Make contravariant
         new_index_str = " ".join(f"{'_' if cov else ''}{name}" for cov, name in new_indices)
 
-        return TensorField(result_components, new_index_str, self.metric)
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(result_components, new_index_str)
 
     @monitor_performance("lower_index")
     def lower_index(self, index_pos: int) -> "TensorField":
@@ -730,7 +806,8 @@ class TensorField:
         new_indices[index_pos] = (True, index_name)  # Make covariant
         new_index_str = " ".join(f"{'_' if cov else ''}{name}" for cov, name in new_indices)
 
-        return TensorField(result_components, new_index_str, self.metric)
+        # Preserve subclass type (FourVector, StressEnergyTensor, etc.)
+        return self._create_subclass_instance(result_components, new_index_str)
 
     def trace(self, indices_pair: tuple[int, int] | None = None) -> float | sp.Expr:
         """

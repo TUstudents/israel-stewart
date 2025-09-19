@@ -140,7 +140,13 @@ class LorentzTransformation:
             transformed_components = optimized_einsum("mn,n->m", transformation, vector.components)
         else:
             transformation_sp = sp.Matrix(transformation)
-            transformed_components = transformation_sp * vector.components
+            # FIXED: Ensure SymPy transformation result is properly shaped for FourVector
+            result_matrix = transformation_sp * vector.components
+            # Convert (4,1) SymPy Matrix to (4,) format compatible with FourVector constructor
+            if hasattr(result_matrix, "shape") and result_matrix.shape == (4, 1):
+                transformed_components = sp.Matrix([result_matrix[i, 0] for i in range(4)])
+            else:
+                transformed_components = result_matrix
 
         return FourVector(transformed_components, vector.indices[0][0], self.metric)
 
@@ -205,13 +211,17 @@ class LorentzTransformation:
             elif tensor.indices[0][0] and tensor.indices[1][0]:  # Both covariant
                 # T'_μν = (Λ⁻¹)^α_μ (Λ⁻¹)^β_ν T_αβ = (Λ⁻¹)ᵀ T Λ⁻¹
                 transformed = inv_transformation_sp.T * tensor.components * inv_transformation_sp
-            else:  # Mixed indices
+            else:  # Mixed indices - FIXED: Apply different transformations to each index
                 if not tensor.indices[0][0]:  # First contravariant, second covariant
-                    # T'^μ_ν = Λ^μ_α (Λ⁻¹)^β_ν T^α_β = Λ T (Λ⁻¹)ᵀ
-                    transformed = transformation_sp * tensor.components * inv_transformation_sp.T
+                    # T'^μ_ν = Λ^μ_α (Λ⁻¹)_ν^β T^α_β
+                    # Proper index contractions: sum over α (first index) and β (second index)
+                    # Result: transformed[μ,ν] = Λ[μ,α] * T[α,β] * (Λ⁻¹)[β,ν]
+                    transformed = transformation_sp * tensor.components * inv_transformation_sp
                 else:  # First covariant, second contravariant
-                    # T'_μ^ν = (Λ⁻¹)^α_μ Λ^ν_β T_α^β = (Λ⁻¹)ᵀ T Λ
-                    transformed = inv_transformation_sp.T * tensor.components * transformation_sp
+                    # T'_μ^ν = (Λ⁻¹)_μ^α Λ^ν_β T_α^β
+                    # Proper index contractions: sum over α (first index) and β (second index)
+                    # Result: transformed[μ,ν] = (Λ⁻¹)[μ,α] * T[α,β] * Λ[β,ν]
+                    transformed = inv_transformation_sp * tensor.components * transformation_sp
 
         return TensorField(transformed, tensor._index_string(), self.metric)
 
@@ -259,22 +269,26 @@ class LorentzTransformation:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
         # Three-velocity: v^i = u^i / u^0 for timelike vectors
-        # Check if metric is available before calling is_timelike()
+        # FIXED: Improved metric-free boost operations with clearer fallback logic
         if four_velocity.metric is not None:
+            # Use metric-based timelike check when available
             if not four_velocity.is_timelike():
                 raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
-        # If no metric, assume Minkowski and check basic timelike condition: u^0 > |u_spatial|
         else:
+            # IMPROVED: Fallback to Minkowski assumption (no metric required)
+            # Basic timelike condition in Minkowski spacetime: u^0 > |u_spatial|
             u_spatial_mag = np.sqrt(np.sum(four_velocity.spatial_components**2))
             if gamma <= u_spatial_mag:
                 raise PhysicsError(
-                    "Four-velocity appears non-timelike (u^0 <= |u_spatial|) in Minkowski spacetime"
+                    f"Four-velocity appears non-timelike (u^0={gamma:.3e} <= |u_spatial|={u_spatial_mag:.3e}) "
+                    "in assumed Minkowski spacetime. For curved spacetime, provide explicit metric."
                 )
 
         three_velocity = four_velocity.spatial_components / gamma
 
-        # Return inverse boost (to go to rest frame)
-        boost = self.boost_matrix(-three_velocity)  # Negative to go to rest frame
+        # FIXED: Return boost to rest frame - use Λ(v) to transform particle with velocity v to rest
+        # To transform four-velocity u^μ = γ(1, v⃗) to rest frame (γ', 0, 0, 0), apply boost Λ(v)
+        boost = self.boost_matrix(three_velocity)  # Corrected: use +v for boost to rest frame
         return boost
 
     def boost_from_rest_frame(self, four_velocity: FourVector) -> np.ndarray:
@@ -292,22 +306,28 @@ class LorentzTransformation:
         if gamma < 1e-12:
             raise PhysicsError("Cannot extract velocity from null four-velocity")
 
-        # Check if metric is available before calling is_timelike()
+        # FIXED: Improved metric-free boost operations with clearer fallback logic
         if four_velocity.metric is not None:
+            # Use metric-based timelike check when available
             if not four_velocity.is_timelike():
                 raise PhysicsError("Can only extract three-velocity from timelike four-velocity")
-        # If no metric, assume Minkowski and check basic timelike condition: u^0 > |u_spatial|
         else:
+            # IMPROVED: Fallback to Minkowski assumption (no metric required)
+            # Basic timelike condition in Minkowski spacetime: u^0 > |u_spatial|
             u_spatial_mag = np.sqrt(np.sum(four_velocity.spatial_components**2))
             if gamma <= u_spatial_mag:
                 raise PhysicsError(
-                    "Four-velocity appears non-timelike (u^0 <= |u_spatial|) in Minkowski spacetime"
+                    f"Four-velocity appears non-timelike (u^0={gamma:.3e} <= |u_spatial|={u_spatial_mag:.3e}) "
+                    "in assumed Minkowski spacetime. For curved spacetime, provide explicit metric."
                 )
 
         three_velocity = four_velocity.spatial_components / gamma
 
-        # Return forward boost (from rest frame to lab frame)
-        return self.boost_matrix(three_velocity)
+        # FIXED: Return boost from rest frame to lab frame - use Λ(-v)
+        # To transform from rest frame (γ', 0, 0, 0) to lab frame where particle has velocity v, apply Λ(-v)
+        return self.boost_matrix(
+            -three_velocity
+        )  # Corrected: use -v for boost from rest to lab frame
 
     @staticmethod
     def thomas_wigner_rotation(

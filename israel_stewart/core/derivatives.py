@@ -166,10 +166,17 @@ class CovariantDerivative:
         partial_deriv_trace = np.zeros(components.shape[:-1])
         for mu in range(4):
             # Only compute diagonal terms we need for the trace
-            # Check grid size to determine appropriate edge_order
-            grid_size_mu = components.shape[mu]
+            # Check coordinate array size to determine appropriate edge_order
+            coord_array = coordinates[mu]
+            if hasattr(coord_array, 'ndim') and hasattr(coord_array, 'shape'):
+                grid_size_mu = len(coord_array) if coord_array.ndim == 1 else coord_array.shape[mu]
+            else:
+                # Fallback for non-numpy array coordinates
+                grid_size_mu = len(coord_array) if hasattr(coord_array, '__len__') else 1
 
             if grid_size_mu < 2:
+                # Single point grids: derivative is undefined, contributes zero
+                # This handles degenerate cases gracefully
                 continue
 
             if grid_size_mu >= 3:
@@ -926,14 +933,10 @@ class ProjectionOperator:
             if np.ndim(sigma) == 0:
                 sigma_value = float(sigma)
                 if np.isclose(sigma_value, 0.0):
-                    raise ValueError(
-                        "Cannot determine projector signature for null four-velocity"
-                    )
+                    raise ValueError("Cannot determine projector signature for null four-velocity")
             else:
                 if np.any(np.isclose(sigma, 0.0)):
-                    raise ValueError(
-                        "Cannot determine projector signature for null four-velocity"
-                    )
+                    raise ValueError("Cannot determine projector signature for null four-velocity")
 
             u_outer = optimized_einsum("...m,...n->...mn", u_contra, u_contra)
 

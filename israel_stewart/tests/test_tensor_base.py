@@ -280,13 +280,20 @@ class TestSymPyArrayFunctionality:
             # Contract second index of matrix with vector
             result = matrix._sympy_tensor_contraction(vector, 1, 0)
 
-            # Result should be a vector (Matrix)
-            assert isinstance(result, sp.Matrix)
-            assert result.shape == (4, 1) or result.shape == (4,)
+            # Result should be a vector (Matrix, Array, or ndarray)
+            assert isinstance(result, sp.Matrix | sp.Array | np.ndarray)
+            if isinstance(result, sp.Matrix):
+                assert result.shape == (4, 1) or result.shape == (4,)
+                actual_first = result[0] if result.shape == (4,) else result[0, 0]
+            elif isinstance(result, np.ndarray):
+                assert result.shape == (4,)
+                actual_first = result[0]
+            else:
+                assert result.shape == (4,)
+                actual_first = result[0]
 
             # Verify specific element
             expected_first = sum(matrix_comp[0, j] * vector_comp[j] for j in range(4))
-            actual_first = result[0] if result.shape == (4,) else result[0, 0]
             assert sp.simplify(actual_first - expected_first) == 0
 
         except ImportError:
@@ -332,12 +339,19 @@ class TestSymPyArrayFunctionality:
             result = vector._sympy_metric_contraction(metric_comp, 0, raise_index=True)
 
             # Result should be a vector
-            assert isinstance(result, sp.Matrix)
-            assert result.shape == (4, 1) or result.shape == (4,)
+            assert isinstance(result, sp.Matrix | sp.Array | np.ndarray)
+            if isinstance(result, sp.Matrix):
+                assert result.shape == (4, 1) or result.shape == (4,)
+                actual_first = result[0] if result.shape == (4,) else result[0, 0]
+            elif isinstance(result, np.ndarray):
+                assert result.shape == (4,)
+                actual_first = result[0]
+            else:
+                assert result.shape == (4,)
+                actual_first = result[0]
 
             # Verify specific element
             expected_first = sum(metric_comp[0, j] * vector_comp[j] for j in range(4))
-            actual_first = result[0] if result.shape == (4,) else result[0, 0]
             assert sp.simplify(actual_first - expected_first) == 0
 
         except ImportError:
@@ -383,7 +397,7 @@ class TestSymPyArrayFunctionality:
             assert raised.indices[0][1] == "mu"  # Same name
 
             # Result should be symbolic
-            assert isinstance(raised.components, sp.Matrix)
+            assert isinstance(raised.components, sp.Matrix | sp.Array | np.ndarray)
 
         except ImportError:
             # Should fall back to einsum with warning
@@ -408,7 +422,7 @@ class TestSymPyArrayFunctionality:
             assert lowered.indices[0][1] == "mu"  # Same name
 
             # Result should be symbolic
-            assert isinstance(lowered.components, sp.Matrix)
+            assert isinstance(lowered.components, sp.Matrix | sp.Array | np.ndarray)
 
         except ImportError:
             # Should fall back to einsum with warning
@@ -462,6 +476,15 @@ class TestSymPyArrayFunctionality:
             actual_value = result[0, 0]
         elif isinstance(result, sp.Matrix) and result.shape == (1,):
             actual_value = result[0]
+        elif isinstance(result, sp.Array):
+            if result.shape == ():
+                actual_value = result[()]
+            elif result.shape == (1,):
+                actual_value = result[0]
+            else:
+                actual_value = sum(result)
+        elif isinstance(result, np.ndarray):
+            actual_value = result.reshape(-1)[0]
         else:
             actual_value = result
 

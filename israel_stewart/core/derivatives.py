@@ -9,7 +9,7 @@ import warnings
 from functools import cached_property
 
 # Forward reference for metrics
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import sympy as sp
@@ -19,7 +19,13 @@ from .performance import monitor_performance
 
 # Import base classes and utilities
 from .tensor_base import TensorField
-from .tensor_utils import optimized_einsum
+from .tensor_utils import (
+    PhysicsError,
+    is_sympy_array,
+    is_sympy_matrix,
+    is_sympy_type,
+    optimized_einsum,
+)
 
 if TYPE_CHECKING:
     from .metrics import MetricBase
@@ -100,18 +106,43 @@ class CovariantDerivative:
             else:
                 coord_arrays = [coordinates]
 
-            # np.gradient returns a list of arrays, one for each dimension
-            gradient_list = np.gradient(scalar_field, *coord_arrays)
+            is_constant_field = False
+            if isinstance(scalar_field, np.ndarray):
+                if scalar_field.size <= 1:
+                    is_constant_field = True
+                elif scalar_field.dtype == object:
+                    first = scalar_field.flat[0]
+                    is_constant_field = all(element == first for element in scalar_field.flat)
+                elif np.issubdtype(scalar_field.dtype, np.number):
+                    is_constant_field = np.allclose(scalar_field, scalar_field.flat[0])
+            elif np.isscalar(scalar_field):
+                is_constant_field = True
 
-            # For scalar field, we need to extract gradient components at each point
-            # and create a proper 4-vector field with shape (..., 4)
-            if len(gradient_list) == 4:
-                # Full 4D gradient - stack components along last axis: (..., 4) format
-                gradient_components = np.stack(gradient_list, axis=-1)
-            else:
-                # Fallback for non-4D case
-                gradient_components = np.stack(gradient_list, axis=0)
+            if is_constant_field:
+                if isinstance(scalar_field, np.ndarray) and scalar_field.dtype == object:
+                    zero_components = [sp.Integer(0)] * 4
+                else:
+                    dtype = getattr(scalar_field, "dtype", None)
+                    zero_components = np.zeros(4, dtype=dtype if dtype is not None else float)
+                return FourVector(zero_components, True, self.metric)
 
+            gradient_arrays: list[np.ndarray] = []
+            for mu in range(4):
+                if scalar_field.ndim <= mu:
+                    gradient_arrays.append(np.zeros_like(scalar_field))
+                    continue
+
+                axis_size = scalar_field.shape[mu]
+                if axis_size < 2:
+                    gradient_arrays.append(np.zeros_like(scalar_field))
+                    continue
+
+                edge_order = 2 if axis_size >= 3 else 1
+                gradient_arrays.append(
+                    np.gradient(scalar_field, coord_arrays[mu], axis=mu, edge_order=edge_order)
+                )
+
+            gradient_components = np.stack(gradient_arrays, axis=-1)
             return FourVector(gradient_components, True, self.metric)
 
     @monitor_performance("vector_divergence")
@@ -137,6 +168,9 @@ class CovariantDerivative:
             # Only compute diagonal terms we need for the trace
             # Check grid size to determine appropriate edge_order
             grid_size_mu = components.shape[mu]
+
+            if grid_size_mu < 2:
+                continue
 
             if grid_size_mu >= 3:
                 # Use second-order accurate edges for grids with sufficient points
@@ -364,11 +398,15 @@ class CovariantDerivative:
         Returns a new tensor field with one additional covariant index (the derivative index).
         """
         # Handle SymPy tensors with dedicated path
-        if hasattr(tensor_field.components, "dtype") and tensor_field.components.dtype == object:
+        components = tensor_field.components
+
+        if is_sympy_type(components):
+            return self._symbolic_tensor_covariant_derivative(tensor_field, coordinates)
+
+        if hasattr(components, "dtype") and components.dtype == object:
             return self._symbolic_tensor_covariant_derivative(tensor_field, coordinates)
 
         christoffel = self.christoffel_symbols
-        components = tensor_field.components
 
         # 1. Compute all partial derivatives ∂_μ T^..._... efficiently
         partial_derivatives = self._compute_all_partial_derivatives(components, coordinates)
@@ -402,13 +440,15 @@ class CovariantDerivative:
         """
         # Pre-allocate result array
         result_shape = tensor_components.shape + (4,)
-        partial_derivatives = np.empty(result_shape, dtype=tensor_components.dtype)
+        partial_derivatives = np.zeros(result_shape, dtype=tensor_components.dtype)
 
         # Compute derivatives along each coordinate direction
         # mu=0,1,2,3 corresponds to coordinates t,x,y,z respectively
         for mu in range(4):
             # Determine appropriate edge_order based on grid size
             grid_size_mu = tensor_components.shape[mu]
+            if grid_size_mu < 2:
+                continue
             if grid_size_mu >= 3:
                 # Take gradient along grid axis mu with respect to coordinate mu
                 partial_derivatives[..., mu] = np.gradient(
@@ -548,7 +588,7 @@ class CovariantDerivative:
         # Contract Christoffel's first index with tensor's index_pos
         result = sp_array.tensorcontraction(
             sp_array.tensorproduct(christoffel_array, tensor_array),
-            ([0], [len(christoffel_array.shape) + index_pos]),
+            (0, len(christoffel_array.shape) + index_pos),
         )
 
         # Extract the μ,α component and apply negative sign
@@ -564,7 +604,7 @@ class CovariantDerivative:
         # Contract Christoffel's third index with tensor's index_pos
         result = sp_array.tensorcontraction(
             sp_array.tensorproduct(christoffel_array, tensor_array),
-            ([2], [len(christoffel_array.shape) + index_pos]),
+            (2, len(christoffel_array.shape) + index_pos),
         )
 
         # Extract the α,μ component (positive sign)
@@ -621,6 +661,8 @@ class CovariantDerivative:
         """
         # Determine appropriate edge_order based on grid size
         grid_size = tensor_components.shape[coord_index]
+        if grid_size < 2:
+            return np.zeros_like(tensor_components)
         if grid_size >= 3:
             # Take gradient along grid axis coord_index with respect to coordinate coord_index
             result: np.ndarray = np.gradient(
@@ -783,24 +825,58 @@ class ProjectionOperator:
         self.u = four_velocity
         self.metric = metric
 
+        # Pre-compute covariant and contravariant forms for reuse
+        if four_velocity.indices[0][0]:  # Stored vector is covariant
+            self.u_cov = four_velocity
+            self.u_contra = four_velocity.raise_index(0)
+        else:
+            self.u_contra = four_velocity
+            self.u_cov = four_velocity.lower_index(0)
+
+        if self.u_contra.indices[0][0]:
+            self.u_contra = self.u_contra.raise_index(0)
+        if not self.u_cov.indices[0][0]:
+            self.u_cov = self.u_cov.lower_index(0)
+
         # Validate four-velocity normalization with correct signature handling
-        mag_sq = self.u.magnitude_squared()
+        mag_sq = self.u_contra.dot(self.u_contra)
         signature = getattr(metric, "signature", (-1, 1, 1, 1))
 
         if signature[0] < 0:  # Mostly-plus signature (-,+,+,+)
             expected_norm = -1.0
             if abs(mag_sq - expected_norm) > 1e-10:
-                warnings.warn(
-                    f"Four-velocity should be normalized: u^μ u_μ = -1, got {mag_sq:.2e}",
-                    stacklevel=2,
-                )
+                try:
+                    normalized = self.u_contra.normalize()
+                    self.u_contra = normalized
+                    self.u_cov = normalized.lower_index(0)
+                    mag_sq = self.u_contra.dot(self.u_contra)
+                except PhysicsError:
+                    warnings.warn(
+                        f"Four-velocity should be normalized: u^μ u_μ = -1, got {mag_sq:.2e}",
+                        stacklevel=2,
+                    )
         else:  # Mostly-minus signature (+,-,-,-)
             expected_norm = 1.0
             if abs(mag_sq - expected_norm) > 1e-10:
-                warnings.warn(
-                    f"Four-velocity should be normalized: u^μ u_μ = +1, got {mag_sq:.2e}",
-                    stacklevel=2,
-                )
+                try:
+                    normalized = self.u_contra.normalize()
+                    self.u_contra = normalized
+                    self.u_cov = normalized.lower_index(0)
+                    mag_sq = self.u_contra.dot(self.u_contra)
+                except PhysicsError:
+                    warnings.warn(
+                        f"Four-velocity should be normalized: u^μ u_μ = +1, got {mag_sq:.2e}",
+                        stacklevel=2,
+                    )
+
+    @staticmethod
+    def _to_sympy_column(components: Any) -> sp.Matrix:
+        if is_sympy_array(components):
+            return sp.Matrix([components[i] for i in range(4)])
+        if isinstance(components, np.ndarray):
+            flat = np.asarray(components).reshape(-1)
+            return sp.Matrix(flat)
+        return sp.Matrix(components)
 
     def parallel_projector(self) -> TensorField:
         """
@@ -811,19 +887,24 @@ class ProjectionOperator:
         Returns:
             Parallel projection tensor
         """
-        # Outer product of four-velocity with itself
-        u_outer = np.outer(self.u.components, self.u.components)
+        if isinstance(self.u_contra.components, np.ndarray):
+            u_outer = optimized_einsum(
+                "...m,...n->...mn", self.u_contra.components, self.u_contra.components
+            )
+            return TensorField(u_outer, "mu nu", self.metric)
 
-        return TensorField(u_outer, "mu nu", self.metric)
+        # SymPy path
+        u_vec = self._to_sympy_column(self.u_contra.components)
+        return TensorField(u_vec * u_vec.T, "mu nu", self.metric)
 
     @monitor_performance("perpendicular_projector")
     def perpendicular_projector(self) -> TensorField:
         """
-        Compute perpendicular projection tensor Δ^μν = g^μν + u^μ u^ν.
+        Compute perpendicular projection tensor Δ^μν = g^μν + σ u^μ u^ν.
 
-        Projects onto 3-space orthogonal to four-velocity. The formula is
-        independent of metric signature since the four-velocity normalization
-        u^μ u_μ = ±c² already accounts for the signature convention.
+        Projects onto 3-space orthogonal to four-velocity using σ = -sign(u · u)
+        so the construction adapts automatically to both mostly-plus and
+        mostly-minus metric signatures.
 
         Returns:
             Perpendicular projection tensor Δ^μν
@@ -831,12 +912,53 @@ class ProjectionOperator:
         # Get inverse metric g^μν
         g_inverse = self.metric.inverse
 
-        # Compute u^μ u^ν
-        u_outer = np.outer(self.u.components, self.u.components)
+        if isinstance(self.u_contra.components, np.ndarray):
+            u_contra = self.u_contra.components
+            u_cov = self.u_cov.components
 
-        # Perpendicular projector: Δ^μν = g^μν + u^μ u^ν
-        # This formula is correct regardless of metric signature
-        delta = g_inverse + u_outer
+            u_dot_u = optimized_einsum("...m,...m->...", u_contra, u_cov)
+
+            if np.any(np.isclose(u_dot_u, 0.0)):
+                raise ValueError("Four-velocity must be timelike for perpendicular projection")
+
+            sigma = -np.sign(u_dot_u)
+            sigma = np.asarray(sigma, dtype=u_contra.dtype)
+            if np.ndim(sigma) == 0:
+                sigma_value = float(sigma)
+                if np.isclose(sigma_value, 0.0):
+                    raise ValueError(
+                        "Cannot determine projector signature for null four-velocity"
+                    )
+            else:
+                if np.any(np.isclose(sigma, 0.0)):
+                    raise ValueError(
+                        "Cannot determine projector signature for null four-velocity"
+                    )
+
+            u_outer = optimized_einsum("...m,...n->...mn", u_contra, u_contra)
+
+            if np.ndim(sigma) == 0:
+                delta = g_inverse + sigma * u_outer
+            else:
+                delta = g_inverse + sigma[..., np.newaxis, np.newaxis] * u_outer
+
+            return TensorField(delta, "mu nu", self.metric)
+
+        # SymPy path; treat components as column vectors where necessary
+        u_vec = self._to_sympy_column(self.u_contra.components)
+        u_cov_vec = self._to_sympy_column(self.u_cov.components)
+
+        u_dot_u = sum(u_vec[i] * u_cov_vec[i] for i in range(4))
+        if u_dot_u == 0:
+            raise ValueError("Four-velocity must be timelike for perpendicular projection")
+
+        sigma = -sp.sign(u_dot_u)
+        if sigma == 0:
+            raise ValueError("Cannot determine projector signature for null four-velocity")
+
+        g_inverse_matrix = sp.Matrix(g_inverse)
+        u_outer = u_vec * u_vec.T
+        delta = g_inverse_matrix + sigma * u_outer
 
         return TensorField(delta, "mu nu", self.metric)
 
@@ -854,17 +976,45 @@ class ProjectionOperator:
         Returns:
             Parallel component of vector
         """
-        # Compute u · V = u_μ V^μ
-        dot_product = self.u.dot(vector)
+        # Convert vector to contravariant form for consistent operations
+        if vector.indices[0][0]:
+            vector_contra = vector.raise_index(0)
+        else:
+            vector_contra = vector
 
-        # Compute u · u = u_μ u^μ for normalization
-        u_dot_u = self.u.dot(self.u)
+        if isinstance(self.u_contra.components, np.ndarray):
+            u_cov = self.u_cov.components
+            u_contra = self.u_contra.components
+            v_contra = vector_contra.components
+            u_dot_v = optimized_einsum("...m,...m->...", u_cov, v_contra)
+            u_dot_u = optimized_einsum("...m,...m->...", u_cov, u_contra)
 
-        # Parallel projection: V_∥^μ = (u · V / u · u) u^μ
-        # This automatically handles the metric signature correctly
-        parallel_components = (dot_product / u_dot_u) * self.u.components
+            if np.any(np.isclose(u_dot_u, 0.0)):
+                raise ValueError("Four-velocity must be timelike for projection")
 
-        return FourVector(parallel_components, False, self.metric)
+            coeff = u_dot_v / u_dot_u
+            coeff_array = np.asarray(coeff)
+            if coeff_array.ndim == 0:
+                parallel = coeff_array * u_contra
+            else:
+                parallel = coeff_array[..., np.newaxis] * u_contra
+            result = FourVector(parallel, False, self.metric)
+            return result.lower_index(0) if vector.indices[0][0] else result
+
+        # SymPy path
+        u_cov_vec = self._to_sympy_column(self.u_cov.components)
+        u_contra_vec = self._to_sympy_column(self.u_contra.components)
+        v_contra_vec = self._to_sympy_column(vector_contra.components)
+
+        u_dot_v = sum(u_cov_vec[i] * v_contra_vec[i] for i in range(4))
+        u_dot_u = sum(u_cov_vec[i] * u_contra_vec[i] for i in range(4))
+
+        if u_dot_u == 0:
+            raise ValueError("Four-velocity must be timelike for projection")
+
+        parallel = (u_dot_v / u_dot_u) * u_contra_vec
+        result = FourVector(parallel, False, self.metric)
+        return result.lower_index(0) if vector.indices[0][0] else result
 
     @monitor_performance("project_vector_perpendicular")
     def project_vector_perpendicular(self, vector: FourVector) -> FourVector:
@@ -878,18 +1028,20 @@ class ProjectionOperator:
             Perpendicular component of vector
         """
         delta = self.perpendicular_projector()
-        vector_lowered = vector.lower_index(0)
+        vector_contra = vector.raise_index(0) if vector.indices[0][0] else vector
+        vector_cov = vector_contra.lower_index(0)
 
-        # Project: V_⊥^μ = Δ^μν V_ν
-        if isinstance(vector.components, np.ndarray):
+        if isinstance(vector_contra.components, np.ndarray):
             perp_components = optimized_einsum(
-                "mn,n->m", delta.components, vector_lowered.components
+                "...mn,...n->...m", delta.components, vector_cov.components
             )
-        else:
-            # Proper SymPy matrix multiplication for tensor contraction
-            perp_components = delta.components @ vector_lowered.components
+            result = FourVector(perp_components, False, self.metric)
+            return result.lower_index(0) if vector.indices[0][0] else result
 
-        return FourVector(perp_components, False, self.metric)
+        # SymPy path
+        perp_components = delta.components * self._to_sympy_column(vector_cov.components)
+        result = FourVector(perp_components, False, self.metric)
+        return result.lower_index(0) if vector.indices[0][0] else result
 
     def project_tensor_spatial(self, tensor: TensorField) -> TensorField:
         """

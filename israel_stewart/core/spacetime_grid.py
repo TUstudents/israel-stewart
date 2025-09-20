@@ -27,7 +27,9 @@ class SpacetimeGrid:
     Spacetime coordinate grid for hydrodynamics simulations.
 
     Manages coordinate systems, grid spacing, and boundary conditions
-    for relativistic fluid dynamics calculations.
+    for relativistic fluid dynamics calculations. Degenerate axes with a
+    single grid point are permitted and differential operators along
+    those directions safely collapse to zero arrays.
     """
 
     def __init__(
@@ -66,10 +68,17 @@ class SpacetimeGrid:
         self.total_points = np.prod(grid_points)
 
         # Compute grid spacing
-        self.dt = (time_range[1] - time_range[0]) / (grid_points[0] - 1)
-        self.spatial_spacing = [
-            (r[1] - r[0]) / (n - 1) for r, n in zip(spatial_ranges, grid_points[1:], strict=False)
-        ]
+        if grid_points[0] > 1:
+            self.dt = (time_range[1] - time_range[0]) / (grid_points[0] - 1)
+        else:
+            self.dt = 0.0
+
+        self.spatial_spacing = []
+        for r, n in zip(spatial_ranges, grid_points[1:], strict=False):
+            if n > 1:
+                self.spatial_spacing.append((r[1] - r[0]) / (n - 1))
+            else:
+                self.spatial_spacing.append(0.0)
 
     def _validate_grid_parameters(self) -> None:
         """Validate grid initialization parameters."""
@@ -83,8 +92,8 @@ class SpacetimeGrid:
         if len(self.grid_points) != 4:
             raise ValueError("Must provide exactly 4 grid point counts (Nt, Nx, Ny, Nz)")
 
-        if any(n < 2 for n in self.grid_points):
-            raise ValueError("All grid dimensions must have at least 2 points")
+        if any(n < 1 for n in self.grid_points):
+            raise ValueError("All grid dimensions must have at least 1 point")
 
         # Validate coordinate system specific constraints
         self._validate_coordinate_system_constraints()
@@ -290,6 +299,9 @@ class SpacetimeGrid:
         coord_array = self.coordinates[coord_name]
 
         # Check for uniform spacing and warn if not
+        if len(coord_array) < 2:
+            return np.zeros_like(field)
+
         spacing = coord_array[1] - coord_array[0]
         if len(coord_array) > 2:
             max_spacing_diff = np.max(np.diff(coord_array)) - np.min(np.diff(coord_array))
@@ -299,8 +311,9 @@ class SpacetimeGrid:
                     "Gradient calculation assumes uniform spacing and may be inaccurate.",
                     stacklevel=2,
                 )
+        edge_order = 2 if len(coord_array) >= 3 else 1
 
-        return np.gradient(field, spacing, axis=axis)  # type: ignore[no-any-return]
+        return np.gradient(field, spacing, axis=axis, edge_order=edge_order)  # type: ignore[no-any-return]
 
     def divergence(self, vector_field: np.ndarray) -> np.ndarray:
         """
@@ -321,83 +334,88 @@ class SpacetimeGrid:
                 f"Vector field shape {vector_field.shape} doesn't match expected {expected_shape}"
             )
 
+        coord_lengths = [len(self.coordinates[name]) for name in self.coordinate_names]
+
+        def _init_divergence_array() -> np.ndarray:
+            base_dtype = getattr(vector_field, "dtype", float)
+            return np.zeros(self.shape, dtype=base_dtype)
+
+        def _ensure_object_dtype(array: np.ndarray) -> np.ndarray:
+            if array.dtype == object:
+                return array
+            return array.astype(object)
+
+        def _accumulate(array: np.ndarray, term: Any) -> np.ndarray:
+            result = term
+            if not isinstance(result, np.ndarray):
+                result = np.array(result, dtype=object)
+            result_dtype = getattr(result, "dtype", None)
+            if result_dtype == object and array.dtype != object:
+                array = _ensure_object_dtype(array)
+            array += result
+            return array
+
         # Use covariant divergence if metric is available
         if self.metric is not None:
             # Compute covariant divergence directly for grid-based fields
             # ∇_μ V^μ = ∂_μ V^μ + Γ^μ_{μν} V^ν (sum over repeated indices)
 
-            # Start with partial derivative contributions
-            divergence = np.zeros(self.shape)
+            divergence = _init_divergence_array()
             for mu in range(4):
+                if coord_lengths[mu] < 2:
+                    continue
                 # ∂_μ V^μ contribution
                 partial_deriv = self.gradient(vector_field[..., mu], axis=mu)
-                divergence += partial_deriv
+                divergence = _accumulate(divergence, partial_deriv)
 
             # Add Christoffel symbol contributions: Γ^μ_{μν} V^ν
-            # Vectorized computation using Einstein summation
             christoffel = self.metric.christoffel_symbols
 
-            # Extract Christoffel trace tensor: gamma_trace[μ, ν] = Γ^μ_{μν}
-            # This extracts the diagonal elements along the first two indices
-
-            # Check if we have numerical (NumPy) or symbolic (SymPy) Christoffel symbols
             is_numerical = hasattr(christoffel, "shape") and isinstance(christoffel, np.ndarray)
             is_symbolic = hasattr(christoffel, "__getitem__") and not isinstance(
                 christoffel, np.ndarray
             )
 
             if is_numerical and len(christoffel.shape) >= 3:
-                # Numerical Christoffel symbols (NumPy array) - use vectorized computation
-                # Use advanced indexing to extract Γ^μ_{μν} for all μ,ν
                 mu_indices = np.arange(4)
-                gamma_trace = christoffel[mu_indices, mu_indices, :]  # Shape: (4, 4) → (μ=ν, all ν)
+                gamma_trace = christoffel[mu_indices, mu_indices, :]
 
-                # Vectorized Einstein summation: Σ_μ Σ_ν Γ^μ_{μν} V^ν
                 from .tensor_utils import optimized_einsum
 
                 christoffel_correction = optimized_einsum("ij,...j->...", gamma_trace, vector_field)
-                divergence += christoffel_correction
+                divergence = _accumulate(divergence, christoffel_correction)
 
             elif is_symbolic:
-                # Symbolic Christoffel symbols (SymPy Array) - try vectorized approach first
                 try:
-                    # For symbolic arrays, we can still extract the trace efficiently
-                    # Create gamma_trace matrix: gamma_trace[μ, ν] = Γ^μ_{μν}
                     gamma_trace_list = []
                     for mu in range(4):
                         row = [christoffel[mu, mu, nu] for nu in range(4)]
                         gamma_trace_list.append(row)
 
-                    # Convert to SymPy Array for vectorized operations
                     gamma_trace = sp.Array(gamma_trace_list)
 
-                    # For symbolic computation, we need to handle the contraction manually
-                    # Σ_μ Σ_ν Γ^μ_{μν} V^ν = sum over μ and ν
                     christoffel_correction = 0
                     for mu in range(4):
                         for nu in range(4):
                             christoffel_correction += gamma_trace[mu, nu] * vector_field[..., nu]
 
-                    divergence += christoffel_correction
+                    divergence = _accumulate(divergence, christoffel_correction)
 
                 except (AttributeError, TypeError, IndexError):
-                    # Fall back to element-wise loop if vectorized approach fails
+                    divergence = _ensure_object_dtype(divergence)
                     for mu in range(4):
                         for nu in range(4):
-                            # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
-                            gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
+                            gamma_trace = christoffel[mu, mu, nu]
                             divergence += gamma_trace * vector_field[..., nu]
             else:
-                # Fallback for unknown Christoffel symbol types
                 for mu in range(4):
                     for nu in range(4):
-                        # Γ^μ_{μν} V^ν contribution (summed over μ for divergence)
-                        gamma_trace = christoffel[mu, mu, nu]  # Γ^μ_{μν}
-                        divergence += gamma_trace * vector_field[..., nu]
+                        gamma_trace = christoffel[mu, mu, nu]
+                        term = gamma_trace * vector_field[..., nu]
+                        divergence = _accumulate(divergence, term)
 
             return divergence
         else:
-            # Flat-space approximation - warn for non-Cartesian coordinates
             if self.coordinate_system != "cartesian":
                 warnings.warn(
                     f"Using flat-space divergence approximation for {self.coordinate_system} coordinates. "
@@ -405,11 +423,12 @@ class SpacetimeGrid:
                     stacklevel=2,
                 )
 
-            # Simple flat-space divergence
-            divergence = np.zeros(self.shape)
+            divergence = _init_divergence_array()
             for mu in range(4):
+                if coord_lengths[mu] < 2:
+                    continue
                 grad_component = self.gradient(vector_field[..., mu], axis=mu)
-                divergence += grad_component
+                divergence = _accumulate(divergence, grad_component)
 
             return divergence
 
@@ -429,6 +448,8 @@ class SpacetimeGrid:
         if field.shape != self.shape:
             raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
+        coord_lengths = [len(self.coordinates[name]) for name in self.coordinate_names]
+
         # Use covariant Laplacian if metric is available
         if self.metric is not None:
             # Import here to avoid circular imports
@@ -444,6 +465,8 @@ class SpacetimeGrid:
             # First compute gradient (covariant): ∇_μ φ
             gradient_field = np.zeros((*self.shape, 4))
             for mu in range(4):
+                if coord_lengths[mu] < 2:
+                    continue
                 gradient_field[..., mu] = self.gradient(field, axis=mu)
 
             # Raise index to get contravariant gradient: ∇^μ φ = g^μν ∇_ν φ
@@ -469,11 +492,18 @@ class SpacetimeGrid:
             laplacian = np.zeros_like(field)
             for axis in range(1, 4):  # Exclude time coordinate
                 coord_name = self.coordinate_names[axis]
-                spacing = self.coordinates[coord_name][1] - self.coordinates[coord_name][0]
+                coord_array = self.coordinates[coord_name]
+
+                if len(coord_array) < 2:
+                    continue
+
+                spacing = coord_array[1] - coord_array[0]
 
                 # Second derivative using central differences
+                edge_order = 2 if len(coord_array) >= 3 else 1
+                first_deriv = np.gradient(field, spacing, axis=axis, edge_order=edge_order)
                 second_deriv = np.gradient(
-                    np.gradient(field, spacing, axis=axis), spacing, axis=axis
+                    first_deriv, spacing, axis=axis, edge_order=edge_order
                 )
                 laplacian += second_deriv
 

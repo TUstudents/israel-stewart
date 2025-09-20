@@ -17,6 +17,7 @@ from .performance import monitor_performance
 from .tensor_base import TensorField
 from .tensor_utils import (
     PhysicsError,
+    is_sympy_array,
     validate_tensor_dimensions,
 )
 
@@ -115,8 +116,28 @@ class FourVector(TensorField):
         # Compute dot product
         if isinstance(self.components, np.ndarray):
             return np.dot(self.components, other_converted.components)
-        else:
-            return self.components.dot(other_converted.components)
+        if is_sympy_array(self.components):
+            other_components = other_converted.components
+            if is_sympy_array(other_components):
+                if other_components.shape == (4,):
+                    other_array = other_components
+                elif other_components.shape == (4, 1):
+                    other_array = sp.Array([other_components[i, 0] for i in range(4)])
+                else:
+                    other_array = sp.Array(other_components)
+            elif isinstance(other_components, sp.Matrix):
+                rows, cols = other_components.shape
+                if cols == 1 and rows == 4:
+                    other_array = sp.Array([other_components[i, 0] for i in range(4)])
+                else:
+                    other_array = sp.Array(other_components)
+            elif isinstance(other_components, np.ndarray):
+                other_array = sp.Array(other_components.reshape(-1).tolist())
+            else:
+                other_array = sp.Array(other_components)
+            return sum(self.components[i] * other_array[i] for i in range(4))
+
+        return self.components.dot(other_converted.components)
 
     def magnitude_squared(self) -> float | sp.Expr:
         """

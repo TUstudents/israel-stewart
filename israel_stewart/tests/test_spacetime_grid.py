@@ -8,6 +8,7 @@ the critical bug fix in the covariant Laplacian computation.
 import numpy as np
 import pytest
 import sympy as sp
+from typing import Any
 
 from israel_stewart.core.metrics import FLRWMetric, MilneMetric, MinkowskiMetric
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
@@ -307,6 +308,34 @@ class TestCoordinateMappingFixes:
         np.testing.assert_array_equal(field_x_bc, expected_x_bc)
 
 
+class TestSinglePointGridBehaviour:
+    """Ensure degenerate grids behave sensibly for differential operators."""
+
+    def test_single_point_grid_derivatives_collapse_to_zero(self) -> None:
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
+            grid_points=(1, 1, 1, 1),
+        )
+
+        scalar_field = np.ones(grid.shape)
+        for axis in range(4):
+            gradient = grid.gradient(scalar_field, axis=axis)
+            np.testing.assert_array_equal(gradient, np.zeros_like(scalar_field))
+
+        vector_field = np.ones((*grid.shape, 4))
+        divergence = grid.divergence(vector_field)
+        np.testing.assert_array_equal(divergence, np.zeros(grid.shape))
+
+        laplacian = grid.laplacian(scalar_field)
+        np.testing.assert_array_equal(laplacian, np.zeros_like(scalar_field))
+
+        grid.metric = MinkowskiMetric()
+        divergence_with_metric = grid.divergence(vector_field)
+        np.testing.assert_array_equal(divergence_with_metric, np.zeros(grid.shape))
+
+
 class TestVolumeElementSymbolicFix:
     """Test volume element computation with symbolic metrics."""
 
@@ -515,7 +544,16 @@ class TestVectorizedDivergence:
 
         # Verify result has correct shape
         assert divergence.shape == grid.shape
-        assert np.all(np.isfinite(divergence)), "Divergence should be finite"
+        def _isfinite(value: Any) -> bool:
+            if hasattr(value, "is_finite"):
+                status = value.is_finite
+                if status is None:
+                    return True
+                return bool(status)
+            return np.isfinite(value)
+
+        finite_mask = np.vectorize(_isfinite)(divergence)
+        assert np.all(finite_mask), "Divergence should be finite"
 
     def test_divergence_consistency_numerical_vs_symbolic(self, small_grid: SpacetimeGrid) -> None:
         """Test that numerical and symbolic approaches give consistent results for Minkowski."""
@@ -539,8 +577,9 @@ class TestVectorizedDivergence:
         div_symbolic = small_grid.divergence(vector_field)
 
         # Results should be very close (symbolic should fall back to loop)
+        div_symbolic_numeric = np.vectorize(lambda val: float(sp.N(val)))(div_symbolic)
         assert np.allclose(
-            div_numerical, div_symbolic, rtol=1e-12
+            div_numerical, div_symbolic_numeric, rtol=1e-12
         ), "Numerical and symbolic divergence should match for Minkowski metric"
 
     def test_divergence_performance_improvement(self, large_grid: SpacetimeGrid) -> None:

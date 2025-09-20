@@ -70,6 +70,46 @@ def ensure_compatible_types(obj1: Any, obj2: Any) -> bool:
     )
 
 
+def normalize_sympy_shape(obj: Any) -> Any:
+    """Normalize SymPy tensors to canonical scalar/vector/matrix forms.
+
+    Scalars become bare SymPy expressions, rank-1 outputs are converted to
+    1D ``numpy.ndarray`` instances (dtype=object) for compatibility with the
+    numerical code paths, and rank-2 tensors remain ``sympy.Matrix`` objects.
+    Higher-rank arrays are preserved as SymPy ``Array`` instances.
+    """
+    if is_sympy_matrix(obj):
+        rows, cols = obj.shape
+        if rows == 1 and cols == 1:
+            return obj[0, 0]
+        if cols == 1 and rows > 1:
+            return np.array([obj[i, 0] for i in range(rows)], dtype=object)
+        if rows == 1 and cols > 1:
+            return np.array([obj[0, j] for j in range(cols)], dtype=object)
+        return obj
+
+    if is_sympy_array(obj):
+        shape = obj.shape
+        if shape == ():
+            return obj[()]
+        if shape == (1,):
+            return obj[0]
+        if len(shape) == 2:
+            rows, cols = shape
+            if rows == 1 and cols == 1:
+                return obj[0, 0]
+            if rows == 1:
+                return np.array([obj[0, j] for j in range(cols)], dtype=object)
+            if cols == 1:
+                return np.array([obj[i, 0] for i in range(rows)], dtype=object)
+            return sp.Matrix(obj.tolist())
+        if len(shape) == 1:
+            return np.array([obj[i] for i in range(shape[0])], dtype=object)
+        return obj
+
+    return obj
+
+
 def convert_to_sympy(components: np.ndarray | sp.Matrix | Any) -> sp.Matrix:
     """Convert components to SymPy Matrix format."""
     if is_sympy_matrix(components):

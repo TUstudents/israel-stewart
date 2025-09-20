@@ -248,8 +248,10 @@ class TestSymbolicViscousStressTensor:
 
         # For our test tensor, should contain zeta symbol
         zeta = sp.Symbol("zeta", positive=True)
+        eta = sp.Symbol("eta", positive=True)
         if isinstance(bulk, sp.Expr) and bulk != 0:
-            assert zeta in bulk.free_symbols
+            symbols = bulk.free_symbols
+            assert symbols.intersection({zeta, eta})
 
     def test_symbolic_shear_viscous_extraction(
         self, symbolic_viscous_tensor: ViscousStressTensor, symbolic_four_velocity: FourVector

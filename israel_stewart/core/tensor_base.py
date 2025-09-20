@@ -8,7 +8,7 @@ index management and core tensor operations.
 import warnings
 
 # Forward reference for metrics
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Any
 
 import numpy as np
 import sympy as sp
@@ -19,7 +19,9 @@ from .performance import monitor_performance
 from .tensor_utils import (
     convert_to_sympy,
     is_numpy_array,
+    is_sympy_array,
     is_sympy_matrix,
+    normalize_sympy_shape,
     optimized_einsum,
     validate_einsum_string,
     validate_index_compatibility,
@@ -106,6 +108,12 @@ class TensorField:
                     raise ValueError(
                         f"SymPy tensor dimensions must be 4 for spacetime, got shape {shape}"
                     )
+        elif is_sympy_array(components):
+            shape = components.shape
+            if any(dim != 4 for dim in shape[-len(shape):]):
+                raise ValueError(
+                    f"SymPy tensor dimensions must be 4 for spacetime, got shape {shape}"
+                )
         else:
             raise TypeError(
                 f"Components must be numpy array or sympy matrix, got {type(components)}"
@@ -165,6 +173,19 @@ class TensorField:
                 raise ValueError(
                     f"SymPy tensor rank mismatch: indices specify rank {expected_rank}, "
                     f"components have rank {actual_rank}"
+                )
+        elif is_sympy_array(self.components):
+            shape = self.components.shape
+            actual_rank = len(shape)
+            if actual_rank != expected_rank:
+                raise ValueError(
+                    f"SymPy tensor rank mismatch: indices specify rank {expected_rank}, "
+                    f"components have rank {actual_rank}"
+                )
+            tensor_index_dims = shape[-expected_rank:] if expected_rank > 0 else ()
+            if any(dim != 4 for dim in tensor_index_dims):
+                raise ValueError(
+                    f"SymPy tensor dimensions must be 4 for spacetime, got {tensor_index_dims}"
                 )
         else:
             raise TypeError(f"Unsupported component type: {type(self.components)}")
@@ -527,23 +548,27 @@ class TensorField:
             ) from None
 
         # Convert components to SymPy if needed
-        self_comp = convert_to_sympy(self.components)
-        other_comp = convert_to_sympy(other.components)
+        raw_self = self.components
+        raw_other = other.components
 
-        # Convert to SymPy Arrays for general tensor operations
-        if hasattr(self_comp, "rank") and self_comp.rank() > 2:
-            # Already a SymPy Array
-            self_array = self_comp
-        else:
-            # Convert Matrix/vector to Array
-            self_array = sp_array.Array(self_comp)
+        self_comp = raw_self if is_sympy_array(raw_self) else convert_to_sympy(raw_self)
+        other_comp = raw_other if is_sympy_array(raw_other) else convert_to_sympy(raw_other)
 
-        if hasattr(other_comp, "rank") and other_comp.rank() > 2:
-            # Already a SymPy Array
-            other_array = other_comp
-        else:
-            # Convert Matrix/vector to Array
-            other_array = sp_array.Array(other_comp)
+        # Helper to convert matrices/vectors to 1D/2D SymPy arrays without singleton axes
+        def _to_sympy_array(comp: sp.Matrix | sp.Array | Any) -> "sp_array.Array":
+            if isinstance(comp, sp_array.NDimArray):
+                return comp
+            if isinstance(comp, sp.Matrix):
+                rows, cols = comp.shape
+                if cols == 1:
+                    return sp_array.Array([comp[i, 0] for i in range(rows)])
+                if rows == 1:
+                    return sp_array.Array([comp[0, j] for j in range(cols)])
+                return sp_array.Array(comp)
+            return sp_array.Array(comp)
+
+        self_array = _to_sympy_array(self_comp)
+        other_array = _to_sympy_array(other_comp)
 
         # Perform tensor contraction using SymPy Array operations
         # tensorproduct creates the full outer product, then tensorcontraction contracts specified axes
@@ -553,16 +578,53 @@ class TensorField:
         # Get the shapes to determine the correct axis mapping
         self_shape = self_array.shape
         other_shape = other_array.shape
+        self_rank = len(self_shape)
+        other_rank = len(other_shape)
 
         # The axes to contract: self_index from first tensor, other_index from second tensor
         # In the combined tensor, the second tensor's indices start after the first tensor's indices
         combined_self_axis = self_index
         combined_other_axis = len(self_shape) + other_index
 
-        result = sp_array.tensorcontraction(
-            sp_array.tensorproduct(self_array, other_array),
-            (combined_self_axis, combined_other_axis),
-        )
+        try:
+            result = sp_array.tensorcontraction(
+                sp_array.tensorproduct(self_array, other_array),
+                ((combined_self_axis, combined_other_axis),),
+            )
+        except Exception:
+            alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            if self_rank + other_rank + 1 > len(alphabet):
+                raise NotImplementedError("Tensor rank exceeds einsum fallback capacity") from None
+
+            self_letters = list(alphabet[: self_rank])
+            other_letters = list(alphabet[self_rank : self_rank + other_rank])
+            shared_letter = alphabet[self_rank + other_rank]
+
+            self_letters[self_index] = shared_letter
+            other_letters[other_index] = shared_letter
+
+            result_letters = [
+                letter for idx, letter in enumerate(self_letters) if idx != self_index
+            ] + [letter for idx, letter in enumerate(other_letters) if idx != other_index]
+
+            einsum_str = (
+                f"{''.join(self_letters)},{''.join(other_letters)}->" f"{''.join(result_letters)}"
+            )
+
+            self_np = np.array(self_array.tolist(), dtype=object)
+            other_np = np.array(other_array.tolist(), dtype=object)
+            result_np = np.einsum(einsum_str, self_np, other_np, dtype=object)
+
+            if not hasattr(result_np, "shape"):
+                return sp.sympify(result_np)
+
+            if result_np.shape == ():
+                return sp.sympify(result_np.item())
+            if result_np.ndim == 1:
+                return sp.Matrix(result_np.tolist())
+            if result_np.ndim == 2:
+                return sp.Matrix(result_np.tolist())
+            return sp.Array(result_np.tolist())
 
         # Convert result back to appropriate SymPy type based on shape and rank
         if hasattr(result, "shape"):
@@ -580,6 +642,8 @@ class TensorField:
                         return result
                 else:
                     return result
+            elif len(shape) == 2 and shape == (1, 1):
+                return result[0, 0]
             elif len(shape) == 1:
                 # Vector result - convert to Matrix for compatibility
                 return sp.Matrix([result[i] for i in range(shape[0])])
@@ -638,9 +702,15 @@ class TensorField:
         tensor_comp = convert_to_sympy(self.components)
         metric_comp = convert_to_sympy(metric_tensor)
 
-        # Convert to SymPy Arrays
-        if hasattr(tensor_comp, "rank") and tensor_comp.rank() > 2:
+        # Convert to SymPy Arrays, normalizing vectors to 1D
+        if is_sympy_array(tensor_comp):
             tensor_array = tensor_comp
+        elif is_sympy_matrix(tensor_comp):
+            rows, cols = tensor_comp.shape
+            if cols == 1 and rows > 1:
+                tensor_array = sp_array.Array([tensor_comp[i, 0] for i in range(rows)])
+            else:
+                tensor_array = sp_array.Array(tensor_comp)
         else:
             tensor_array = sp_array.Array(tensor_comp)
 
@@ -648,26 +718,13 @@ class TensorField:
 
         # Perform metric contraction: g^μν T_...ν... (or g_μν T^...ν...)
         # The metric contracts with the specified index position
-        axes = ([1], [index_pos])  # Metric's second index contracts with tensor's index_pos
         result = sp_array.tensorcontraction(
-            sp_array.tensorproduct(metric_array, tensor_array), axes
+            sp_array.tensorproduct(metric_array, tensor_array),
+            (1, 2 + index_pos),
         )
 
         # Convert result back to appropriate SymPy type
-        if hasattr(result, "rank"):
-            result_rank = result.rank()
-            if result_rank == 1:
-                # Vector result
-                return sp.Matrix([result[i] for i in range(result.shape[0])])
-            elif result_rank == 2:
-                # Matrix result
-                rows, cols = result.shape
-                return sp.Matrix([[result[i, j] for j in range(cols)] for i in range(rows)])
-            else:
-                # Higher rank - return as Array
-                return result
-        else:
-            return result
+        return normalize_sympy_shape(result)
 
     def _einsum_metric_contraction(
         self, metric_tensor: np.ndarray | sp.Matrix, index_pos: int, is_raise: bool = True
@@ -774,27 +831,31 @@ class TensorField:
 
         elif self.rank == 2 and other.rank == 1:  # Matrix-vector contraction
             if self_index == 0:  # Contract first index of matrix with vector
-                return sp.Matrix(
+                manual_result = sp.Matrix(
                     [sum(self_comp[i, j] * other_comp[i] for i in range(4)) for j in range(4)]
                 )
+                return normalize_sympy_shape(manual_result)
             elif self_index == 1:  # Contract second index of matrix with vector
-                return sp.Matrix(
+                manual_result = sp.Matrix(
                     [sum(self_comp[i, j] * other_comp[j] for j in range(4)) for i in range(4)]
                 )
+                return normalize_sympy_shape(manual_result)
 
         elif self.rank == 1 and other.rank == 2:  # Vector-matrix contraction
             if other_index == 0:  # Contract vector with first index of matrix
-                return sp.Matrix(
+                manual_result = sp.Matrix(
                     [sum(self_comp[i] * other_comp[i, j] for i in range(4)) for j in range(4)]
                 )
+                return normalize_sympy_shape(manual_result)
             elif other_index == 1:  # Contract vector with second index of matrix
-                return sp.Matrix(
+                manual_result = sp.Matrix(
                     [sum(self_comp[i] * other_comp[j, i] for i in range(4)) for j in range(4)]
                 )
+                return normalize_sympy_shape(manual_result)
 
         elif self.rank == 2 and other.rank == 2:  # Matrix-matrix contraction
             if self_index == 1 and other_index == 0:  # Standard matrix multiplication
-                return self_comp * other_comp
+                return normalize_sympy_shape(self_comp * other_comp)
             # For other matrix-matrix contractions, the unified approach is more reliable
 
         # For all other cases, SymPy Array support is required

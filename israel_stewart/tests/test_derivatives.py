@@ -166,6 +166,26 @@ class TestScalarGradientFix:
         gradient = cov_deriv.scalar_gradient(scalar_field, coord_arrays)
         assert isinstance(gradient, FourVector)
 
+    def test_scalar_gradient_constant_object_array(self, symbolic_metric):
+        """Constant object-dtype arrays should return a single four-vector of zeros."""
+        cov_deriv = CovariantDerivative(symbolic_metric)
+        scalar_field = np.full((2, 2, 2, 2), sp.Integer(5), dtype=object)
+        coord_arrays = [np.linspace(0, 1, 2) for _ in range(4)]
+
+        gradient = cov_deriv.scalar_gradient(scalar_field, coord_arrays)
+        assert isinstance(gradient, FourVector)
+
+        components = gradient.components
+        if hasattr(components, "shape"):
+            assert components.shape == (4,)
+        else:
+            assert len(components) == 4
+
+        zero_expr = sp.Integer(0)
+        if hasattr(components, "__iter__"):
+            for comp in components:
+                assert comp == zero_expr
+
 
 class TestVectorDivergenceFix:
     """Test edge_order=2 failure fix on minimal grids in vector_divergence method."""
@@ -183,6 +203,17 @@ class TestVectorDivergenceFix:
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
 
+        # Inject synthetic Christoffel symbols to ensure the optimized path differs
+        gamma = np.full((4, 4, 4), 0.5)
+        cov_deriv.__dict__["christoffel_symbols"] = gamma
+
+        def fake_vectorized_christoffel(
+            tensor_comp: np.ndarray, _: np.ndarray, __: list[tuple[bool, str]]
+        ) -> np.ndarray:
+            return np.full(tensor_comp.shape + (4,), 0.123)
+
+        cov_deriv._vectorized_christoffel_contractions = fake_vectorized_christoffel  # type: ignore[method-assign]
+
         # Create simple vector field with shape matching grid
         vector_components = np.zeros(minimal_grid.shape + (4,))
         vector_components[..., 0] = 1.0  # Constant time component
@@ -197,8 +228,14 @@ class TestVectorDivergenceFix:
         try:
             divergence = cov_deriv.vector_divergence(vector_field, coord_arrays)
             assert divergence.shape == minimal_grid.shape
-            # For constant vector in flat space, divergence should be zero
-            assert np.allclose(divergence, 0.0, atol=1e-10)
+            gamma_trace = np.zeros(4)
+            for nu in range(4):
+                gamma_trace[nu] = sum(gamma[mu, mu, nu] for mu in range(4))
+
+            expected = np.zeros(minimal_grid.shape)
+            for nu in range(4):
+                expected += gamma_trace[nu] * vector_components[..., nu]
+            np.testing.assert_allclose(divergence, expected, atol=1e-12)
         except ValueError as e:
             if "edge_order" in str(e):
                 pytest.fail(f"edge_order error not fixed: {e}")
@@ -292,16 +329,13 @@ class TestParallelProjectorFix:
         """Minkowski metric with mostly minus signature (+,-,-,-)."""
         return MinkowskiMetric(signature="mostly_minus")
 
-    def test_parallel_projection_orthogonality_mostly_plus(self, mostly_plus_metric):
+    @pytest.mark.parametrize("use_covariant_velocity", [False, True])
+    def test_parallel_projection_orthogonality_mostly_plus(
+        self, mostly_plus_metric, use_covariant_velocity: bool
+    ) -> None:
         """Test parallel projection orthogonality for mostly plus signature."""
-        # Create normalized timelike four-velocity
-        u_components = np.array([1.0, 0.0, 0.0, 0.0])  # Rest frame
-
-        # Normalize: u^μ u_μ = -c² for mostly plus
-        u_norm_squared = mostly_plus_metric.components[0, 0]  # g_00 = -1
-        u_components[0] = np.sqrt(-u_norm_squared)  # u^0 = 1 for rest frame
-
-        u = FourVector(u_components, True, mostly_plus_metric)
+        base_u = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_plus_metric)
+        u = base_u.lower_index(0) if use_covariant_velocity else base_u
         projector = ProjectionOperator(u, mostly_plus_metric)
 
         # Create test vector
@@ -316,21 +350,17 @@ class TestParallelProjectorFix:
         assert abs(dot_product) < 1e-14, f"Parallel and perpendicular not orthogonal: {dot_product}"
 
         # Check decomposition: v = v_∥ + v_⊥
-        reconstructed = FourVector(
-            v_parallel.components + v_perpendicular.components, True, mostly_plus_metric
-        )
+        reconstructed_components = v_parallel.components + v_perpendicular.components
+        reconstructed = FourVector(reconstructed_components, True, mostly_plus_metric)
         np.testing.assert_allclose(reconstructed.components, test_vector.components, rtol=1e-14)
 
-    def test_parallel_projection_orthogonality_mostly_minus(self, mostly_minus_metric):
+    @pytest.mark.parametrize("use_covariant_velocity", [False, True])
+    def test_parallel_projection_orthogonality_mostly_minus(
+        self, mostly_minus_metric, use_covariant_velocity: bool
+    ) -> None:
         """Test parallel projection orthogonality for mostly minus signature."""
-        # Create normalized timelike four-velocity
-        u_components = np.array([1.0, 0.0, 0.0, 0.0])  # Rest frame
-
-        # Normalize: u^μ u_μ = +c² for mostly minus
-        u_norm_squared = mostly_minus_metric.components[0, 0]  # g_00 = +1
-        u_components[0] = np.sqrt(u_norm_squared)  # u^0 = 1 for rest frame
-
-        u = FourVector(u_components, True, mostly_minus_metric)
+        base_u = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_minus_metric)
+        u = base_u.lower_index(0) if use_covariant_velocity else base_u
         projector = ProjectionOperator(u, mostly_minus_metric)
 
         # Create test vector
@@ -345,73 +375,73 @@ class TestParallelProjectorFix:
         assert abs(dot_product) < 1e-14, f"Parallel and perpendicular not orthogonal: {dot_product}"
 
         # Check decomposition: v = v_∥ + v_⊥
-        reconstructed = FourVector(
-            v_parallel.components + v_perpendicular.components, True, mostly_minus_metric
-        )
+        reconstructed_components = v_parallel.components + v_perpendicular.components
+        reconstructed = FourVector(reconstructed_components, True, mostly_minus_metric)
         np.testing.assert_allclose(reconstructed.components, test_vector.components, rtol=1e-14)
 
     def test_parallel_projection_sign_convention(self, mostly_plus_metric, mostly_minus_metric):
         """Test that parallel projection gives correct signs for different metrics."""
-        # Same four-velocity in both metrics
-        u_plus = FourVector([1.0, 0.0, 0.0, 0.0], True, mostly_plus_metric)
-        u_minus = FourVector([1.0, 0.0, 0.0, 0.0], True, mostly_minus_metric)
-
-        projector_plus = ProjectionOperator(u_plus, mostly_plus_metric)
-        projector_minus = ProjectionOperator(u_minus, mostly_minus_metric)
-
-        # Same test vector
         test_plus = FourVector([1.0, 2.0, 3.0, 4.0], True, mostly_plus_metric)
         test_minus = FourVector([1.0, 2.0, 3.0, 4.0], True, mostly_minus_metric)
 
-        # Project parallel
-        v_parallel_plus = projector_plus.project_vector_parallel(test_plus)
-        v_parallel_minus = projector_minus.project_vector_parallel(test_minus)
+        for use_covariant in (False, True):
+            base_plus = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_plus_metric)
+            base_minus = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_minus_metric)
 
-        # Verify that the formulation is signature-independent
-        # The key test: both should satisfy v_∥ = (u · v / u · u) u
+            u_plus = base_plus.lower_index(0) if use_covariant else base_plus
+            u_minus = base_minus.lower_index(0) if use_covariant else base_minus
 
-        # For mostly plus: u · u = -1, u · v = -1 (since g_00 = -1)
-        u_dot_u_plus = u_plus.dot(u_plus)
-        u_dot_v_plus = u_plus.dot(test_plus)
-        expected_coefficient_plus = u_dot_v_plus / u_dot_u_plus
+            projector_plus = ProjectionOperator(u_plus, mostly_plus_metric)
+            projector_minus = ProjectionOperator(u_minus, mostly_minus_metric)
 
-        # For mostly minus: u · u = +1, u · v = +1 (since g_00 = +1)
-        u_dot_u_minus = u_minus.dot(u_minus)
-        u_dot_v_minus = u_minus.dot(test_minus)
-        expected_coefficient_minus = u_dot_v_minus / u_dot_u_minus
+            v_parallel_plus = projector_plus.project_vector_parallel(test_plus)
+            v_parallel_minus = projector_minus.project_vector_parallel(test_minus)
 
-        # Check that coefficients have correct signs
-        assert np.sign(expected_coefficient_plus) == np.sign(u_dot_v_plus / u_dot_u_plus)
-        assert np.sign(expected_coefficient_minus) == np.sign(u_dot_v_minus / u_dot_u_minus)
+            u_dot_u_plus = u_plus.dot(u_plus)
+            u_dot_v_plus = u_plus.dot(test_plus)
+            expected_coefficient_plus = u_dot_v_plus / u_dot_u_plus
 
-        # Both projections should be proportional to u with correct coefficients
-        np.testing.assert_allclose(
-            v_parallel_plus.components, expected_coefficient_plus * u_plus.components, rtol=1e-14
-        )
-        np.testing.assert_allclose(
-            v_parallel_minus.components, expected_coefficient_minus * u_minus.components, rtol=1e-14
-        )
+            u_dot_u_minus = u_minus.dot(u_minus)
+            u_dot_v_minus = u_minus.dot(test_minus)
+            expected_coefficient_minus = u_dot_v_minus / u_dot_u_minus
+
+            assert np.sign(expected_coefficient_plus) == np.sign(u_dot_v_plus / u_dot_u_plus)
+            assert np.sign(expected_coefficient_minus) == np.sign(u_dot_v_minus / u_dot_u_minus)
+
+            expected_plus_contra = expected_coefficient_plus * projector_plus.u_contra.components
+            expected_minus_contra = expected_coefficient_minus * projector_minus.u_contra.components
+
+            actual_plus_contra = v_parallel_plus.raise_index(0).components
+            actual_minus_contra = v_parallel_minus.raise_index(0).components
+
+            np.testing.assert_allclose(actual_plus_contra, expected_plus_contra, rtol=1e-14)
+            np.testing.assert_allclose(actual_minus_contra, expected_minus_contra, rtol=1e-14)
 
     def test_perpendicular_projector_consistency(self, mostly_plus_metric, mostly_minus_metric):
         """Test that perpendicular projector is consistent across signatures."""
-        # Test vectors
-        u_plus = FourVector([1.0, 0.0, 0.0, 0.0], True, mostly_plus_metric)
-        u_minus = FourVector([1.0, 0.0, 0.0, 0.0], True, mostly_minus_metric)
+        for use_covariant in (False, True):
+            base_plus = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_plus_metric)
+            base_minus = FourVector([1.0, 0.0, 0.0, 0.0], False, mostly_minus_metric)
 
-        projector_plus = ProjectionOperator(u_plus, mostly_plus_metric)
-        projector_minus = ProjectionOperator(u_minus, mostly_minus_metric)
+            u_plus = base_plus.lower_index(0) if use_covariant else base_plus
+            u_minus = base_minus.lower_index(0) if use_covariant else base_minus
 
-        # Get perpendicular projectors
-        delta_plus = projector_plus.perpendicular_projector()
-        delta_minus = projector_minus.perpendicular_projector()
+            projector_plus = ProjectionOperator(u_plus, mostly_plus_metric)
+            projector_minus = ProjectionOperator(u_minus, mostly_minus_metric)
 
-        # Both should satisfy Δ^μν u_ν = 0 (perpendicular to u)
-        # Contract with u: Δ^μν u_ν
-        contraction_plus = np.einsum("ij,j->i", delta_plus.components, u_plus.lower().components)
-        contraction_minus = np.einsum("ij,j->i", delta_minus.components, u_minus.lower().components)
+            delta_plus = projector_plus.perpendicular_projector()
+            delta_minus = projector_minus.perpendicular_projector()
 
-        np.testing.assert_allclose(contraction_plus, 0.0, atol=1e-14)
-        np.testing.assert_allclose(contraction_minus, 0.0, atol=1e-14)
+            u_plus_cov = u_plus if u_plus.indices[0][0] else u_plus.lower_index(0)
+            u_minus_cov = u_minus if u_minus.indices[0][0] else u_minus.lower_index(0)
+
+            contraction_plus = np.einsum("ij,j->i", delta_plus.components, u_plus_cov.components)
+            contraction_minus = np.einsum(
+                "ij,j->i", delta_minus.components, u_minus_cov.components
+            )
+
+            np.testing.assert_allclose(contraction_plus, 0.0, atol=1e-14)
+            np.testing.assert_allclose(contraction_minus, 0.0, atol=1e-14)
 
 
 class TestIntegrationAndRegression:
@@ -455,17 +485,21 @@ class TestIntegrationAndRegression:
         if len(interior.flatten()) > 0:
             np.testing.assert_allclose(interior, 3.0, rtol=0.1)
 
-        # Test projection operators (Fix 3)
-        u = FourVector([1.0, 0.1, 0.1, 0.1], True, metric)
-        projector = ProjectionOperator(u, metric)
+        # Test projection operators (Fix 3) across metric signatures and velocity forms
+        for signature in ("mostly_plus", "mostly_minus"):
+            metric_proj = MinkowskiMetric(signature=signature)
+            base_velocity = FourVector([1.0, 0.1, 0.1, 0.1], False, metric_proj)
 
-        test_vector = FourVector([1.0, 2.0, 3.0, 4.0], True, metric)
-        v_parallel = projector.project_vector_parallel(test_vector)
-        v_perpendicular = projector.project_vector_perpendicular(test_vector)
+            for use_covariant in (False, True):
+                velocity = base_velocity.lower_index(0) if use_covariant else base_velocity
+                projector = ProjectionOperator(velocity, metric_proj)
 
-        # Orthogonality check
-        dot_product = v_parallel.dot(v_perpendicular)
-        assert abs(dot_product) < 1e-12
+                test_vector = FourVector([1.0, 2.0, 3.0, 4.0], True, metric_proj)
+                v_parallel = projector.project_vector_parallel(test_vector)
+                v_perpendicular = projector.project_vector_perpendicular(test_vector)
+
+                dot_product = v_parallel.dot(v_perpendicular)
+                assert abs(dot_product) < 1e-12
 
     def test_backwards_compatibility(self):
         """Ensure fixes don't break existing functionality."""
@@ -661,9 +695,12 @@ class TestOptimizedCovariantDerivative:
         assert result.rank == 3
 
         # Verify that both covariant and contravariant corrections were applied
-        # by checking the result is not just partial derivatives
         partial_only = cov_deriv._compute_all_partial_derivatives(tensor_components, coordinates)
-        assert not np.allclose(result.components, partial_only, rtol=1e-10)
+        corrections = cov_deriv._vectorized_christoffel_contractions(
+            tensor_components, cov_deriv.christoffel_symbols, mixed_tensor.indices
+        )
+
+        np.testing.assert_allclose(result.components, partial_only + corrections)
 
     def test_vectorized_christoffel_contractions(self) -> None:
         """Test the vectorized Christoffel contraction methods directly."""

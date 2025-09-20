@@ -5,10 +5,11 @@ This module tests the spacetime grid implementation with focus on
 the critical bug fix in the covariant Laplacian computation.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 import sympy as sp
-from typing import Any
 
 from israel_stewart.core.metrics import FLRWMetric, MilneMetric, MinkowskiMetric
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
@@ -544,6 +545,7 @@ class TestVectorizedDivergence:
 
         # Verify result has correct shape
         assert divergence.shape == grid.shape
+
         def _isfinite(value: Any) -> bool:
             if hasattr(value, "is_finite"):
                 status = value.is_finite

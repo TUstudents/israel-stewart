@@ -123,26 +123,26 @@ class CovariantDerivative:
                     zero_components = [sp.Integer(0)] * 4
                 else:
                     dtype = getattr(scalar_field, "dtype", None)
-                    zero_components = np.zeros(4, dtype=dtype if dtype is not None else float)
+                    zero_components = np.zeros(4, dtype=dtype if dtype is not None else float)  # type: ignore[assignment]
                 return FourVector(zero_components, True, self.metric)
 
             gradient_arrays: list[np.ndarray] = []
             for mu in range(4):
-                if scalar_field.ndim <= mu:
+                if scalar_field.ndim <= mu:  # type: ignore[union-attr]
                     gradient_arrays.append(np.zeros_like(scalar_field))
                     continue
 
-                axis_size = scalar_field.shape[mu]
+                axis_size = scalar_field.shape[mu]  # type: ignore[union-attr,index]
                 if axis_size < 2:
                     gradient_arrays.append(np.zeros_like(scalar_field))
                     continue
 
                 edge_order = 2 if axis_size >= 3 else 1
                 gradient_arrays.append(
-                    np.gradient(scalar_field, coord_arrays[mu], axis=mu, edge_order=edge_order)
+                    np.gradient(scalar_field, coord_arrays[mu], axis=mu, edge_order=edge_order)  # type: ignore[arg-type]
                 )
 
-            gradient_components = np.stack(gradient_arrays, axis=-1)
+            gradient_components = np.stack(gradient_arrays, axis=-1)  # type: ignore[assignment]
             return FourVector(gradient_components, True, self.metric)
 
     @monitor_performance("vector_divergence")
@@ -168,11 +168,11 @@ class CovariantDerivative:
             # Only compute diagonal terms we need for the trace
             # Check coordinate array size to determine appropriate edge_order
             coord_array = coordinates[mu]
-            if hasattr(coord_array, 'ndim') and hasattr(coord_array, 'shape'):
+            if hasattr(coord_array, "ndim") and hasattr(coord_array, "shape"):
                 grid_size_mu = len(coord_array) if coord_array.ndim == 1 else coord_array.shape[mu]
             else:
                 # Fallback for non-numpy array coordinates
-                grid_size_mu = len(coord_array) if hasattr(coord_array, '__len__') else 1
+                grid_size_mu = len(coord_array) if hasattr(coord_array, "__len__") else 1
 
             if grid_size_mu < 2:
                 # Single point grids: derivative is undefined, contributes zero
@@ -677,7 +677,7 @@ class CovariantDerivative:
             )
         else:
             # Take gradient along grid axis coord_index with respect to coordinate coord_index
-            result: np.ndarray = np.gradient(
+            result = np.gradient(
                 tensor_components, coordinates[coord_index], axis=coord_index, edge_order=1
             )
         return result
@@ -1002,7 +1002,7 @@ class ProjectionOperator:
             else:
                 parallel = coeff_array[..., np.newaxis] * u_contra
             result = FourVector(parallel, False, self.metric)
-            return result.lower_index(0) if vector.indices[0][0] else result
+            return result.lower_index(0) if vector.indices[0][0] else result  # type: ignore[no-any-return]  # type: ignore[no-any-return]
 
         # SymPy path
         u_cov_vec = self._to_sympy_column(self.u_cov.components)
@@ -1017,7 +1017,7 @@ class ProjectionOperator:
 
         parallel = (u_dot_v / u_dot_u) * u_contra_vec
         result = FourVector(parallel, False, self.metric)
-        return result.lower_index(0) if vector.indices[0][0] else result
+        return result.lower_index(0) if vector.indices[0][0] else result  # type: ignore[no-any-return]
 
     @monitor_performance("project_vector_perpendicular")
     def project_vector_perpendicular(self, vector: FourVector) -> FourVector:
@@ -1039,12 +1039,12 @@ class ProjectionOperator:
                 "...mn,...n->...m", delta.components, vector_cov.components
             )
             result = FourVector(perp_components, False, self.metric)
-            return result.lower_index(0) if vector.indices[0][0] else result
+            return result.lower_index(0) if vector.indices[0][0] else result  # type: ignore[no-any-return]  # type: ignore[no-any-return]
 
         # SymPy path
         perp_components = delta.components * self._to_sympy_column(vector_cov.components)
         result = FourVector(perp_components, False, self.metric)
-        return result.lower_index(0) if vector.indices[0][0] else result
+        return result.lower_index(0) if vector.indices[0][0] else result  # type: ignore[no-any-return]
 
     def project_tensor_spatial(self, tensor: TensorField) -> TensorField:
         """

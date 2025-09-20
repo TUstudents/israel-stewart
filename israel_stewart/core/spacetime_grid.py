@@ -313,7 +313,7 @@ class SpacetimeGrid:
                 )
         edge_order = 2 if len(coord_array) >= 3 else 1
 
-        return np.gradient(field, spacing, axis=axis, edge_order=edge_order)  # type: ignore[no-any-return]
+        return np.gradient(field, spacing, axis=axis, edge_order=edge_order)  # type: ignore[no-any-return,arg-type]
 
     def divergence(self, vector_field: np.ndarray) -> np.ndarray:
         """
@@ -350,7 +350,7 @@ class SpacetimeGrid:
             if not isinstance(result, np.ndarray):
                 result = np.array(result, dtype=object)
             result_dtype = getattr(result, "dtype", None)
-            if result_dtype == object and array.dtype != object:
+            if result_dtype is object and array.dtype is not object:
                 array = _ensure_object_dtype(array)
             array += result
             return array
@@ -501,9 +501,12 @@ class SpacetimeGrid:
 
                 # Second derivative using central differences
                 edge_order = 2 if len(coord_array) >= 3 else 1
-                first_deriv = np.gradient(field, spacing, axis=axis, edge_order=edge_order)
+                first_deriv = np.gradient(field, spacing, axis=axis, edge_order=edge_order)  # type: ignore[arg-type]
                 second_deriv = np.gradient(
-                    first_deriv, spacing, axis=axis, edge_order=edge_order
+                    first_deriv,
+                    spacing,
+                    axis=axis,
+                    edge_order=edge_order,  # type: ignore[arg-type]
                 )
                 laplacian += second_deriv
 

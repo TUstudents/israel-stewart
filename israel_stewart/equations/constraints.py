@@ -524,7 +524,9 @@ class ThermodynamicConstraints:
         elif method == "rescale":
             constrained_fields = self._rescale_dissipative_fluxes(constrained_fields, coefficients)
         else:
-            warnings.warn(f"Unknown constraint enforcement method: {method}", UserWarning, stacklevel=2)
+            warnings.warn(
+                f"Unknown constraint enforcement method: {method}", UserWarning, stacklevel=2
+            )
 
         # Constrain transport coefficients
         constrained_coeffs = self._constrain_transport_coefficients(coefficients)

@@ -10,6 +10,8 @@ All tests focus on ensuring production-ready reliability for Israel-Stewart
 hydrodynamics simulations.
 """
 
+from functools import cached_property
+
 import numpy as np
 import pytest
 import sympy as sp
@@ -21,6 +23,21 @@ from israel_stewart.core import (
     TensorField,
 )
 from israel_stewart.core.derivatives import CovariantDerivative, ProjectionOperator
+
+
+class ToyCurvedMetric(MinkowskiMetric):
+    """Minimal curved metric with constant non-zero Christoffels for testing."""
+
+    @cached_property
+    def christoffel_symbols(self) -> np.ndarray:  # type: ignore[override]
+        christoffel = np.zeros((4, 4, 4))
+        christoffel[1, 0, 1] = christoffel[1, 1, 0] = 0.5
+        christoffel[2, 0, 2] = christoffel[2, 2, 0] = 0.5
+        christoffel[3, 0, 3] = christoffel[3, 3, 0] = 0.5
+        return christoffel
+
+    def is_flat(self) -> bool:  # type: ignore[override]
+        return False
 
 
 class TestScalarGradientFix:
@@ -436,9 +453,7 @@ class TestParallelProjectorFix:
             u_minus_cov = u_minus if u_minus.indices[0][0] else u_minus.lower_index(0)
 
             contraction_plus = np.einsum("ij,j->i", delta_plus.components, u_plus_cov.components)
-            contraction_minus = np.einsum(
-                "ij,j->i", delta_minus.components, u_minus_cov.components
-            )
+            contraction_minus = np.einsum("ij,j->i", delta_minus.components, u_minus_cov.components)
 
             np.testing.assert_allclose(contraction_plus, 0.0, atol=1e-14)
             np.testing.assert_allclose(contraction_minus, 0.0, atol=1e-14)
@@ -678,7 +693,7 @@ class TestOptimizedCovariantDerivative:
 
     def test_mixed_index_types(self) -> None:
         """Test optimized implementation with mixed covariant/contravariant indices."""
-        metric = MinkowskiMetric()
+        metric = ToyCurvedMetric()
         cov_deriv = CovariantDerivative(metric)
 
         # Create mixed-index tensor T^μ_ν
@@ -700,6 +715,7 @@ class TestOptimizedCovariantDerivative:
             tensor_components, cov_deriv.christoffel_symbols, mixed_tensor.indices
         )
 
+        assert not np.allclose(corrections, 0.0)
         np.testing.assert_allclose(result.components, partial_only + corrections)
 
     def test_vectorized_christoffel_contractions(self) -> None:

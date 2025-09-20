@@ -8,7 +8,7 @@ index management and core tensor operations.
 import warnings
 
 # Forward reference for metrics
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import sympy as sp
@@ -110,7 +110,7 @@ class TensorField:
                     )
         elif is_sympy_array(components):
             shape = components.shape
-            if any(dim != 4 for dim in shape[-len(shape):]):
+            if any(dim != 4 for dim in shape[-len(shape) :]):
                 raise ValueError(
                     f"SymPy tensor dimensions must be 4 for spacetime, got shape {shape}"
                 )
@@ -596,7 +596,7 @@ class TensorField:
             if self_rank + other_rank + 1 > len(alphabet):
                 raise NotImplementedError("Tensor rank exceeds einsum fallback capacity") from None
 
-            self_letters = list(alphabet[: self_rank])
+            self_letters = list(alphabet[:self_rank])
             other_letters = list(alphabet[self_rank : self_rank + other_rank])
             shared_letter = alphabet[self_rank + other_rank]
 

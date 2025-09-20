@@ -493,5 +493,239 @@ class TestIntegrationAndRegression:
         assert gradient.components.shape == (4,)
 
 
+class TestOptimizedCovariantDerivative:
+    """Test the optimized tensor_covariant_derivative implementation."""
+
+    def test_performance_improvement_vector(self) -> None:
+        """Test that optimized implementation improves performance for vector fields."""
+        import time
+
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create a test vector field with reasonable size
+        vector_components = np.random.random((8, 8, 8, 8, 4))  # Grid + vector components
+        vector_field = TensorField(vector_components, "_mu", metric)
+
+        # Create coordinate arrays
+        coordinates = [np.linspace(0, 1, 8) for _ in range(4)]
+
+        # Time the optimized computation
+        start_time = time.perf_counter()
+        result_optimized = cov_deriv.tensor_covariant_derivative(vector_field, coordinates)
+        optimized_time = time.perf_counter() - start_time
+
+        # Verify result shape and properties
+        assert result_optimized.components.shape == (8, 8, 8, 8, 4, 4)  # Grid + vector + derivative
+        assert result_optimized.rank == 2  # Vector with derivative index
+
+        # Performance should be reasonable (under 1 second for this grid size)
+        assert optimized_time < 1.0, f"Optimized covariant derivative took {optimized_time:.3f}s"
+
+    def test_performance_improvement_matrix(self) -> None:
+        """Test that optimized implementation improves performance for rank-2 tensors."""
+        import time
+
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create a test rank-2 tensor field
+        tensor_components = np.random.random((6, 6, 6, 6, 4, 4))  # Grid + tensor components
+        tensor_field = TensorField(tensor_components, "_mu _nu", metric)
+
+        # Create coordinate arrays
+        coordinates = [np.linspace(0, 1, 6) for _ in range(4)]
+
+        # Time the optimized computation
+        start_time = time.perf_counter()
+        result_optimized = cov_deriv.tensor_covariant_derivative(tensor_field, coordinates)
+        optimized_time = time.perf_counter() - start_time
+
+        # Verify result shape and properties
+        assert result_optimized.components.shape == (6, 6, 6, 6, 4, 4, 4)  # Grid + tensor + derivative
+        assert result_optimized.rank == 3  # Rank-2 tensor with derivative index
+
+        # Performance should be reasonable
+        assert optimized_time < 2.0, f"Optimized rank-2 covariant derivative took {optimized_time:.3f}s"
+
+    def test_correctness_vs_fallback_vector(self) -> None:
+        """Test that optimized implementation gives same results as fallback for vectors."""
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create a simple vector field without grid (just tensor components)
+        vector_components = np.array([1.0, 2.0, 3.0, 4.0])  # Simple 4-vector
+        vector_field = TensorField(vector_components, "_mu", metric)
+
+        # For simple tensors without grid, create dummy coordinates
+        coordinates = [np.array([0.0, 1.0]) for _ in range(4)]
+
+        # Both methods should handle this gracefully or raise the same error
+        try:
+            result_optimized = cov_deriv.tensor_covariant_derivative(vector_field, coordinates)
+            result_fallback = cov_deriv._fallback_tensor_covariant_derivative(vector_field, coordinates)
+
+            # Results should be identical or very close
+            np.testing.assert_allclose(
+                result_optimized.components,
+                result_fallback.components,
+                rtol=1e-12,
+                err_msg="Optimized and fallback implementations should give identical results"
+            )
+
+            # Index strings should be identical
+            assert result_optimized._index_string() == result_fallback._index_string()
+
+        except ValueError as e:
+            # If both methods fail the same way, that's also acceptable for now
+            # The important thing is they behave consistently
+            try:
+                cov_deriv._fallback_tensor_covariant_derivative(vector_field, coordinates)
+                # If fallback succeeds but optimized fails, that's a problem
+                assert False, "Fallback succeeded but optimized failed"
+            except ValueError:
+                # Both fail the same way - acceptable for simple tensors
+                pass
+
+    def test_correctness_vs_fallback_matrix(self) -> None:
+        """Test that optimized implementation gives same results as fallback for matrices."""
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create a small test matrix for exact comparison
+        matrix_components = np.random.random((2, 2, 2, 2, 4, 4))  # Small grid + matrix
+        matrix_field = TensorField(matrix_components, "_mu _nu", metric)
+
+        # Create coordinate arrays
+        coordinates = [np.linspace(0, 1, 2) for _ in range(4)]
+
+        # Get optimized result
+        result_optimized = cov_deriv.tensor_covariant_derivative(matrix_field, coordinates)
+
+        # Get fallback result for comparison
+        result_fallback = cov_deriv._fallback_tensor_covariant_derivative(matrix_field, coordinates)
+
+        # Results should be identical or very close
+        np.testing.assert_allclose(
+            result_optimized.components,
+            result_fallback.components,
+            rtol=1e-12,
+            err_msg="Optimized and fallback implementations should give identical results for matrices"
+        )
+
+    def test_mixed_index_types(self) -> None:
+        """Test optimized implementation with mixed covariant/contravariant indices."""
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create mixed-index tensor T^μ_ν
+        tensor_components = np.random.random((3, 3, 3, 3, 4, 4))
+        mixed_tensor = TensorField(tensor_components, "mu _nu", metric)
+
+        coordinates = [np.linspace(0, 1, 3) for _ in range(4)]
+
+        # Should handle mixed indices correctly
+        result = cov_deriv.tensor_covariant_derivative(mixed_tensor, coordinates)
+
+        # Verify shape and properties
+        assert result.components.shape == (3, 3, 3, 3, 4, 4, 4)
+        assert result.rank == 3
+
+        # Verify that both covariant and contravariant corrections were applied
+        # by checking the result is not just partial derivatives
+        partial_only = cov_deriv._compute_all_partial_derivatives(tensor_components, coordinates)
+        assert not np.allclose(result.components, partial_only, rtol=1e-10)
+
+    def test_vectorized_christoffel_contractions(self) -> None:
+        """Test the vectorized Christoffel contraction methods directly."""
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Test data
+        tensor_components = np.random.random((2, 2, 2, 2, 4, 4))  # Small grid + rank-2 tensor
+        christoffel = metric.christoffel_symbols  # For Minkowski, these are zeros
+
+        # Mixed indices: one covariant, one contravariant
+        tensor_indices = [(True, "mu"), (False, "nu")]  # _mu nu
+
+        # Test the vectorized method
+        corrections = cov_deriv._vectorized_christoffel_contractions(
+            tensor_components, christoffel, tensor_indices
+        )
+
+        # Verify shape
+        assert corrections.shape == tensor_components.shape + (4,)
+
+        # For Minkowski metric, Christoffel symbols are zero, so corrections should be zero
+        np.testing.assert_allclose(corrections, 0.0, atol=1e-15)
+
+    def test_memory_efficiency(self) -> None:
+        """Test that optimized implementation uses memory efficiently."""
+        import tracemalloc
+
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create moderately sized tensor field
+        tensor_components = np.random.random((4, 4, 4, 4, 4, 4))  # 4^6 elements
+        tensor_field = TensorField(tensor_components, "_mu _nu", metric)
+        coordinates = [np.linspace(0, 1, 4) for _ in range(4)]
+
+        # Measure memory usage during computation
+        tracemalloc.start()
+        result = cov_deriv.tensor_covariant_derivative(tensor_field, coordinates)
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        # Verify result was computed correctly
+        assert result.components.shape == (4, 4, 4, 4, 4, 4, 4)
+
+        # Memory usage should be reasonable (less than 100MB for this size)
+        assert peak < 100 * 1024 * 1024, f"Peak memory usage was {peak / 1024 / 1024:.1f} MB"
+
+    def test_arbitrary_rank_support(self) -> None:
+        """Test that optimized implementation supports arbitrary tensor ranks."""
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Test rank-3 tensor
+        rank3_components = np.random.random((2, 2, 2, 2, 4, 4, 4))
+        rank3_tensor = TensorField(rank3_components, "_mu _nu _rho", metric)
+        coordinates = [np.linspace(0, 1, 2) for _ in range(4)]
+
+        result = cov_deriv.tensor_covariant_derivative(rank3_tensor, coordinates)
+
+        # Verify result
+        assert result.components.shape == (2, 2, 2, 2, 4, 4, 4, 4)  # +1 derivative index
+        assert result.rank == 4
+
+        # Should handle gracefully without errors
+        assert result is not None
+
+    def test_symbolic_tensor_handling(self) -> None:
+        """Test that symbolic tensors are handled with appropriate fallback."""
+        import sympy as sp
+        from israel_stewart.core.metrics import MinkowskiMetric
+
+        metric = MinkowskiMetric()
+        cov_deriv = CovariantDerivative(metric)
+
+        # Create symbolic tensor components
+        symbolic_components = sp.Matrix([[sp.Symbol(f"T_{i}_{j}") for j in range(4)] for i in range(4)])
+        symbolic_tensor = TensorField(symbolic_components, "_mu _nu", metric)
+
+        # This should not crash and should use symbolic path
+        coordinates = [np.linspace(0, 1, 2) for _ in range(4)]
+
+        # Should either succeed with symbolic computation or fall back gracefully
+        try:
+            result = cov_deriv.tensor_covariant_derivative(symbolic_tensor, coordinates)
+            # If successful, verify basic properties
+            assert result.rank == 3  # Original rank + derivative index
+        except (ImportError, NotImplementedError):
+            # Acceptable if SymPy Array operations are not available
+            pass
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

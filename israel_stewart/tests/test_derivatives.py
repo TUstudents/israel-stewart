@@ -101,9 +101,26 @@ class TestScalarGradientFix:
 
         # Extract numerical values, handling both SymPy and NumPy cases
         if hasattr(components, "dtype"):
-            # NumPy array
+            # NumPy array - check if it's a field or single vector
             expected = np.array([2.0, 3.0, 4.0, 5.0])
-            np.testing.assert_allclose(components, expected, rtol=1e-10)
+
+            if components.shape == (4,):
+                # Single vector case
+                np.testing.assert_allclose(components, expected, rtol=1e-10)
+            elif len(components.shape) > 1 and components.shape[-1] == 4:
+                # Field case - check that gradient is constant across all grid points
+                # For linear function φ = 2t + 3x + 4y + 5z, gradient should be [2,3,4,5] everywhere
+                field_shape = components.shape[:-1]  # Grid dimensions
+                reshaped_components = components.reshape(
+                    -1, 4
+                )  # Flatten grid, keep vector structure
+
+                # Check each grid point has the expected gradient
+                for point_grad in reshaped_components:
+                    np.testing.assert_allclose(point_grad, expected, rtol=1e-10)
+            else:
+                # Unexpected shape
+                raise AssertionError(f"Unexpected gradient shape: {components.shape}")
         else:
             # SymPy array - check each component
             expected_values = [2, 3, 4, 5]
@@ -130,17 +147,17 @@ class TestScalarGradientFix:
         gradient = cov_deriv.scalar_gradient(scalar_field, coord_arrays)
         assert isinstance(gradient, FourVector)
 
-        # Verify contravariant flag is set correctly
-        assert gradient.is_contravariant
+        # Verify covariant flag is set correctly (gradients have lower indices)
+        assert gradient.indices[0][0]  # True means covariant
 
     def test_scalar_gradient_fallback_mechanism(self, symbolic_grid, symbolic_metric):
         """Test that NumPy fallback works when sp.Array is unavailable."""
         cov_deriv = CovariantDerivative(symbolic_metric)
 
         # Create field that will definitely require symbolic computation
-        coords = symbolic_grid.meshgrid()
-        x = coords[1]
-        scalar_field = sp.sin(x)  # Trigonometric function
+        # Use pure symbolic expression instead of grid-based arrays
+        x_sym = sp.Symbol("x1")  # Use the same symbol as scalar_gradient method
+        scalar_field = sp.sin(x_sym)  # Trigonometric function
 
         # Get coordinate arrays for the method
         coord_arrays = [symbolic_grid.coordinates[name] for name in ["t", "x", "y", "z"]]
@@ -542,11 +559,21 @@ class TestOptimizedCovariantDerivative:
         optimized_time = time.perf_counter() - start_time
 
         # Verify result shape and properties
-        assert result_optimized.components.shape == (6, 6, 6, 6, 4, 4, 4)  # Grid + tensor + derivative
+        assert result_optimized.components.shape == (
+            6,
+            6,
+            6,
+            6,
+            4,
+            4,
+            4,
+        )  # Grid + tensor + derivative
         assert result_optimized.rank == 3  # Rank-2 tensor with derivative index
 
         # Performance should be reasonable
-        assert optimized_time < 2.0, f"Optimized rank-2 covariant derivative took {optimized_time:.3f}s"
+        assert (
+            optimized_time < 2.0
+        ), f"Optimized rank-2 covariant derivative took {optimized_time:.3f}s"
 
     def test_correctness_vs_fallback_vector(self) -> None:
         """Test that optimized implementation gives same results as fallback for vectors."""
@@ -563,14 +590,16 @@ class TestOptimizedCovariantDerivative:
         # Both methods should handle this gracefully or raise the same error
         try:
             result_optimized = cov_deriv.tensor_covariant_derivative(vector_field, coordinates)
-            result_fallback = cov_deriv._fallback_tensor_covariant_derivative(vector_field, coordinates)
+            result_fallback = cov_deriv._fallback_tensor_covariant_derivative(
+                vector_field, coordinates
+            )
 
             # Results should be identical or very close
             np.testing.assert_allclose(
                 result_optimized.components,
                 result_fallback.components,
                 rtol=1e-12,
-                err_msg="Optimized and fallback implementations should give identical results"
+                err_msg="Optimized and fallback implementations should give identical results",
             )
 
             # Index strings should be identical
@@ -582,7 +611,7 @@ class TestOptimizedCovariantDerivative:
             try:
                 cov_deriv._fallback_tensor_covariant_derivative(vector_field, coordinates)
                 # If fallback succeeds but optimized fails, that's a problem
-                assert False, "Fallback succeeded but optimized failed"
+                raise AssertionError("Fallback succeeded but optimized failed")
             except ValueError:
                 # Both fail the same way - acceptable for simple tensors
                 pass
@@ -610,7 +639,7 @@ class TestOptimizedCovariantDerivative:
             result_optimized.components,
             result_fallback.components,
             rtol=1e-12,
-            err_msg="Optimized and fallback implementations should give identical results for matrices"
+            err_msg="Optimized and fallback implementations should give identical results for matrices",
         )
 
     def test_mixed_index_types(self) -> None:
@@ -705,13 +734,16 @@ class TestOptimizedCovariantDerivative:
     def test_symbolic_tensor_handling(self) -> None:
         """Test that symbolic tensors are handled with appropriate fallback."""
         import sympy as sp
+
         from israel_stewart.core.metrics import MinkowskiMetric
 
         metric = MinkowskiMetric()
         cov_deriv = CovariantDerivative(metric)
 
         # Create symbolic tensor components
-        symbolic_components = sp.Matrix([[sp.Symbol(f"T_{i}_{j}") for j in range(4)] for i in range(4)])
+        symbolic_components = sp.Matrix(
+            [[sp.Symbol(f"T_{i}_{j}") for j in range(4)] for i in range(4)]
+        )
         symbolic_tensor = TensorField(symbolic_components, "_mu _nu", metric)
 
         # This should not crash and should use symbolic path

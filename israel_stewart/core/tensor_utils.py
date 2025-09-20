@@ -40,17 +40,61 @@ def is_sympy_matrix(obj: Any) -> TypeGuard[sp.Matrix]:
     return isinstance(obj, sp.Matrix)
 
 
-def ensure_compatible_types(obj1: Any, obj2: Any) -> bool:
-    """Check if two objects have compatible types for tensor operations."""
-    return (is_numpy_array(obj1) and is_numpy_array(obj2)) or (
-        is_sympy_matrix(obj1) and is_sympy_matrix(obj2)
+def is_sympy_array(obj: Any) -> bool:
+    """Type guard for SymPy Arrays (all types)."""
+    try:
+        import sympy.tensor.array as sp_array
+
+        return isinstance(
+            obj,
+            sp_array.NDimArray | sp_array.ImmutableDenseNDimArray | sp_array.MutableDenseNDimArray,
+        )
+    except ImportError:
+        return False
+
+
+def is_sympy_type(obj: Any) -> bool:
+    """Type guard for any SymPy object that can represent tensor components."""
+    return (
+        is_sympy_matrix(obj)
+        or is_sympy_array(obj)
+        or isinstance(obj, sp.Expr | sp.Basic)
+        or (isinstance(obj, list) and len(obj) > 0 and isinstance(obj[0], sp.Expr | sp.Basic))
     )
 
 
-def convert_to_sympy(components: np.ndarray | sp.Matrix) -> sp.Matrix:
+def ensure_compatible_types(obj1: Any, obj2: Any) -> bool:
+    """Check if two objects have compatible types for tensor operations."""
+    return (is_numpy_array(obj1) and is_numpy_array(obj2)) or (
+        is_sympy_type(obj1) and is_sympy_type(obj2)
+    )
+
+
+def convert_to_sympy(components: np.ndarray | sp.Matrix | Any) -> sp.Matrix:
     """Convert components to SymPy Matrix format."""
     if is_sympy_matrix(components):
         return components
+    elif is_sympy_array(components):
+        # Convert SymPy Array to Matrix
+        try:
+            return sp.Matrix(components)
+        except Exception:
+            # For higher-rank arrays, flatten to matrix
+            import sympy.tensor.array as sp_array
+
+            if hasattr(components, "tomatrix"):
+                return components.tomatrix()
+            else:
+                # Fallback: convert to list then to matrix
+                flat_list = list(components)
+                return sp.Matrix(flat_list)
+    elif (
+        isinstance(components, list)
+        and len(components) > 0
+        and isinstance(components[0], sp.Expr | sp.Basic)
+    ):
+        # Convert list of SymPy expressions to Matrix
+        return sp.Matrix(components)
     elif is_numpy_array(components):
         return sp.Matrix(components)
     else:
@@ -297,8 +341,60 @@ def validate_tensor_dimensions(
 
         if expected_shape is not None and shape != expected_shape:
             raise ValueError(f"Expected shape {expected_shape}, got {shape}")
+    elif is_sympy_array(components):
+        # Handle SymPy Arrays
+        try:
+            import sympy.tensor.array as sp_array
+
+            shape = components.shape
+
+            if tensor_rank is not None:
+                # Validate tensor rank for SymPy Arrays
+                if len(shape) < tensor_rank:
+                    raise ValueError(
+                        f"SymPy Array has {len(shape)} dimensions, but tensor rank {tensor_rank} requires at least {tensor_rank} dimensions"
+                    )
+
+                # Check that trailing dimensions (tensor indices) are all 4
+                tensor_dims = shape[-tensor_rank:] if tensor_rank > 0 else ()
+                if any(dim != 4 for dim in tensor_dims):
+                    raise ValueError(
+                        f"SymPy Array tensor index dimensions must be 4 for spacetime, "
+                        f"got {tensor_dims} in shape {shape}"
+                    )
+            else:
+                # Legacy behavior: all dimensions must be 4
+                if any(dim != 4 for dim in shape):
+                    raise ValueError(
+                        f"All SymPy Array dimensions must be 4 for spacetime, got shape {shape}"
+                    )
+
+            if expected_shape is not None and shape != expected_shape:
+                raise ValueError(f"Expected shape {expected_shape}, got {shape}")
+        except ImportError:
+            # SymPy Array not available, treat as unsupported
+            raise TypeError("SymPy Array support requires sympy.tensor.array module") from None
+    elif (
+        isinstance(components, list)
+        and len(components) > 0
+        and isinstance(components[0], sp.Expr | sp.Basic)
+    ):
+        # Handle list of SymPy expressions
+        if tensor_rank == 1 and len(components) == 4:
+            # Valid rank-1 tensor (4-vector)
+            pass
+        elif tensor_rank is None and len(components) == 4:
+            # Legacy case: assume 4-vector
+            pass
+        else:
+            raise ValueError(
+                f"List of SymPy expressions has length {len(components)}, "
+                f"expected 4 for rank-{tensor_rank} tensor"
+            )
     else:
-        raise TypeError(f"Components must be NumPy array or SymPy matrix, got {type(components)}")
+        raise TypeError(
+            f"Components must be NumPy array, SymPy matrix, SymPy array, or list of SymPy expressions, got {type(components)}"
+        )
 
 
 def validate_index_compatibility(

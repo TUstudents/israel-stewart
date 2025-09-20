@@ -74,27 +74,45 @@ class CovariantDerivative:
                 gradient_components.append(sp.diff(scalar_field, coord_symbols[mu]))
 
             # Convert to proper format for FourVector (needs shape (4,) not (4,1))
-            # Use sp.Array for proper 1D symbolic vector that FourVector can handle
+            # Create a 1D SymPy Matrix that FourVector can handle properly
             try:
                 import sympy.tensor.array as sp_array
 
                 gradient_array = sp_array.Array(gradient_components)
-                return FourVector(gradient_array, True, self.metric)
+
+                # Convert SymPy Array to flattened list for proper 1D handling
+                try:
+                    # Extract elements and create proper 1D structure
+                    flat_components = [gradient_array[i] for i in range(4)]
+                    return FourVector(flat_components, True, self.metric)
+                except Exception:
+                    # If conversion fails, use direct list approach
+                    return FourVector(gradient_components, True, self.metric)
+
             except ImportError:
-                # Fallback: convert SymPy Matrix to NumPy array to get proper shape
-                gradient_matrix = sp.Matrix(gradient_components)
-                # For symbolic expressions, keep as SymPy Matrix but flatten correctly
-                # Convert (4,1) SymPy Matrix to proper format for FourVector
-                gradient_flat = np.array([gradient_matrix[i] for i in range(4)])
-                return FourVector(gradient_flat, True, self.metric)
+                # Fallback: use direct list for proper 1D format
+                return FourVector(gradient_components, True, self.metric)
 
         else:
             # Numerical gradient using numpy
             if isinstance(coordinates, list):
-                coordinates = np.array(coordinates)
+                coord_arrays = coordinates
+            else:
+                coord_arrays = [coordinates]
 
-            gradient_components = np.gradient(scalar_field, *coordinates)
-            return FourVector(np.array(gradient_components), True, self.metric)
+            # np.gradient returns a list of arrays, one for each dimension
+            gradient_list = np.gradient(scalar_field, *coord_arrays)
+
+            # For scalar field, we need to extract gradient components at each point
+            # and create a proper 4-vector field with shape (..., 4)
+            if len(gradient_list) == 4:
+                # Full 4D gradient - stack components along last axis: (..., 4) format
+                gradient_components = np.stack(gradient_list, axis=-1)
+            else:
+                # Fallback for non-4D case
+                gradient_components = np.stack(gradient_list, axis=0)
+
+            return FourVector(gradient_components, True, self.metric)
 
     @monitor_performance("vector_divergence")
     def vector_divergence(
@@ -248,23 +266,23 @@ class CovariantDerivative:
         grid_dims = ndim - tensor_rank
 
         # Create subscript letters
-        grid_letters = 'ijklmnop'[:grid_dims] if grid_dims > 0 else ''
-        tensor_letters = 'abcdefgh'[:tensor_rank]
+        grid_letters = "ijklmnop"[:grid_dims] if grid_dims > 0 else ""
+        tensor_letters = "abcdefgh"[:tensor_rank]
 
         # Use 'z' for the contracted index (λ) to avoid conflicts
-        contracted_letter = 'z'
+        contracted_letter = "z"
 
         # Tensor subscript with contracted index replaced by contracted_letter
         tensor_letters_list = list(tensor_letters)
         tensor_letters_list[covariant_idx_pos] = contracted_letter
-        tensor_subscript = grid_letters + ''.join(tensor_letters_list)
+        tensor_subscript = grid_letters + "".join(tensor_letters_list)
 
         # Result subscript: original tensor + derivative index
-        result_subscript = grid_letters + tensor_letters + 'm'
+        result_subscript = grid_letters + tensor_letters + "m"
 
         # Christoffel subscript: Γ^λ_μα where λ=z, μ=m, α=original_index
         original_index = tensor_letters[covariant_idx_pos]
-        christoffel_subscript = f'{contracted_letter}m{original_index}'
+        christoffel_subscript = f"{contracted_letter}m{original_index}"
 
         # Complete einsum pattern
         einsum_pattern = f"{tensor_subscript},{christoffel_subscript}->{result_subscript}"
@@ -305,23 +323,23 @@ class CovariantDerivative:
         grid_dims = ndim - tensor_rank
 
         # Create subscript letters
-        grid_letters = 'ijklmnop'[:grid_dims] if grid_dims > 0 else ''
-        tensor_letters = 'abcdefgh'[:tensor_rank]
+        grid_letters = "ijklmnop"[:grid_dims] if grid_dims > 0 else ""
+        tensor_letters = "abcdefgh"[:tensor_rank]
 
         # Use 'z' for the contracted index (λ) to avoid conflicts
-        contracted_letter = 'z'
+        contracted_letter = "z"
 
         # Tensor subscript with contracted index replaced by contracted_letter
         tensor_letters_list = list(tensor_letters)
         tensor_letters_list[contravariant_idx_pos] = contracted_letter
-        tensor_subscript = grid_letters + ''.join(tensor_letters_list)
+        tensor_subscript = grid_letters + "".join(tensor_letters_list)
 
         # Result subscript: original tensor + derivative index
-        result_subscript = grid_letters + tensor_letters + 'm'
+        result_subscript = grid_letters + tensor_letters + "m"
 
         # Christoffel subscript: Γ^α_μλ where α=original_index, μ=m, λ=z
         original_index = tensor_letters[contravariant_idx_pos]
-        christoffel_subscript = f'{original_index}m{contracted_letter}'
+        christoffel_subscript = f"{original_index}m{contracted_letter}"
 
         # Complete einsum pattern
         einsum_pattern = f"{tensor_subscript},{christoffel_subscript}->{result_subscript}"
@@ -346,7 +364,7 @@ class CovariantDerivative:
         Returns a new tensor field with one additional covariant index (the derivative index).
         """
         # Handle SymPy tensors with dedicated path
-        if hasattr(tensor_field.components, 'dtype') and tensor_field.components.dtype == object:
+        if hasattr(tensor_field.components, "dtype") and tensor_field.components.dtype == object:
             return self._symbolic_tensor_covariant_derivative(tensor_field, coordinates)
 
         christoffel = self.christoffel_symbols
@@ -392,14 +410,15 @@ class CovariantDerivative:
             # Determine appropriate edge_order based on grid size
             grid_size_mu = tensor_components.shape[mu]
             if grid_size_mu >= 3:
-                edge_order = 2  # Use second-order accurate edges for grids with sufficient points
+                # Take gradient along grid axis mu with respect to coordinate mu
+                partial_derivatives[..., mu] = np.gradient(
+                    tensor_components, coordinates[mu], axis=mu, edge_order=2
+                )
             else:
-                edge_order = 1  # Fall back to first-order for minimal grids (2 points)
-
-            # Take gradient along grid axis mu with respect to coordinate mu
-            partial_derivatives[..., mu] = np.gradient(
-                tensor_components, coordinates[mu], axis=mu, edge_order=edge_order
-            )
+                # Take gradient along grid axis mu with respect to coordinate mu
+                partial_derivatives[..., mu] = np.gradient(
+                    tensor_components, coordinates[mu], axis=mu, edge_order=1
+                )
 
         return partial_derivatives
 
@@ -407,7 +426,7 @@ class CovariantDerivative:
         """Build index string for tensor with additional covariant derivative index."""
         if hasattr(tensor_field, "add_covariant_index"):
             # Use proper method if available
-            return tensor_field.add_covariant_index("d")
+            return str(tensor_field.add_covariant_index("d"))
         else:
             # Fallback to string manipulation with better formatting
             current_indices = tensor_field._index_string()
@@ -425,7 +444,7 @@ class CovariantDerivative:
             import sympy.tensor.array as sp_array
 
             # Check if we can use SymPy Array operations
-            if hasattr(tensor_field.components, 'is_Matrix') and tensor_field.components.is_Matrix:
+            if hasattr(tensor_field.components, "is_Matrix") and tensor_field.components.is_Matrix:
                 return self._sympy_array_covariant_derivative(tensor_field, coordinates)
             else:
                 # Fall back for non-matrix SymPy objects
@@ -437,7 +456,7 @@ class CovariantDerivative:
                 "SymPy Array not available for symbolic covariant derivative, "
                 "using fallback implementation which may convert to numerical",
                 UserWarning,
-                stacklevel=3
+                stacklevel=3,
             )
             return self._fallback_tensor_covariant_derivative(tensor_field, coordinates)
 
@@ -454,16 +473,16 @@ class CovariantDerivative:
         import sympy.tensor.array as sp_array
 
         # Convert SymPy Matrix to Array if needed
-        if hasattr(tensor_field.components, 'is_Matrix') and tensor_field.components.is_Matrix:
+        if hasattr(tensor_field.components, "is_Matrix") and tensor_field.components.is_Matrix:
             tensor_array = sp_array.Array(tensor_field.components)
         else:
             tensor_array = tensor_field.components
 
         # Get symbolic Christoffel symbols
         christoffel = self.christoffel_symbols
-        if hasattr(christoffel, 'is_Matrix') and christoffel.is_Matrix:
+        if hasattr(christoffel, "is_Matrix") and christoffel.is_Matrix:
             christoffel_array = sp_array.Array(christoffel)
-        elif hasattr(christoffel, 'dtype') and christoffel.dtype == object:
+        elif hasattr(christoffel, "dtype") and christoffel.dtype == object:
             # Convert NumPy object array with SymPy expressions to SymPy Array
             christoffel_array = sp_array.Array(christoffel)
         else:
@@ -520,7 +539,7 @@ class CovariantDerivative:
             return TensorField(covariant_derivative, new_indices, self.metric)
 
     def _sympy_covariant_index_correction(
-        self, tensor_array, christoffel_array, index_pos: int, mu: int
+        self, tensor_array: "sp.Array", christoffel_array: "sp.Array", index_pos: int, mu: int
     ) -> sp.Basic:
         """Compute covariant index correction for SymPy tensors: -Γ^λ_μα T_...λ..."""
         import sympy.tensor.array as sp_array
@@ -529,14 +548,14 @@ class CovariantDerivative:
         # Contract Christoffel's first index with tensor's index_pos
         result = sp_array.tensorcontraction(
             sp_array.tensorproduct(christoffel_array, tensor_array),
-            ([0], [len(christoffel_array.shape) + index_pos])
+            ([0], [len(christoffel_array.shape) + index_pos]),
         )
 
         # Extract the μ,α component and apply negative sign
         return -result[mu, index_pos]
 
     def _sympy_contravariant_index_correction(
-        self, tensor_array, christoffel_array, index_pos: int, mu: int
+        self, tensor_array: "sp.Array", christoffel_array: "sp.Array", index_pos: int, mu: int
     ) -> sp.Basic:
         """Compute contravariant index correction for SymPy tensors: +Γ^α_μλ T^...λ..."""
         import sympy.tensor.array as sp_array
@@ -545,14 +564,11 @@ class CovariantDerivative:
         # Contract Christoffel's third index with tensor's index_pos
         result = sp_array.tensorcontraction(
             sp_array.tensorproduct(christoffel_array, tensor_array),
-            ([2], [len(christoffel_array.shape) + index_pos])
+            ([2], [len(christoffel_array.shape) + index_pos]),
         )
 
         # Extract the α,μ component (positive sign)
         return result[index_pos, mu]
-
-
-
 
     def _fallback_tensor_covariant_derivative(
         self, tensor_field: TensorField, coordinates: list[np.ndarray]
@@ -606,14 +622,15 @@ class CovariantDerivative:
         # Determine appropriate edge_order based on grid size
         grid_size = tensor_components.shape[coord_index]
         if grid_size >= 3:
-            edge_order = 2  # Use second-order accurate edges for grids with sufficient points
+            # Take gradient along grid axis coord_index with respect to coordinate coord_index
+            result: np.ndarray = np.gradient(
+                tensor_components, coordinates[coord_index], axis=coord_index, edge_order=2
+            )
         else:
-            edge_order = 1  # Fall back to first-order for minimal grids (2 points)
-
-        # Take gradient along grid axis coord_index with respect to coordinate coord_index
-        result: np.ndarray = np.gradient(
-            tensor_components, coordinates[coord_index], axis=coord_index, edge_order=edge_order
-        )
+            # Take gradient along grid axis coord_index with respect to coordinate coord_index
+            result: np.ndarray = np.gradient(
+                tensor_components, coordinates[coord_index], axis=coord_index, edge_order=1
+            )
         return result
 
     def _contract_christoffel(
@@ -623,14 +640,30 @@ class CovariantDerivative:
         tensor_index_pos: int,
     ) -> np.ndarray:
         """Computes the contravariant correction term: Γ^α_μλ T^...λ..."""
+        # For grid-based tensors, need to account for grid dimensions
+        # tensor_index_pos is relative to tensor indices, not absolute array position
+        ndim = tensor_components.ndim
+
+        # Determine tensor rank from the last dimensions that are size 4
+        tensor_rank = 0
+        for i in range(ndim - 1, -1, -1):
+            if tensor_components.shape[i] == 4:
+                tensor_rank += 1
+            else:
+                break
+
+        # Calculate absolute index position in the array
+        grid_dims = ndim - tensor_rank
+        absolute_index_pos = grid_dims + tensor_index_pos
+
         # Move the contracted axis to the end
-        moved_tensor = np.moveaxis(tensor_components, tensor_index_pos, -1)
+        moved_tensor = np.moveaxis(tensor_components, absolute_index_pos, -1)
         # Contract with Christoffel symbols
         # Γ^α_μλ T^...λ -> result^...α_μ
         # (a, m, l) * (..., l) -> (..., a, m)
         correction = np.tensordot(moved_tensor, christoffel, axes=([-1], [2]))
         # Move the new axes to their correct positions
-        return np.moveaxis(correction, [-2, -1], [tensor_index_pos, tensor_components.ndim])
+        return np.moveaxis(correction, [-2, -1], [absolute_index_pos, tensor_components.ndim])
 
     def _contract_christoffel_covariant(
         self,
@@ -639,14 +672,30 @@ class CovariantDerivative:
         tensor_index_pos: int,
     ) -> np.ndarray:
         """Computes the covariant correction term: Γ^λ_μα T_...λ..."""
+        # For grid-based tensors, need to account for grid dimensions
+        # tensor_index_pos is relative to tensor indices, not absolute array position
+        ndim = tensor_components.ndim
+
+        # Determine tensor rank from the last dimensions that are size 4
+        tensor_rank = 0
+        for i in range(ndim - 1, -1, -1):
+            if tensor_components.shape[i] == 4:
+                tensor_rank += 1
+            else:
+                break
+
+        # Calculate absolute index position in the array
+        grid_dims = ndim - tensor_rank
+        absolute_index_pos = grid_dims + tensor_index_pos
+
         # Move the contracted axis to the end
-        moved_tensor = np.moveaxis(tensor_components, tensor_index_pos, -1)
+        moved_tensor = np.moveaxis(tensor_components, absolute_index_pos, -1)
         # Contract with Christoffel symbols
         # Γ^λ_μα T_...λ -> result_...α_μ
         # (l, m, a) * (..., l) -> (..., m, a)
         correction = np.tensordot(moved_tensor, christoffel, axes=([-1], [0]))
         # Move the new axes to their correct positions
-        return np.moveaxis(correction, [-2, -1], [tensor_components.ndim, tensor_index_pos])
+        return np.moveaxis(correction, [-2, -1], [tensor_components.ndim, absolute_index_pos])
 
     def laplacian(
         self,

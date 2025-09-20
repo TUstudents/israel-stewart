@@ -9,15 +9,15 @@ import numpy as np
 import pytest
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
-from israel_stewart.core.metrics import MinkowskiMetric, MilneMetric
+from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
 from israel_stewart.solvers import (
-    create_solver,
     BackwardEulerSolver,
     ConservativeFiniteDifference,
     IMEXRungeKuttaSolver,
     SpectralISolver,
     StrangSplitting,
+    create_solver,
 )
 
 
@@ -25,13 +25,15 @@ class TestSolverFactoryIntegration:
     """Test master factory function and solver creation."""
 
     @pytest.fixture
-    def setup_basic_problem(self) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
+    def setup_basic_problem(
+        self,
+    ) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
         """Setup basic problem for integration testing."""
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0)],
-            grid_points=(5, 16, 16),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 16, 16, 16),
         )
 
         metric = MinkowskiMetric()
@@ -60,7 +62,9 @@ class TestSolverFactoryIntegration:
         assert isinstance(solver, ConservativeFiniteDifference)
 
         # Test with options
-        solver = create_solver("finite_difference", "conservative", grid, metric, coefficients, order=4)
+        solver = create_solver(
+            "finite_difference", "conservative", grid, metric, coefficients, order=4
+        )
         assert solver.order == 4
 
         # Test different subtypes
@@ -160,13 +164,15 @@ class TestCrossSolverCompatibility:
     """Test compatibility between different solver types."""
 
     @pytest.fixture
-    def setup_compatibility_test(self) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
+    def setup_compatibility_test(
+        self,
+    ) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
         """Setup for cross-solver compatibility testing."""
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 32),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 32, 8, 8),
         )
 
         metric = MinkowskiMetric()
@@ -203,6 +209,7 @@ class TestCrossSolverCompatibility:
                 # Implicit solver
                 def simple_rhs(f):
                     return {"Pi": -f.Pi / 0.3}
+
                 result = solver.solve_step(fields, 0.01, simple_rhs)
                 assert isinstance(result, ISFieldConfiguration)
             elif hasattr(solver, "advance_timestep"):
@@ -234,8 +241,8 @@ class TestCrossSolverCompatibility:
         grid_cartesian = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 16),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 16, 8, 8),
         )
 
         # Milne grid
@@ -251,10 +258,12 @@ class TestCrossSolverCompatibility:
         coefficients = TransportCoefficients()
 
         # Test finite difference with different metrics
-        fd_minkowski = create_solver("finite_difference", "conservative",
-                                   grid_cartesian, minkowski_metric, coefficients)
-        fd_milne = create_solver("finite_difference", "conservative",
-                               grid_milne, milne_metric, coefficients)
+        fd_minkowski = create_solver(
+            "finite_difference", "conservative", grid_cartesian, minkowski_metric, coefficients
+        )
+        fd_milne = create_solver(
+            "finite_difference", "conservative", grid_milne, milne_metric, coefficients
+        )
 
         assert fd_minkowski.metric == minkowski_metric
         assert fd_milne.metric == milne_metric
@@ -290,13 +299,15 @@ class TestSolverPerformanceIntegration:
     """Test integrated performance of solver combinations."""
 
     @pytest.fixture
-    def setup_performance_test(self) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
+    def setup_performance_test(
+        self,
+    ) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
         """Setup for performance integration testing."""
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0)],
-            grid_points=(5, 32, 32),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 32, 32, 8),
         )
 
         metric = MinkowskiMetric()
@@ -313,7 +324,9 @@ class TestSolverPerformanceIntegration:
 
         # Create different solvers
         solvers = {
-            "finite_difference": create_solver("finite_difference", "conservative", grid, metric, coefficients),
+            "finite_difference": create_solver(
+                "finite_difference", "conservative", grid, metric, coefficients
+            ),
             "implicit": create_solver("implicit", "backward_euler", grid, metric, coefficients),
             "splitting": create_solver("splitting", "strang", grid, metric, coefficients),
         }
@@ -373,8 +386,8 @@ class TestSolverRobustnessIntegration:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 16),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 16, 8, 8),
         )
 
         metric = MinkowskiMetric()
@@ -399,8 +412,8 @@ class TestSolverRobustnessIntegration:
         grid_small = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(3, 4),  # Minimal grid
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(3, 4, 4, 4),  # Minimal grid
         )
 
         metric = MinkowskiMetric()
@@ -408,7 +421,9 @@ class TestSolverRobustnessIntegration:
         fields = ISFieldConfiguration(grid_small)
 
         # Solvers should handle minimal grids
-        solver = create_solver("finite_difference", "conservative", grid_small, metric, coefficients)
+        solver = create_solver(
+            "finite_difference", "conservative", grid_small, metric, coefficients
+        )
         result = solver.compute_spatial_derivatives(fields.rho, axis=1)
         assert result.shape == fields.rho.shape
 
@@ -417,8 +432,8 @@ class TestSolverRobustnessIntegration:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 16),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 16, 8, 8),
         )
 
         metric = MinkowskiMetric()
@@ -426,9 +441,9 @@ class TestSolverRobustnessIntegration:
         # Extreme transport coefficients
         coeffs_extreme = TransportCoefficients(
             shear_viscosity=1e-10,  # Very small
-            bulk_viscosity=1e10,   # Very large
+            bulk_viscosity=1e10,  # Very large
             shear_relaxation_time=1e-6,  # Very fast
-            bulk_relaxation_time=1e6,    # Very slow
+            bulk_relaxation_time=1e6,  # Very slow
         )
 
         fields = ISFieldConfiguration(grid)
@@ -448,13 +463,15 @@ class TestSolverAPIConsistency:
     """Test API consistency across solver types."""
 
     @pytest.fixture
-    def setup_api_test(self) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
+    def setup_api_test(
+        self,
+    ) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
         """Setup for API consistency testing."""
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 16),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 16, 8, 8),
         )
 
         metric = MinkowskiMetric()
@@ -492,8 +509,16 @@ class TestSolverAPIConsistency:
 
         # All factory functions should accept same basic parameters
         factory_calls = [
-            ("finite_difference", "conservative", {"grid": grid, "metric": metric, "coefficients": coefficients}),
-            ("implicit", "backward_euler", {"grid": grid, "metric": metric, "coefficients": coefficients}),
+            (
+                "finite_difference",
+                "conservative",
+                {"grid": grid, "metric": metric, "coefficients": coefficients},
+            ),
+            (
+                "implicit",
+                "backward_euler",
+                {"grid": grid, "metric": metric, "coefficients": coefficients},
+            ),
             ("splitting", "strang", {"grid": grid, "metric": metric, "coefficients": coefficients}),
         ]
 
@@ -530,7 +555,7 @@ class TestSolverDocumentationIntegration:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
-            grid_points=(8, 8, 8, 8)
+            grid_points=(8, 8, 8, 8),
         )
 
         coeffs = TransportCoefficients(
@@ -558,8 +583,8 @@ class TestSolverDocumentationIntegration:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 8),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 8, 8, 8),
         )
 
         metric = MinkowskiMetric()
@@ -576,8 +601,8 @@ class TestSolverDocumentationIntegration:
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
-            spatial_ranges=[(-1.0, 1.0)],
-            grid_points=(5, 8),
+            spatial_ranges=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(5, 8, 8, 8),
         )
 
         metric = MinkowskiMetric()

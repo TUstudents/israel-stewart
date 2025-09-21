@@ -489,10 +489,19 @@ class SpectralISolver:
             eta = self.coeffs.shear_viscosity or 0.0
 
             # Apply to each component of shear tensor
-            for mu in range(4):
-                for nu in range(4):
-                    fields.pi_munu[..., mu, nu] = self.apply_viscous_operator(
-                        fields.pi_munu[..., mu, nu], eta / tau_pi, dt
+            if hasattr(fields, 'pi_munu') and fields.pi_munu.ndim >= 2:
+                # Ensure tensor has expected shape (..., 4, 4)
+                tensor_shape = fields.pi_munu.shape
+                if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
+                    for mu in range(4):
+                        for nu in range(4):
+                            fields.pi_munu[..., mu, nu] = self.apply_viscous_operator(
+                                fields.pi_munu[..., mu, nu], eta / tau_pi, dt
+                            )
+                else:
+                    warnings.warn(
+                        f"pi_munu tensor shape {tensor_shape} incompatible with 4x4 indices",
+                        stacklevel=2
                     )
 
     def _implicit_spectral_advance(self, fields: "ISFieldConfiguration", dt: float) -> None:
@@ -529,17 +538,31 @@ class SpectralISolver:
             fields_k["Pi"] = self.fft_plan(fields.Pi)
 
         # Shear stress tensor - transform each component
-        if hasattr(fields, "pi_munu"):
-            fields_k["pi_munu"] = np.zeros_like(fields.pi_munu, dtype=complex)
-            for mu in range(4):
-                for nu in range(4):
-                    fields_k["pi_munu"][..., mu, nu] = self.fft_plan(fields.pi_munu[..., mu, nu])
+        if hasattr(fields, "pi_munu") and fields.pi_munu.ndim >= 2:
+            tensor_shape = fields.pi_munu.shape
+            if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
+                fields_k["pi_munu"] = np.zeros_like(fields.pi_munu, dtype=complex)
+                for mu in range(4):
+                    for nu in range(4):
+                        fields_k["pi_munu"][..., mu, nu] = self.fft_plan(fields.pi_munu[..., mu, nu])
+            else:
+                warnings.warn(
+                    f"pi_munu tensor shape {tensor_shape} incompatible with 4x4 indices",
+                    stacklevel=2
+                )
 
         # Heat flux
-        if hasattr(fields, "q_mu"):
-            fields_k["q_mu"] = np.zeros_like(fields.q_mu, dtype=complex)
-            for mu in range(4):
-                fields_k["q_mu"][..., mu] = self.fft_plan(fields.q_mu[..., mu])
+        if hasattr(fields, "q_mu") and fields.q_mu.ndim >= 1:
+            vector_shape = fields.q_mu.shape
+            if len(vector_shape) >= 1 and vector_shape[-1] == 4:
+                fields_k["q_mu"] = np.zeros_like(fields.q_mu, dtype=complex)
+                for mu in range(4):
+                    fields_k["q_mu"][..., mu] = self.fft_plan(fields.q_mu[..., mu])
+            else:
+                warnings.warn(
+                    f"q_mu vector shape {vector_shape} incompatible with 4-component index",
+                    stacklevel=2
+                )
 
         return fields_k
 
@@ -553,16 +576,28 @@ class SpectralISolver:
 
         # Shear stress tensor
         if "pi_munu" in fields_k and hasattr(fields, "pi_munu"):
-            for mu in range(4):
-                for nu in range(4):
-                    fields.pi_munu[..., mu, nu] = self.ifft_plan(
-                        fields_k["pi_munu"][..., mu, nu]
-                    ).real
+            if fields.pi_munu.ndim >= 2 and fields.pi_munu.shape[-2:] == (4, 4):
+                for mu in range(4):
+                    for nu in range(4):
+                        fields.pi_munu[..., mu, nu] = self.ifft_plan(
+                            fields_k["pi_munu"][..., mu, nu]
+                        ).real
+            else:
+                warnings.warn(
+                    f"pi_munu tensor shape {fields.pi_munu.shape} incompatible with 4x4 indices",
+                    stacklevel=2
+                )
 
         # Heat flux
         if "q_mu" in fields_k and hasattr(fields, "q_mu"):
-            for mu in range(4):
-                fields.q_mu[..., mu] = self.ifft_plan(fields_k["q_mu"][..., mu]).real
+            if fields.q_mu.ndim >= 1 and fields.q_mu.shape[-1] == 4:
+                for mu in range(4):
+                    fields.q_mu[..., mu] = self.ifft_plan(fields_k["q_mu"][..., mu]).real
+            else:
+                warnings.warn(
+                    f"q_mu vector shape {fields.q_mu.shape} incompatible with 4-component index",
+                    stacklevel=2
+                )
 
     def _solve_implicit_diffusion(self, fields_k: dict[str, np.ndarray], dt: float) -> None:
         """
@@ -590,16 +625,30 @@ class SpectralISolver:
 
         # Apply to shear stress components
         if "pi_munu" in fields_k:
-            for mu in range(4):
-                for nu in range(4):
-                    fields_k["pi_munu"][..., mu, nu] *= diffusion_factor
+            tensor_shape = fields_k["pi_munu"].shape
+            if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
+                for mu in range(4):
+                    for nu in range(4):
+                        fields_k["pi_munu"][..., mu, nu] *= diffusion_factor
+            else:
+                warnings.warn(
+                    f"pi_munu Fourier tensor shape {tensor_shape} incompatible with 4x4 indices",
+                    stacklevel=2
+                )
 
         # Apply to heat flux
         if "q_mu" in fields_k:
-            thermal_diffusivity = eta  # Simplified assumption
-            thermal_factor = 1.0 / (1.0 + thermal_diffusivity * self.k_squared * dt)
-            for mu in range(4):
-                fields_k["q_mu"][..., mu] *= thermal_factor
+            vector_shape = fields_k["q_mu"].shape
+            if len(vector_shape) >= 1 and vector_shape[-1] == 4:
+                thermal_diffusivity = eta  # Simplified assumption
+                thermal_factor = 1.0 / (1.0 + thermal_diffusivity * self.k_squared * dt)
+                for mu in range(4):
+                    fields_k["q_mu"][..., mu] *= thermal_factor
+            else:
+                warnings.warn(
+                    f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
+                    stacklevel=2
+                )
 
     def _solve_implicit_relaxation(self, fields_k: dict[str, np.ndarray], dt: float) -> None:
         """
@@ -628,18 +677,32 @@ class SpectralISolver:
         ):
             tau_pi = self.coeffs.shear_relaxation_time
             if tau_pi > 0 and "pi_munu" in fields_k:
-                relaxation_factor = 1.0 / (1.0 + dt / tau_pi)
-                for mu in range(4):
-                    for nu in range(4):
-                        fields_k["pi_munu"][..., mu, nu] *= relaxation_factor
+                tensor_shape = fields_k["pi_munu"].shape
+                if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
+                    relaxation_factor = 1.0 / (1.0 + dt / tau_pi)
+                    for mu in range(4):
+                        for nu in range(4):
+                            fields_k["pi_munu"][..., mu, nu] *= relaxation_factor
+                else:
+                    warnings.warn(
+                        f"pi_munu Fourier tensor shape {tensor_shape} incompatible with 4x4 indices",
+                        stacklevel=2
+                    )
 
         # Heat flux relaxation (if available)
         if hasattr(self.coeffs, "heat_relaxation_time"):
             tau_q = getattr(self.coeffs, "heat_relaxation_time", None)
             if tau_q and tau_q > 0 and "q_mu" in fields_k:
-                relaxation_factor = 1.0 / (1.0 + dt / tau_q)
-                for mu in range(4):
-                    fields_k["q_mu"][..., mu] *= relaxation_factor
+                vector_shape = fields_k["q_mu"].shape
+                if len(vector_shape) >= 1 and vector_shape[-1] == 4:
+                    relaxation_factor = 1.0 / (1.0 + dt / tau_q)
+                    for mu in range(4):
+                        fields_k["q_mu"][..., mu] *= relaxation_factor
+                else:
+                    warnings.warn(
+                        f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
+                        stacklevel=2
+                    )
 
     def clear_cache(self) -> None:
         """Clear FFT and derivative caches to free memory."""
@@ -804,6 +867,11 @@ class SpectralISHydrodynamics:
 
         # Apply implicit linear terms with full timestep (coefficient 1)
         self.spectral.advance_linear_terms(self.fields, dt, method="implicit")
+
+        # === Final Update: y^{n+1} = y^n + dt/2 * E(Y₂) + dt * I(Y₃) ===
+        # The current state already contains: y^n + dt/2 * E(Y₂) + dt * I(Y₃)
+        # This is exactly the final IMEX-RK2 update, so no additional step needed.
+        # The implicit terms I(Y₃) are already applied via advance_linear_terms above.
 
     def _compute_explicit_rhs(self) -> dict[str, np.ndarray]:
         """

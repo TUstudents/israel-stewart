@@ -270,7 +270,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
                 else:
                     delta = la.solve(jacobian, -residual)
             except (la.LinAlgError, spla.LinAlgError) as e:
-                warnings.warn(f"Linear solver failed at iteration {iteration}: {e}", UserWarning, stacklevel=2)
+                warnings.warn(
+                    f"Linear solver failed at iteration {iteration}: {e}", UserWarning, stacklevel=2
+                )
                 break
 
             # Update solution
@@ -334,7 +336,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
             solution, info = spla.gmres(matrix, rhs, tol=self.tolerance)
 
         if info != 0:
-            warnings.warn(f"GMRES failed with info={info}, using direct solve", UserWarning, stacklevel=2)
+            warnings.warn(
+                f"GMRES failed with info={info}, using direct solve", UserWarning, stacklevel=2
+            )
             solution = spla.spsolve(matrix, rhs)
 
         result: np.ndarray = solution
@@ -578,21 +582,10 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
                 except Exception as e:
                     # Clean up on error to prevent memory leaks in exception handling
-                    # Only delete variables that were actually created
-                    try:
-                        if 'perturbed_vector' in locals():
-                            del perturbed_vector
-                        if 'perturbed_fields' in locals():
-                            del perturbed_fields
-                        if 'perturbed_rhs' in locals():
-                            del perturbed_rhs
-                        if 'perturbed_vector_rhs' in locals():
-                            del perturbed_vector_rhs
-                        if 'column' in locals():
-                            del column
-                    except:
-                        pass
-                    warnings.warn(f"Failed to compute Jacobian column {i}: {e}", UserWarning, stacklevel=2)
+                    # Note: Variables may not exist if exception occurred early
+                    warnings.warn(
+                        f"Failed to compute Jacobian column {i}: {e}", UserWarning, stacklevel=2
+                    )
                     batch_columns.append(np.zeros_like(baseline_vector))
 
             # MEMORY OPTIMIZATION: Process and clear batches immediately
@@ -709,7 +702,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
         if not vectors:
             # Return empty vector with warning if no RHS components found
-            warnings.warn("No valid RHS components found for vector conversion", UserWarning)
+            warnings.warn(
+                "No valid RHS components found for vector conversion", UserWarning, stacklevel=2
+            )
             return np.array([])
 
         return np.concatenate(vectors)
@@ -769,8 +764,8 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             raise ValueError(f"Unsupported IMEX-RK order: {order}")
 
         # Initialize physics modules for enhanced RHS splitting
-        self.relaxation_equations = None
-        self.conservation_laws = None
+        self.relaxation_equations: Any | None = None
+        self.conservation_laws: ConservationLaws | None = None
         if PHYSICS_AVAILABLE:
             try:
                 self.relaxation_equations = ISRelaxationEquations(grid, metric, coefficients)
@@ -1114,7 +1109,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
                 for i in range(len(self.grid.spatial_ranges))
             ]
         )
-        return spatial_spacing  # In natural units c = 1
+        return float(spatial_spacing)  # In natural units c = 1
 
     def _extract_relaxation_part(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """

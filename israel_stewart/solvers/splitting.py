@@ -9,7 +9,7 @@ Israel-Stewart system into separate hyperbolic (transport) and parabolic
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -198,11 +198,11 @@ class OperatorSplittingBase(ABC):
                     self._renormalize_four_velocity(result)
 
             # Ensure physical constraints
-            result.rho = np.maximum(result.rho, 1e-12)  # Positive energy density
-            result.pressure = result.rho / 3.0  # Ideal gas relation
+            result.rho[:] = np.maximum(result.rho, 1e-12)  # Positive energy density
+            result.pressure[:] = result.rho / 3.0  # Ideal gas relation
 
         except Exception as e:
-            warnings.warn(f"Physics-based hyperbolic solver failed: {e}", UserWarning)
+            warnings.warn(f"Physics-based hyperbolic solver failed: {e}", UserWarning, stacklevel=2)
             # Fall back to simple method
             result = self._fallback_hyperbolic_solver(fields, dt)
 
@@ -227,7 +227,7 @@ class OperatorSplittingBase(ABC):
         # Adiabatic evolution: ρ ∝ T^4, T ∝ a^-1, a ∝ t^1/3
         time_factor = 1.0 + expansion_rate * dt / 3.0
         result.rho *= time_factor**4
-        result.pressure = result.rho / 3.0  # Conformal equation of state
+        result.pressure[:] = result.rho / 3.0  # Conformal equation of state
 
         return result
 
@@ -235,24 +235,47 @@ class OperatorSplittingBase(ABC):
         """
         Renormalize four-velocity to satisfy relativistic constraint u^μ u_μ = -1.
 
-        After momentum updates, the four-velocity may not satisfy the normalization
-        condition. This method ensures proper relativistic normalization.
+        The four-velocity components are related by u^i = γ v^i where v^i is the
+        three-velocity and γ is the Lorentz factor. For Minkowski metric (+,-,-,-):
+        u_μ u^μ = (u^0)² - (u^1)² - (u^2)² - (u^3)² = -1
 
         Args:
             fields: Field configuration with potentially unnormalized four-velocity
         """
-        # Compute spatial velocity squared: |v|² = Σᵢ (u^i)²
-        u_spatial_sq = np.sum(fields.u_mu[..., 1:4] ** 2, axis=-1)
+        # Extract spatial components of four-velocity u^i = γ v^i
+        u_spatial = fields.u_mu[..., 1:4]
 
-        # Relativistic normalization: γ = √(1 + |v|²)
-        # This ensures u^μ u_μ = -γ² + γ²|v|² = -1
-        gamma = np.sqrt(1.0 + u_spatial_sq)
+        # Compute three-velocity magnitude squared |v|² from u^i = γ v^i
+        # We need to solve: u^i = γ v^i and γ = √(1 + |v|²)
+        # This gives: |u^i|² = γ² |v|² = (1 + |v|²) |v|²
+        u_spatial_sq = np.sum(u_spatial**2, axis=-1)
 
-        # Handle numerical safety: avoid division by zero
-        gamma = np.maximum(gamma, 1e-15)
+        # Solve for |v|² from |u^i|² = γ² |v|² where γ² = 1 + |v|²
+        # |u^i|² = (1 + |v|²) |v|² → |v|² = |u^i|² / (1 + |v|²)
+        # Rearranging: |v|²(1 + |v|²) = |u^i|² → |v|² + |v|⁴ = |u^i|²
+        # Quadratic in |v|²: |v|⁴ + |v|² - |u^i|² = 0
+        # Solution: |v|² = (-1 + √(1 + 4|u^i|²)) / 2
 
-        # Update time component to ensure normalization
+        # For small velocities, use approximation to avoid numerical issues
+        v_sq = np.where(
+            u_spatial_sq < 0.01,  # For small u^i, use direct approximation
+            u_spatial_sq,  # |v|² ≈ |u^i|² when γ ≈ 1
+            (-1.0 + np.sqrt(1.0 + 4.0 * u_spatial_sq)) / 2.0,  # Exact solution
+        )
+
+        # Ensure physical bounds: 0 ≤ |v|² < 1
+        v_sq = np.clip(v_sq, 0.0, 0.999999)
+
+        # Compute Lorentz factor γ = √(1 + |v|²)
+        gamma = np.sqrt(1.0 + v_sq)
+
+        # Compute three-velocity v^i = u^i / γ
+        gamma_safe = np.maximum(gamma, 1e-15)  # Avoid division by zero
+        v_spatial = u_spatial / gamma_safe[..., np.newaxis]
+
+        # Renormalize four-velocity: u^0 = γ, u^i = γ v^i
         fields.u_mu[..., 0] = gamma
+        fields.u_mu[..., 1:4] = gamma_safe[..., np.newaxis] * v_spatial
 
     def _estimate_maximum_characteristic_speed(self, fields: ISFieldConfiguration) -> float:
         """
@@ -266,7 +289,7 @@ class OperatorSplittingBase(ABC):
         # In relativistic case, maximum speed is bounded by speed of light
         max_speed = min(sound_speed, 1.0)  # c = 1 in natural units
 
-        return max_speed
+        return float(max_speed)
 
     def _default_relaxation_solver(
         self,
@@ -312,7 +335,7 @@ class OperatorSplittingBase(ABC):
             relaxation.evolve_relaxation(result, dt, method="implicit")
 
         except Exception as e:
-            warnings.warn(f"Physics-based relaxation solver failed: {e}", UserWarning)
+            warnings.warn(f"Physics-based relaxation solver failed: {e}", UserWarning, stacklevel=2)
             # Fall back to exponential integrator
             result = self._exponential_relaxation_solver(fields, dt)
 
@@ -359,21 +382,113 @@ class OperatorSplittingBase(ABC):
         """
         Add viscous source terms to relaxation evolution.
 
-        Includes first-order viscous sources: bulk and shear viscosity effects.
+        Computes proper expansion scalar and shear tensor from velocity field
+        to calculate realistic viscous sources: -ζ*θ and -η*σ^μν.
         """
         # Bulk viscosity source: -ζ * θ where θ is expansion scalar
         if hasattr(fields, "Pi") and fields.Pi is not None:
-            # Approximate expansion as trace of velocity gradient
-            expansion_rate = 1.0  # Simplified expansion rate
-            bulk_source = -self.coefficients.bulk_viscosity * expansion_rate
+            # Compute actual expansion scalar θ = ∇_μ u^μ
+            expansion_scalar = self._compute_expansion_scalar(fields)
+            bulk_source = -self.coefficients.bulk_viscosity * expansion_scalar
             fields.Pi += dt * bulk_source
 
-        # Shear viscosity source: -η * σ^μν where σ^μν is shear tensor
+        # Shear viscosity source: -η * σ^μν where σ^μν is shear tensor magnitude
         if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
-            # Approximate shear rate
-            shear_rate = 0.1  # Simplified shear rate
-            shear_source = -self.coefficients.shear_viscosity * shear_rate
+            # Compute shear tensor magnitude |σ^μν|
+            shear_magnitude = self._compute_shear_magnitude(fields)
+            shear_source = -self.coefficients.shear_viscosity * shear_magnitude
             fields.pi_munu += dt * shear_source
+
+    def _compute_expansion_scalar(self, fields: ISFieldConfiguration) -> float:
+        """
+        Compute expansion scalar θ = ∇_μ u^μ from velocity field.
+
+        For a Minkowski metric in Cartesian coordinates:
+        θ = ∂_t u^0 + ∂_i u^i (using Einstein summation)
+        """
+        # Simple finite difference approximation for ∇_μ u^μ
+        # For uniform grid, use central differences
+        try:
+            if hasattr(self.grid, "spatial_spacing") and self.grid.spatial_spacing:
+                dx = min(self.grid.spatial_spacing)
+            else:
+                # Fallback: estimate spacing from grid ranges
+                dx = min(
+                    [
+                        (r[1] - r[0]) / max(1, n - 1)
+                        for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
+                    ]
+                )
+
+            # Compute spatial divergence ∂_i u^i using finite differences
+            u_spatial = fields.u_mu[..., 1:4]
+            divergence = 0.0
+
+            for i in range(3):  # Sum over spatial dimensions
+                # Central differences: ∂_i u^i ≈ (u^i_{+1} - u^i_{-1}) / (2*dx)
+                u_component = u_spatial[..., i]
+                if u_component.ndim >= 3:  # 3D grid
+                    # Roll to compute differences (periodic boundary approximation)
+                    u_plus = np.roll(u_component, -1, axis=i)
+                    u_minus = np.roll(u_component, 1, axis=i)
+                    divergence += float(np.mean((u_plus - u_minus) / (2.0 * dx)))
+
+            return float(divergence)
+
+        except Exception:
+            # Fallback: simple approximation based on velocity magnitude
+            u_magnitude = np.sqrt(np.sum(fields.u_mu[..., 1:4] ** 2, axis=-1))
+            return float(np.mean(u_magnitude) / 10.0)  # Rough estimate
+
+    def _compute_shear_magnitude(self, fields: ISFieldConfiguration) -> float:
+        """
+        Compute characteristic shear tensor magnitude |σ^μν|.
+
+        The shear tensor is σ^μν = ∇^⟨μ u^ν⟩ (symmetric traceless part).
+        For simplicity, estimate from velocity gradients.
+        """
+        try:
+            if hasattr(self.grid, "spatial_spacing") and self.grid.spatial_spacing:
+                dx = min(self.grid.spatial_spacing)
+            else:
+                dx = min(
+                    [
+                        (r[1] - r[0]) / max(1, n - 1)
+                        for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
+                    ]
+                )
+
+            # Compute velocity gradients and estimate shear
+            u_spatial = fields.u_mu[..., 1:4]
+            shear_components = []
+
+            for i in range(3):
+                for j in range(3):
+                    if i <= j:  # Only compute upper triangle (symmetric)
+                        u_i = u_spatial[..., i]
+                        if u_i.ndim >= 3:
+                            # Compute ∂_j u^i
+                            u_plus = np.roll(u_i, -1, axis=j)
+                            u_minus = np.roll(u_i, 1, axis=j)
+                            grad_ij = (u_plus - u_minus) / (2.0 * dx)
+
+                            # Add to shear (symmetric part minus trace)
+                            if i == j:
+                                grad_ij -= np.mean(grad_ij)  # Remove trace
+                            shear_components.append(grad_ij)
+
+            if shear_components:
+                # Return characteristic magnitude
+                shear_tensor_sq = sum(np.mean(comp**2) for comp in shear_components)
+                return float(np.sqrt(shear_tensor_sq))
+            else:
+                return 0.1  # Fallback
+
+        except Exception:
+            # Fallback: estimate from velocity gradients
+            u_spatial = fields.u_mu[..., 1:4]
+            velocity_scale = np.sqrt(np.mean(u_spatial**2))
+            return float(velocity_scale * 0.1)  # Rough shear estimate
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for the splitting method."""
@@ -783,7 +898,9 @@ class AdaptiveSplitting(OperatorSplittingBase):
                 if current_dt < self.min_timestep:
                     warnings.warn(
                         f"Timestep reduced below minimum: {current_dt}. "
-                        f"Error: {error}, Tolerance: {self.tolerance}"
+                        f"Error: {error}, Tolerance: {self.tolerance}",
+                        UserWarning,
+                        stacklevel=2,
                     )
                     break
 
@@ -808,24 +925,48 @@ class AdaptiveSplitting(OperatorSplittingBase):
         dt: float,
     ) -> OperatorSplittingBase:
         """
-        Choose splitting method based on problem characteristics.
+        Choose splitting method based on problem stiffness.
 
-        Uses Strang splitting for accurate evolution, falls back to
-        Lie-Trotter for very stiff problems.
+        Strategy:
+        - Non-stiff (dt >> τ): Use Strang splitting for higher accuracy
+        - Stiff (dt ~ τ): Use Lie-Trotter for better stability and robustness
+
+        This follows standard practice where simple, robust methods are preferred
+        for stiff problems, while accurate methods are used for smooth problems.
         """
         # Estimate stiffness from relaxation timescales
         tau_pi = self.coefficients.shear_relaxation_time or 0.1
         tau_Pi = self.coefficients.bulk_relaxation_time or 0.1
+        tau_q = getattr(self.coefficients, "heat_relaxation_time", 0.1) or 0.1
 
-        min_relaxation_time = min(tau_pi, tau_Pi)
+        # Find the fastest (most restrictive) timescale
+        min_relaxation_time = min(tau_pi, tau_Pi, tau_q)
         stiffness_ratio = dt / min_relaxation_time
 
-        if stiffness_ratio > 0.1:
-            # Use Strang splitting for non-stiff problems
-            return self.strang_splitter
-        else:
-            # Use Lie-Trotter for very stiff problems
+        # Additional stiffness indicators from field gradients
+        try:
+            # Check for rapid field variations that indicate stiffness
+            rho_variation = (
+                np.std(fields.rho) / np.mean(fields.rho) if np.mean(fields.rho) > 0 else 0
+            )
+            u_variation = np.std(fields.u_mu) / (np.mean(np.abs(fields.u_mu)) + 1e-15)
+
+            # If fields vary rapidly, problem is likely stiff
+            variation_stiffness = max(rho_variation, u_variation)
+
+            # Combined stiffness measure
+            is_stiff = (stiffness_ratio <= 0.1) or (variation_stiffness > 1.0)
+
+        except Exception:
+            # Fallback to simple timescale-based detection
+            is_stiff = stiffness_ratio <= 0.1
+
+        if is_stiff:
+            # Use robust Lie-Trotter for stiff problems
             return self.lietrotter_splitter
+        else:
+            # Use accurate Strang for non-stiff problems
+            return self.strang_splitter
 
     def estimate_splitting_error(
         self,
@@ -985,14 +1126,16 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
             result.rho *= np.exp(4 * temperature_evolution * dt)
 
             # Pressure from equation of state
-            result.pressure = result.rho / 3.0  # Conformal equation of state
+            result.pressure[:] = result.rho / 3.0  # Conformal equation of state
 
             # Ensure physical bounds
-            result.rho = np.maximum(result.rho, 1e-12)
-            result.pressure = np.maximum(result.pressure, 0.0)
+            result.rho[:] = np.maximum(result.rho, 1e-12)
+            result.pressure[:] = np.maximum(result.pressure, 0.0)
 
         except Exception as e:
-            warnings.warn(f"Conservation-based thermodynamic solver failed: {e}", UserWarning)
+            warnings.warn(
+                f"Conservation-based thermodynamic solver failed: {e}", UserWarning, stacklevel=2
+            )
             result = self._expansion_cooling_solver(fields, dt)
 
         return result
@@ -1005,24 +1148,27 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         """
         Fallback thermodynamic solver using expansion cooling.
 
-        Implements simple Bjorken-like expansion dynamics when conservation
-        laws module is unavailable.
+        Computes expansion rate from actual velocity field rather than
+        using hardcoded values. Implements proper relativistic cooling.
         """
         result = fields.copy()
 
-        # Bjorken expansion: proper time evolution
-        expansion_time = 1.0  # Characteristic time scale
-        cooling_rate = 1.0 / (3.0 * expansion_time)  # 1/3 from adiabatic index
+        # Compute actual expansion rate from velocity field
+        expansion_rate = self._compute_expansion_rate(fields)
 
-        # Temperature evolution: T ∝ t^-1/3
+        # Relativistic adiabatic evolution: T ∝ τ^(-1/3) for conformal fluid
+        # where τ is proper time and expansion drives cooling
+        cooling_rate = expansion_rate / 3.0  # 1/3 from conformal equation of state
+
+        # Temperature evolution: T ∝ exp(-∫ θ/3 dt) where θ is expansion scalar
         if hasattr(result, "temperature"):
-            result.temperature *= np.exp(-cooling_rate * dt / 3.0)
+            result.temperature *= np.exp(-cooling_rate * dt)
 
-        # Energy density: ρ ∝ T^4 ∝ t^-4/3
-        result.rho *= np.exp(-4.0 * cooling_rate * dt / 3.0)
+        # Energy density: ρ ∝ T^4 for massless particles
+        result.rho *= np.exp(-4.0 * cooling_rate * dt)
 
-        # Pressure: p = ρ/3
-        result.pressure = result.rho / 3.0
+        # Pressure: p = ρ/3 for conformal equation of state
+        result.pressure[:] = result.rho / 3.0
 
         return result
 
@@ -1034,26 +1180,31 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         the equation of state and thermodynamic relations.
         """
         # Ideal gas relation: p = ρ/3 for massless particles
-        fields.pressure = fields.rho / 3.0
+        fields.pressure[:] = fields.rho / 3.0
 
         # Stefan-Boltzmann relation: ρ = aT^4 for radiation
         if hasattr(fields, "temperature"):
             stefan_boltzmann_constant = 1.0  # Normalized units
-            fields.rho = stefan_boltzmann_constant * fields.temperature**4
-            fields.pressure = fields.rho / 3.0
+
+            # If temperature is not initialized (all zeros), compute it from energy density
+            if np.allclose(fields.temperature, 0.0):
+                # T = (ρ/a)^(1/4) from Stefan-Boltzmann law
+                fields.temperature[:] = np.power(fields.rho / stefan_boltzmann_constant, 0.25)
+            else:
+                # If temperature is set, enforce ρ = aT^4
+                fields.rho[:] = stefan_boltzmann_constant * fields.temperature**4
+
+            fields.pressure[:] = fields.rho / 3.0
 
     def _compute_expansion_rate(self, fields: ISFieldConfiguration) -> float:
         """
         Compute expansion rate from velocity field.
 
-        Returns the trace of the velocity gradient ∇·v, which characterizes
-        the expansion rate of the fluid.
+        Returns the expansion scalar θ = ∇_μ u^μ, which characterizes
+        the rate of volume expansion of the fluid.
         """
-        # Simplified expansion rate
-        # In full implementation, this would compute ∇_μ u^μ from four-velocity
-        expansion_rate = 1.0  # Approximate expansion rate
-
-        return expansion_rate
+        # Use the same computation as in _compute_expansion_scalar
+        return self._compute_expansion_scalar(fields)
 
     @monitor_performance("physics_based_splitting")
     def advance_timestep(
@@ -1062,34 +1213,41 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         dt: float,
     ) -> ISFieldConfiguration:
         """
-        Advance timestep using physics-based splitting.
+        Advance timestep using physics-based multi-rate splitting.
 
-        Applies sub-stepping for fast processes and coarse stepping for slow processes.
+        Implements proper nested splitting where fast processes are integrated
+        within each step of slower processes: S_slow(dt/2) ∘ [nested fast/medium] ∘ S_slow(dt/2)
         """
         # Determine sub-stepping based on timescale ratios
         tau_fast = self.timescales["relaxation_min"]
         tau_medium = self.timescales["hydrodynamic"]
         tau_slow = self.timescales["thermodynamic"]
 
-        # Number of sub-steps for each process
-        n_relax = max(1, int(dt / (0.1 * tau_fast)))
-        n_hydro = max(1, int(dt / (0.5 * tau_medium)))
-        n_thermo = 1  # Slow process, single step
+        # Determine number of substeps for each timescale
+        n_medium = max(1, int(dt / (0.5 * tau_medium)))  # Medium substeps
+        n_fast = max(1, int((dt / n_medium) / (0.1 * tau_fast)))  # Fast substeps per medium step
 
         result = fields.copy()
 
-        # Sub-step relaxation (fastest process)
-        dt_relax = dt / n_relax
-        for _ in range(n_relax):
-            result = self.relaxation_solver(result, dt_relax)
+        # Strang-like splitting for slow process: S_slow(dt/2)
+        result = self.thermodynamic_solver(result, dt / 2.0)
 
-        # Sub-step hydrodynamics (medium process)
-        dt_hydro = dt / n_hydro
-        for _ in range(n_hydro):
-            result = self.hyperbolic_solver(result, dt_hydro)
+        # Nested medium-fast splitting
+        dt_medium = dt / n_medium
+        for _ in range(n_medium):
+            # Strang-like splitting for medium process: S_medium(dt_m/2)
+            result = self.hyperbolic_solver(result, dt_medium / 2.0)
 
-        # Single step thermodynamics (slowest process)
-        result = self.thermodynamic_solver(result, dt)
+            # Fast process integration within medium timestep
+            dt_fast = dt_medium / n_fast
+            for _ in range(n_fast):
+                result = self.relaxation_solver(result, dt_fast)
+
+            # Complete medium step: S_medium(dt_m/2)
+            result = self.hyperbolic_solver(result, dt_medium / 2.0)
+
+        # Complete slow step: S_slow(dt/2)
+        result = self.thermodynamic_solver(result, dt / 2.0)
 
         return result
 
@@ -1098,24 +1256,31 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         fields: ISFieldConfiguration,
         dt: float,
     ) -> ISFieldConfiguration:
-        """Advance timestep without error estimation (to avoid recursion)."""
-        # Use the same logic as advance_timestep but skip error estimation
+        """Advance timestep without error estimation using nested splitting."""
+        # Use the same nested splitting logic as advance_timestep
+        tau_fast = self.timescales["relaxation_min"]
+        tau_medium = self.timescales["hydrodynamic"]
+
+        # Determine number of substeps for each timescale
+        n_medium = max(1, int(dt / (0.5 * tau_medium)))
+        n_fast = max(1, int((dt / n_medium) / (0.1 * tau_fast)))
+
         result = fields.copy()
 
-        # Relaxation substeps (fastest processes)
-        n_relax = max(1, int(np.ceil(dt / self.timescales["relaxation_min"])))
-        dt_relax = dt / n_relax
-        for _ in range(n_relax):
-            result = self.relaxation_solver(result, dt_relax)
+        # Nested multi-rate splitting
+        result = self.thermodynamic_solver(result, dt / 2.0)
 
-        # Hydrodynamic substeps (intermediate timescale)
-        n_hydro = max(1, int(np.ceil(dt / self.timescales["hydrodynamic"])))
-        dt_hydro = dt / n_hydro
-        for _ in range(n_hydro):
-            result = self.hyperbolic_solver(result, dt_hydro)
+        dt_medium = dt / n_medium
+        for _ in range(n_medium):
+            result = self.hyperbolic_solver(result, dt_medium / 2.0)
 
-        # Single step thermodynamics (slowest process)
-        result = self.thermodynamic_solver(result, dt)
+            dt_fast = dt_medium / n_fast
+            for _ in range(n_fast):
+                result = self.relaxation_solver(result, dt_fast)
+
+            result = self.hyperbolic_solver(result, dt_medium / 2.0)
+
+        result = self.thermodynamic_solver(result, dt / 2.0)
 
         return result
 
@@ -1214,7 +1379,7 @@ def solve_hyperbolic_conservative(
 
     # Apply conservation law updates
     result.rho *= 1.0 + expansion_rate * dt / 3.0  # Adiabatic cooling
-    result.pressure = result.rho / 3.0  # Ideal gas relation
+    result.pressure[:] = result.rho / 3.0  # Ideal gas relation
 
     return result
 
@@ -1247,7 +1412,7 @@ def solve_relaxation_exponential(
         result.pi_munu *= np.exp(-dt / tau_pi)
 
     if hasattr(result, "q_mu") and result.q_mu is not None:
-        tau_q = getattr(coefficients, "heat_relaxation_time", 0.1)
+        tau_q = getattr(coefficients, "heat_relaxation_time", None) or 0.1
         result.q_mu *= np.exp(-dt / tau_q)
 
     return result

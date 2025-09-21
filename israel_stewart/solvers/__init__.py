@@ -33,7 +33,7 @@ splitting_solver = create_solver("splitting", "strang", grid, coeffs)
 from israel_stewart.solvers import (
     create_finite_difference_solver,
     create_implicit_solver,
-    create_splitting_solver
+    create_splitting_solver,
 )
 
 # High-order finite difference
@@ -77,6 +77,12 @@ physics_split = create_splitting_solver("physics", grid, metric, coeffs)
 """
 
 # Import finite difference methods
+# Additional imports for master factory
+from typing import Any, Optional, Union
+
+from ..core.fields import ISFieldConfiguration, TransportCoefficients
+from ..core.metrics import MetricBase
+from ..core.spacetime_grid import SpacetimeGrid
 from .finite_difference import (
     ConservativeFiniteDifference,
     FiniteDifferenceScheme,
@@ -94,6 +100,9 @@ from .implicit import (
     create_implicit_solver,
 )
 
+# Import spectral methods
+from .spectral import SpectralISHydrodynamics, SpectralISolver
+
 # Import operator splitting methods
 from .splitting import (
     AdaptiveSplitting,
@@ -106,31 +115,22 @@ from .splitting import (
     solve_relaxation_exponential,
 )
 
-# Import spectral methods
-from .spectral import SpectralISHydrodynamics, SpectralISolver
-
-# Additional imports for master factory
-from typing import Any, Union
-from ..core.spacetime_grid import SpacetimeGrid
-from ..core.metrics import MetricBase
-from ..core.fields import ISFieldConfiguration, TransportCoefficients
-
 
 def create_solver(
     solver_type: str,
     solver_subtype: str = "",
-    grid: SpacetimeGrid = None,
-    metric: MetricBase = None,
-    coefficients: TransportCoefficients = None,
-    fields: ISFieldConfiguration = None,
-    **kwargs: Any
-) -> Union[
-    FiniteDifferenceScheme,
-    ImplicitSolverBase,
-    OperatorSplittingBase,
-    SpectralISolver,
-    SpectralISHydrodynamics
-]:
+    grid: SpacetimeGrid | None = None,
+    metric: MetricBase | None = None,
+    coefficients: TransportCoefficients | None = None,
+    fields: ISFieldConfiguration | None = None,
+    **kwargs: Any,
+) -> (
+    FiniteDifferenceScheme
+    | ImplicitSolverBase
+    | OperatorSplittingBase
+    | SpectralISolver
+    | SpectralISHydrodynamics
+):
     """
     Master factory function for creating any type of Israel-Stewart solver.
 
@@ -163,16 +163,15 @@ def create_solver(
 
     Examples:
         >>> # Conservative finite difference solver
-        >>> fd_solver = create_solver("finite_difference", "conservative",
-        ...                          grid, metric, order=4)
+        >>> fd_solver = create_solver("finite_difference", "conservative", grid, metric, order=4)
 
         >>> # Adaptive operator splitting
-        >>> split_solver = create_solver("splitting", "adaptive",
-        ...                             grid, metric, coeffs, tolerance=1e-6)
+        >>> split_solver = create_solver("splitting", "adaptive", grid, metric, coeffs, tolerance=1e-6)
 
         >>> # Spectral hydrodynamics solver
-        >>> spectral_hydro = create_solver("spectral", "hydro",
-        ...                               grid, fields=fields, coefficients=coeffs)
+        >>> spectral_hydro = create_solver(
+        ...     "spectral", "hydro", grid, fields=fields, coefficients=coeffs
+        ... )
     """
     # Validate inputs
     if grid is None:
@@ -189,12 +188,16 @@ def create_solver(
 
     elif solver_type == "implicit":
         if metric is None or coefficients is None:
-            raise ValueError("MetricBase and TransportCoefficients are required for implicit solvers")
+            raise ValueError(
+                "MetricBase and TransportCoefficients are required for implicit solvers"
+            )
         return create_implicit_solver(solver_subtype, grid, metric, coefficients, **kwargs)
 
     elif solver_type == "splitting":
         if metric is None or coefficients is None:
-            raise ValueError("MetricBase and TransportCoefficients are required for splitting solvers")
+            raise ValueError(
+                "MetricBase and TransportCoefficients are required for splitting solvers"
+            )
         return create_splitting_solver(solver_subtype, grid, metric, coefficients, **kwargs)
 
     elif solver_type == "spectral":
@@ -209,18 +212,21 @@ def create_solver(
                 raise ValueError("ISFieldConfiguration is required for SpectralISHydrodynamics")
             return SpectralISHydrodynamics(grid, fields, coefficients)
         else:
-            raise ValueError(f"Unknown spectral solver subtype: {solver_subtype}. "
-                           f"Available: 'solver', 'hydro'")
+            raise ValueError(
+                f"Unknown spectral solver subtype: {solver_subtype}. "
+                f"Available: 'solver', 'hydro'"
+            )
     else:
-        raise ValueError(f"Unknown solver type: {solver_type}. "
-                        f"Available types: 'finite_difference', 'implicit', 'splitting', 'spectral'")
+        raise ValueError(
+            f"Unknown solver type: {solver_type}. "
+            f"Available types: 'finite_difference', 'implicit', 'splitting', 'spectral'"
+        )
 
 
 # Complete list of all exported symbols
 __all__ = [
     # === Master factory function ===
     "create_solver",
-
     # === Finite difference methods ===
     # Base classes
     "FiniteDifferenceScheme",
@@ -230,7 +236,6 @@ __all__ = [
     "WENOFiniteDifference",
     # Factory function
     "create_finite_difference_solver",
-
     # === Implicit time integration ===
     # Base classes
     "ImplicitSolverBase",
@@ -240,7 +245,6 @@ __all__ = [
     "ExponentialIntegrator",
     # Factory function
     "create_implicit_solver",
-
     # === Operator splitting methods ===
     # Base classes
     "OperatorSplittingBase",
@@ -254,7 +258,6 @@ __all__ = [
     # Utility functions
     "solve_hyperbolic_conservative",
     "solve_relaxation_exponential",
-
     # === Spectral methods ===
     "SpectralISolver",
     "SpectralISHydrodynamics",

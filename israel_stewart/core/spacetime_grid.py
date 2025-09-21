@@ -39,6 +39,7 @@ class SpacetimeGrid:
         spatial_ranges: list[tuple[float, float]],
         grid_points: tuple[int, int, int, int],
         metric: Optional["MetricBase"] = None,
+        boundary_conditions: Literal["periodic", "dirichlet", "neumann"] = "dirichlet",
     ):
         """
         Initialize spacetime grid.
@@ -49,12 +50,17 @@ class SpacetimeGrid:
             spatial_ranges: [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
             grid_points: (Nt, Nx, Ny, Nz) number of grid points
             metric: Spacetime metric tensor
+            boundary_conditions: Boundary condition type determining grid spacing:
+                - "periodic": Use L/N spacing (excludes endpoints) for FFT compatibility
+                - "dirichlet": Use L/(N-1) spacing (includes endpoints)
+                - "neumann": Use L/(N-1) spacing (includes endpoints)
         """
         self.coordinate_system = coordinate_system
         self.time_range = time_range
         self.spatial_ranges = spatial_ranges
         self.grid_points = grid_points
         self.metric = metric
+        self.boundary_conditions = boundary_conditions
 
         # Validate inputs
         self._validate_grid_parameters()
@@ -76,7 +82,12 @@ class SpacetimeGrid:
         self.spatial_spacing = []
         for r, n in zip(spatial_ranges, grid_points[1:], strict=False):
             if n > 1:
-                self.spatial_spacing.append((r[1] - r[0]) / (n - 1))
+                if boundary_conditions == "periodic":
+                    # Periodic: dx = L/N
+                    self.spatial_spacing.append((r[1] - r[0]) / n)
+                else:
+                    # Dirichlet/Neumann: dx = L/(N-1)
+                    self.spatial_spacing.append((r[1] - r[0]) / (n - 1))
             else:
                 self.spatial_spacing.append(0.0)
 
@@ -163,51 +174,18 @@ class SpacetimeGrid:
         for i, name in enumerate(coord_names):
             range_i = self.spatial_ranges[i]
             n_points = self.grid_points[i + 1]
-            coords[name] = np.linspace(range_i[0], range_i[1], n_points)
+
+            if self.boundary_conditions == "periodic":
+                # Periodic boundaries: Use L/N spacing, exclude endpoint
+                # Points at [start, start + dx, start + 2*dx, ..., start + (N-1)*dx]
+                extent = range_i[1] - range_i[0]
+                dx = extent / n_points
+                coords[name] = range_i[0] + np.arange(n_points, dtype=np.float64) * dx
+            else:
+                # Dirichlet/Neumann boundaries: Use L/(N-1) spacing, include endpoints
+                coords[name] = np.linspace(range_i[0], range_i[1], n_points)
 
         return coords
-
-    def _create_spectral_coordinates(self) -> None:
-        """
-        Create coordinate arrays optimized for spectral methods.
-
-        Replaces the default coordinate arrays with ones that use proper
-        spectral spacing: dx = L/N instead of L/(N-1). This ensures
-        periodicity and FFT compatibility.
-        """
-        coords = {}
-
-        # Time coordinate - keep standard spacing for time evolution
-        if self.coordinate_system == "milne":
-            time_name = "tau"
-        else:
-            time_name = "t"
-        coords[time_name] = np.linspace(self.time_range[0], self.time_range[1], self.grid_points[0])
-
-        # Spatial coordinates with spectral spacing
-        if self.coordinate_system == "cartesian":
-            coord_names = ["x", "y", "z"]
-        elif self.coordinate_system == "spherical":
-            coord_names = ["r", "theta", "phi"]
-        elif self.coordinate_system == "cylindrical":
-            coord_names = ["rho", "phi", "z"]
-        elif self.coordinate_system == "milne":
-            coord_names = ["eta", "x", "y"]
-
-        for i, name in enumerate(coord_names):
-            range_i = self.spatial_ranges[i]
-            n_points = self.grid_points[i + 1]
-            # Spectral spacing: dx = L/N, points at [0, dx, 2*dx, ..., (N-1)*dx]
-            extent = range_i[1] - range_i[0]
-            dx = extent / n_points
-            coords[name] = range_i[0] + np.arange(n_points, dtype=np.float64) * dx
-
-        # Update coordinates and recompute spacing
-        self.coordinates = coords
-        self.spatial_spacing = [
-            (r[1] - r[0]) / n
-            for r, n in zip(self.spatial_ranges, self.grid_points[1:], strict=False)
-        ]
 
     @property
     def coordinate_names(self) -> list[str]:
@@ -1207,12 +1185,10 @@ def create_spectral_cartesian_grid(
     Returns:
         Cartesian SpacetimeGrid optimized for spectral methods
     """
-    # For spectral methods, we need periodic grids with spacing L/N
-    # Override the coordinate creation to use proper spectral spacing
+    # For spectral methods, use periodic boundary conditions for proper L/N spacing
     spatial_ranges = [(-spatial_extent / 2, spatial_extent / 2) for _ in range(3)]
-    grid = SpacetimeGrid("cartesian", time_range, spatial_ranges, grid_points)
-
-    # Override coordinates for spectral compatibility
-    grid._create_spectral_coordinates()
+    grid = SpacetimeGrid(
+        "cartesian", time_range, spatial_ranges, grid_points, boundary_conditions="periodic"
+    )
 
     return grid

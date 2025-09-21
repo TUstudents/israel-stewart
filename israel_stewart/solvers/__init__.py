@@ -13,19 +13,21 @@ relativistic hydrodynamics with second-order viscous corrections, including:
 
 ### Basic Solver Creation
 ```python
-from israel_stewart.solvers import create_solver
+from israel_stewart.solvers import create_solver, create_periodic_grid
 from israel_stewart.core import SpacetimeGrid, ISFieldConfiguration, TransportCoefficients
 
-# Setup problem
-grid = SpacetimeGrid(...)
-fields = ISFieldConfiguration(grid)
+# Setup grids with appropriate boundary conditions
+finite_diff_grid = SpacetimeGrid(...)  # Uses dirichlet boundaries by default
+periodic_grid = create_periodic_grid(...)  # For spectral methods
+
+fields = ISFieldConfiguration(periodic_grid)
 coeffs = TransportCoefficients(...)
 
 # Create different solver types
-fd_solver = create_solver("finite_difference", "conservative", grid, coeffs)
-implicit_solver = create_solver("implicit", "backward_euler", grid, coeffs)
-spectral_solver = create_solver("spectral", grid, fields, coeffs)
-splitting_solver = create_solver("splitting", "strang", grid, coeffs)
+fd_solver = create_solver("finite_difference", "conservative", finite_diff_grid, coeffs)
+implicit_solver = create_solver("implicit", "backward_euler", finite_diff_grid, coeffs)
+spectral_solver = create_solver("spectral", periodic_grid, fields, coeffs)  # Requires periodic grid
+splitting_solver = create_solver("splitting", "strang", finite_diff_grid, coeffs)
 ```
 
 ### Specialized Factory Functions
@@ -114,6 +116,39 @@ from .splitting import (
     solve_hyperbolic_conservative,
     solve_relaxation_exponential,
 )
+
+
+def create_periodic_grid(
+    coordinate_system: str,
+    time_range: tuple[float, float],
+    spatial_ranges: list[tuple[float, float]],
+    grid_points: tuple[int, int, int, int],
+    metric: MetricBase | None = None,
+) -> SpacetimeGrid:
+    """
+    Create a SpacetimeGrid with periodic boundary conditions for spectral methods.
+
+    This is a convenience function that ensures proper periodic spacing (L/N)
+    for FFT-based spectral solvers.
+
+    Args:
+        coordinate_system: 'cartesian', 'spherical', 'cylindrical', 'milne'
+        time_range: (t_min, t_max) for time coordinate
+        spatial_ranges: [(x_min, x_max), (y_min, y_max), (z_min, z_max)]
+        grid_points: (Nt, Nx, Ny, Nz) number of grid points
+        metric: Spacetime metric tensor
+
+    Returns:
+        SpacetimeGrid with periodic boundary conditions
+    """
+    return SpacetimeGrid(
+        coordinate_system=coordinate_system,
+        time_range=time_range,
+        spatial_ranges=spatial_ranges,
+        grid_points=grid_points,
+        metric=metric,
+        boundary_conditions="periodic",
+    )
 
 
 def create_solver(
@@ -227,6 +262,7 @@ def create_solver(
 __all__ = [
     # === Master factory function ===
     "create_solver",
+    "create_periodic_grid",
     # === Finite difference methods ===
     # Base classes
     "FiniteDifferenceScheme",

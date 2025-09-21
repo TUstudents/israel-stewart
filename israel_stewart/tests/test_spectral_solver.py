@@ -5,6 +5,8 @@ This module provides comprehensive tests for FFT-based spectral methods
 including accuracy validation and performance benchmarks.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -1684,3 +1686,149 @@ class TestSpectralLaplacianPhysics:
 
         except Exception as e:
             pytest.fail(f"Conservation with diffusion test failed: {e}")
+
+
+class TestPeriodicGridIntegration:
+    """Test spectral solver integration with new periodic grid functionality."""
+
+    @pytest.fixture
+    def periodic_grid(self) -> SpacetimeGrid:
+        """Create a properly configured periodic grid."""
+        return SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+            grid_points=(8, 16, 16, 16),
+            boundary_conditions="periodic",
+        )
+
+    @pytest.fixture
+    def dirichlet_grid(self) -> SpacetimeGrid:
+        """Create a dirichlet grid for comparison."""
+        return SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+            grid_points=(8, 16, 16, 16),
+            boundary_conditions="dirichlet",
+        )
+
+    def test_periodic_grid_no_warning(self, periodic_grid: SpacetimeGrid) -> None:
+        """Test that periodic grids don't trigger spacing warnings."""
+        fields = ISFieldConfiguration(periodic_grid)
+
+        # Should not issue any warnings about spacing
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            solver = SpectralISolver(periodic_grid, fields)
+
+            # No warnings about spacing should be issued
+            spacing_warnings = [
+                warning for warning in w if "spacing" in str(warning.message).lower()
+            ]
+            assert (
+                len(spacing_warnings) == 0
+            ), f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
+
+    def test_dirichlet_grid_issues_warning(self, dirichlet_grid: SpacetimeGrid) -> None:
+        """Test that non-periodic grids trigger appropriate warnings."""
+        fields = ISFieldConfiguration(dirichlet_grid)
+
+        # Should issue warning about non-periodic boundaries
+        with pytest.warns(UserWarning, match="periodic boundary conditions"):
+            SpectralISolver(dirichlet_grid, fields)
+
+    def test_fft_frequency_consistency_periodic(self, periodic_grid: SpacetimeGrid) -> None:
+        """Test that FFT frequencies match grid coordinates for periodic grids."""
+        fields = ISFieldConfiguration(periodic_grid)
+        solver = SpectralISolver(periodic_grid, fields)
+
+        # Check that wave vectors are computed correctly
+        kx_grid, ky_grid, kz_grid = solver.k_vectors
+
+        # Verify fundamental frequencies
+        L = 2 * np.pi
+        N = 16
+        expected_k1 = 2 * np.pi / L  # Fundamental frequency = 1
+
+        # Check that frequency arrays have correct structure
+        kx_1d = np.fft.fftfreq(N, solver.dx) * 2 * np.pi
+        assert np.allclose(
+            kx_1d[1], expected_k1
+        ), f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
+
+    def test_spectral_derivative_accuracy_periodic(self, periodic_grid: SpacetimeGrid) -> None:
+        """Test that spectral derivatives achieve high accuracy with periodic grids."""
+        fields = ISFieldConfiguration(periodic_grid)
+        solver = SpectralISolver(periodic_grid, fields)
+
+        # Create analytical test function: sin(x) (simple periodic function)
+        x = periodic_grid.coordinates["x"]
+        y = periodic_grid.coordinates["y"]
+        z = periodic_grid.coordinates["z"]
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+        # Test function: sin(x) with k=1
+        test_field = np.sin(X)
+
+        # Analytical derivative: d/dx sin(x) = cos(x)
+        expected_derivative = np.cos(X)
+
+        # Compute spectral derivative
+        numerical_derivative = solver.spatial_derivative(test_field, direction=0)
+
+        # Check accuracy (should be machine precision for this simple case)
+        max_error = np.max(np.abs(numerical_derivative - expected_derivative))
+        relative_error = max_error / np.max(np.abs(expected_derivative))
+
+        assert (
+            relative_error < 1e-12
+        ), f"Spectral derivative relative error too large: {relative_error}"
+
+    def test_spacing_consistency_with_factory(self) -> None:
+        """Test that create_periodic_grid produces consistent spacing."""
+        from israel_stewart.solvers import create_periodic_grid
+
+        # Create grid using factory function
+        periodic_grid = create_periodic_grid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi)] * 3,
+            grid_points=(8, 16, 16, 16),
+        )
+
+        # Verify it has periodic boundary conditions
+        assert periodic_grid.boundary_conditions == "periodic"
+
+        # Verify spacing is L/N
+        L = 2 * np.pi
+        N = 16
+        expected_dx = L / N
+        assert np.allclose(periodic_grid.spatial_spacing[0], expected_dx)
+
+        # Test that spectral solver works without warnings
+        fields = ISFieldConfiguration(periodic_grid)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            SpectralISolver(periodic_grid, fields)
+            spacing_warnings = [
+                warning for warning in w if "spacing" in str(warning.message).lower()
+            ]
+            assert len(spacing_warnings) == 0
+
+    def test_backward_compatibility(self) -> None:
+        """Test that old-style grid creation still works but issues warnings."""
+        # Create old-style grid (without boundary_conditions)
+        old_grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi)] * 3,
+            grid_points=(8, 16, 16, 16),
+            # No boundary_conditions specified - defaults to dirichlet
+        )
+
+        fields = ISFieldConfiguration(old_grid)
+
+        # Should issue warning about non-periodic boundaries
+        with pytest.warns(UserWarning, match="periodic boundary conditions"):
+            SpectralISolver(old_grid, fields)

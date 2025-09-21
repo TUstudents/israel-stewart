@@ -52,25 +52,18 @@ class SpectralISolver:
         self.nt, self.nx, self.ny, self.nz = grid.grid_points
         self.dt = grid.dt
 
-        # IMPORTANT: For spectral methods, we need proper periodic spacing: dx = L/N
-        # SpacetimeGrid uses dx = L/(N-1) which breaks periodicity
-        # Override with correct spectral spacing
-        if hasattr(grid, "spatial_ranges"):
-            # Calculate proper spectral spacing: L/N instead of L/(N-1)
-            spatial_extents = [r[1] - r[0] for r in grid.spatial_ranges]
-            self.dx = spatial_extents[0] / self.nx
-            self.dy = spatial_extents[1] / self.ny
-            self.dz = spatial_extents[2] / self.nz
-        else:
-            # Fallback to grid spacing (may be incorrect for periodic domains)
+        # Validate grid has periodic boundary conditions for spectral methods
+        if hasattr(grid, "boundary_conditions") and grid.boundary_conditions != "periodic":
             warnings.warn(
-                "Using potentially incorrect grid spacing from SpacetimeGrid. "
-                "For spectral methods with periodic boundaries, spacing should be L/N, not L/(N-1). "
-                "Consider using grid.spatial_ranges to compute proper periodic spacing.",
+                f"SpectralISolver requires periodic boundary conditions, but grid has "
+                f"'{grid.boundary_conditions}' boundaries. This may cause FFT accuracy issues. "
+                f"Consider using boundary_conditions='periodic' when creating the SpacetimeGrid.",
                 UserWarning,
                 stacklevel=2,
             )
-            self.dx, self.dy, self.dz = grid.spatial_spacing
+
+        # Use grid spacing directly (now correct for periodic boundaries)
+        self.dx, self.dy, self.dz = grid.spatial_spacing
 
         # Precompute FFT plans for efficiency
         self.fft_plan = np.fft.fftn

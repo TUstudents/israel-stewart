@@ -663,5 +663,120 @@ class TestVectorizedDivergence:
         assert np.all(np.isfinite(divergence))
 
 
+class TestBoundaryConditions:
+    """Test new boundary condition functionality."""
+
+    def test_periodic_vs_dirichlet_spacing(self) -> None:
+        """Test that periodic and dirichlet grids have different spacing."""
+        common_params = {
+            "coordinate_system": "cartesian",
+            "time_range": (0.0, 1.0),
+            "spatial_ranges": [(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+            "grid_points": (8, 8, 8, 8),
+        }
+
+        # Dirichlet grid (default)
+        dirichlet_grid = SpacetimeGrid(**common_params, boundary_conditions="dirichlet")
+
+        # Periodic grid
+        periodic_grid = SpacetimeGrid(**common_params, boundary_conditions="periodic")
+
+        # Check spacing differences
+        L = 2 * np.pi
+        N = 8
+
+        # Dirichlet: dx = L/(N-1)
+        expected_dirichlet_dx = L / (N - 1)
+        assert np.allclose(dirichlet_grid.spatial_spacing[0], expected_dirichlet_dx)
+
+        # Periodic: dx = L/N
+        expected_periodic_dx = L / N
+        assert np.allclose(periodic_grid.spatial_spacing[0], expected_periodic_dx)
+
+        # They should be different
+        assert periodic_grid.spatial_spacing[0] != dirichlet_grid.spatial_spacing[0]
+
+    def test_periodic_coordinates_exclude_endpoint(self) -> None:
+        """Test that periodic coordinates exclude the endpoint."""
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 1.0), (0.0, 1.0)],
+            grid_points=(4, 4, 1, 1),
+            boundary_conditions="periodic",
+        )
+
+        x_coords = grid.coordinates["x"]
+        expected = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])  # [0, L/4, L/2, 3L/4]
+
+        assert np.allclose(x_coords, expected)
+        assert x_coords[-1] < 2 * np.pi  # Endpoint excluded
+
+    def test_dirichlet_coordinates_include_endpoint(self) -> None:
+        """Test that dirichlet coordinates include both endpoints."""
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 1.0), (0.0, 1.0)],
+            grid_points=(4, 4, 1, 1),
+            boundary_conditions="dirichlet",
+        )
+
+        x_coords = grid.coordinates["x"]
+        expected = np.linspace(0.0, 2 * np.pi, 4)  # Includes both 0 and 2π
+
+        assert np.allclose(x_coords, expected)
+        assert x_coords[0] == 0.0
+        assert x_coords[-1] == 2 * np.pi
+
+    def test_boundary_condition_attribute(self) -> None:
+        """Test that boundary_conditions attribute is stored correctly."""
+        for bc in ["periodic", "dirichlet", "neumann"]:
+            grid = SpacetimeGrid(
+                coordinate_system="cartesian",
+                time_range=(0.0, 1.0),
+                spatial_ranges=[(0.0, 1.0)] * 3,
+                grid_points=(4, 4, 4, 4),
+                boundary_conditions=bc,
+            )
+            assert grid.boundary_conditions == bc
+
+    def test_default_boundary_conditions(self) -> None:
+        """Test that default boundary conditions are dirichlet."""
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 1.0)] * 3,
+            grid_points=(4, 4, 4, 4),
+        )
+        assert grid.boundary_conditions == "dirichlet"
+
+    def test_fft_frequency_matching_periodic(self) -> None:
+        """Test that periodic grid coordinates match FFT frequencies."""
+        L = 2 * np.pi
+        N = 8
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, L), (0.0, 1.0), (0.0, 1.0)],
+            grid_points=(4, N, 1, 1),
+            boundary_conditions="periodic",
+        )
+
+        # Get coordinates and spacing
+        x_coords = grid.coordinates["x"]
+        dx = grid.spatial_spacing[0]
+
+        # Check that FFT frequencies align with grid
+        fft_freqs = np.fft.fftfreq(N, dx) * 2 * np.pi
+
+        # For periodic spacing, the fundamental frequency should be 2π/L = 1
+        assert np.allclose(fft_freqs[1], 2 * np.pi / L)
+
+        # Coordinate spacing should be exactly L/N
+        assert np.allclose(dx, L / N)
+        assert np.allclose(x_coords[1] - x_coords[0], dx)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -9,7 +9,7 @@ Key features include Newton-Krylov methods, IMEX schemes, and adaptive timestep 
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import scipy.linalg as la
@@ -24,8 +24,9 @@ from ..core.spacetime_grid import SpacetimeGrid
 
 # Enhanced physics integration
 try:
-    from ..equations.relaxation import ISRelaxationEquations
     from ..equations.conservation import ConservationLaws
+    from ..equations.relaxation import ISRelaxationEquations
+
     PHYSICS_AVAILABLE = True
 except ImportError:
     PHYSICS_AVAILABLE = False
@@ -269,7 +270,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
                 else:
                     delta = la.solve(jacobian, -residual)
             except (la.LinAlgError, spla.LinAlgError) as e:
-                warnings.warn(f"Linear solver failed at iteration {iteration}: {e}", UserWarning)
+                warnings.warn(f"Linear solver failed at iteration {iteration}: {e}", UserWarning, stacklevel=2)
                 break
 
             # Update solution
@@ -281,6 +282,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
             f"Newton iteration failed to converge in {self.max_iterations} iterations. "
             f"Final residual: {residual_norm:.2e}",
             UserWarning,
+            stacklevel=2,
         )
         self.iteration_counts.append(self.max_iterations)
         return new_fields
@@ -332,7 +334,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
             solution, info = spla.gmres(matrix, rhs, tol=self.tolerance)
 
         if info != 0:
-            warnings.warn(f"GMRES failed with info={info}, using direct solve", UserWarning)
+            warnings.warn(f"GMRES failed with info={info}, using direct solve", UserWarning, stacklevel=2)
             solution = spla.spsolve(matrix, rhs)
 
         result: np.ndarray = solution
@@ -466,6 +468,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
         # MEMORY LEAK PROTECTION: Early detection and prevention
         try:
             import psutil
+
             process = psutil.Process()
             initial_memory = process.memory_info().rss / (1024**2)  # MB
         except ImportError:
@@ -481,12 +484,13 @@ class BackwardEulerSolver(ImplicitSolverBase):
             return sparse.csr_matrix((0, 0)) if self.use_sparse else np.array([[]])
 
         # CRITICAL: Check memory requirements before proceeding
-        jacobian_memory_mb = (n ** 2) * 8 / (1024**2)  # 8 bytes per float64
+        jacobian_memory_mb = (n**2) * 8 / (1024**2)  # 8 bytes per float64
         if jacobian_memory_mb > 1000:  # More than 1GB
             warnings.warn(
                 f"MEMORY WARNING: Jacobian would require {jacobian_memory_mb:.0f} MB. "
                 f"State vector size: {n}. Consider using analytical Jacobian or smaller grid.",
-                UserWarning
+                UserWarning,
+                stacklevel=2,
             )
             if jacobian_memory_mb > 4000:  # More than 4GB - abort
                 raise MemoryError(
@@ -496,7 +500,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
         # Use complex-step derivatives for better accuracy when possible
         try:
-            result = self._compute_complex_step_jacobian(fields, rhs_func, current_vector, baseline_vector)
+            result = self._compute_complex_step_jacobian(
+                fields, rhs_func, current_vector, baseline_vector
+            )
             return result
         except Exception:
             # Fall back to standard finite differences
@@ -507,7 +513,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
         jacobian_columns = []
         batch_size = min(n, 20)  # REDUCED: Smaller batches to prevent memory explosion
 
-        print(f"MEMORY DEBUG: Starting Jacobian computation with n={n}, batches={n//batch_size + 1}")
+        print(
+            f"MEMORY DEBUG: Starting Jacobian computation with n={n}, batches={n // batch_size + 1}"
+        )
 
         for batch_start in range(0, n, batch_size):
             batch_end = min(batch_start + batch_size, n)
@@ -520,10 +528,11 @@ class BackwardEulerSolver(ImplicitSolverBase):
                     memory_growth = current_memory - initial_memory
                     if memory_growth > 500:  # More than 500MB growth
                         warnings.warn(
-                            f"MEMORY LEAK DETECTED: Batch {batch_start//batch_size + 1} "
+                            f"MEMORY LEAK DETECTED: Batch {batch_start // batch_size + 1} "
                             f"caused {memory_growth:.0f} MB growth. "
                             f"Total memory: {current_memory:.0f} MB",
-                            UserWarning
+                            UserWarning,
+                            stacklevel=2,
                         )
                         if memory_growth > 2000:  # More than 2GB growth - abort
                             raise MemoryError(
@@ -559,15 +568,31 @@ class BackwardEulerSolver(ImplicitSolverBase):
                     batch_columns.append(column.copy())  # Explicit copy to break references
 
                     # CRITICAL: Explicit cleanup to force garbage collection
-                    del perturbed_vector, perturbed_fields, perturbed_rhs, perturbed_vector_rhs, column
+                    del (
+                        perturbed_vector,
+                        perturbed_fields,
+                        perturbed_rhs,
+                        perturbed_vector_rhs,
+                        column,
+                    )
 
                 except Exception as e:
                     # Clean up on error to prevent memory leaks in exception handling
+                    # Only delete variables that were actually created
                     try:
-                        del perturbed_vector, perturbed_fields, perturbed_rhs, perturbed_vector_rhs, column
+                        if 'perturbed_vector' in locals():
+                            del perturbed_vector
+                        if 'perturbed_fields' in locals():
+                            del perturbed_fields
+                        if 'perturbed_rhs' in locals():
+                            del perturbed_rhs
+                        if 'perturbed_vector_rhs' in locals():
+                            del perturbed_vector_rhs
+                        if 'column' in locals():
+                            del column
                     except:
                         pass
-                    warnings.warn(f"Failed to compute Jacobian column {i}: {e}", UserWarning)
+                    warnings.warn(f"Failed to compute Jacobian column {i}: {e}", UserWarning, stacklevel=2)
                     batch_columns.append(np.zeros_like(baseline_vector))
 
             # MEMORY OPTIMIZATION: Process and clear batches immediately
@@ -576,7 +601,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
                 del batch_columns  # Explicit cleanup
 
         # Assemble Jacobian matrix
-        print(f"MEMORY DEBUG: Assembling final Jacobian matrix...")
+        print("MEMORY DEBUG: Assembling final Jacobian matrix...")
         if self.use_sparse:
             jacobian = sparse.csr_matrix(np.column_stack(jacobian_columns))
         else:
@@ -589,7 +614,9 @@ class BackwardEulerSolver(ImplicitSolverBase):
             try:
                 final_memory = process.memory_info().rss / (1024**2)
                 total_growth = final_memory - initial_memory
-                print(f"MEMORY DEBUG: Jacobian computation complete. Memory growth: {total_growth:.0f} MB")
+                print(
+                    f"MEMORY DEBUG: Jacobian computation complete. Memory growth: {total_growth:.0f} MB"
+                )
             except Exception:
                 pass
 
@@ -942,19 +969,19 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
         if hasattr(fields, "Pi") and fields.Pi is not None:
             size = fields.Pi.size
             tau_Pi = self.coefficients.bulk_relaxation_time or 0.1
-            jacobian[idx:idx + size, idx:idx + size] = -np.eye(size) / tau_Pi
+            jacobian[idx : idx + size, idx : idx + size] = -np.eye(size) / tau_Pi
             idx += size
 
         if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             size = fields.pi_munu.size
             tau_pi = self.coefficients.shear_relaxation_time or 0.1
-            jacobian[idx:idx + size, idx:idx + size] = -np.eye(size) / tau_pi
+            jacobian[idx : idx + size, idx : idx + size] = -np.eye(size) / tau_pi
             idx += size
 
         if hasattr(fields, "q_mu") and fields.q_mu is not None:
             size = fields.q_mu.size
             tau_q = getattr(self.coefficients, "heat_relaxation_time", 0.1) or 0.1
-            jacobian[idx:idx + size, idx:idx + size] = -np.eye(size) / tau_q
+            jacobian[idx : idx + size, idx : idx + size] = -np.eye(size) / tau_q
             idx += size
 
         return jacobian
@@ -1014,7 +1041,9 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             # Fall back to heuristic splitting
             return self._heuristic_hyperbolic_extraction(rhs)
 
-    def _physics_based_hyperbolic_extraction(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def _physics_based_hyperbolic_extraction(
+        self, rhs: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
         """Extract hyperbolic terms using physics knowledge."""
         hyperbolic = {}
 
@@ -1078,10 +1107,13 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
     def _estimate_transport_timescale(self) -> float:
         """Estimate characteristic transport timescale from grid."""
         # Estimate as L/c where L is grid spacing
-        spatial_spacing = np.min([
-            (self.grid.spatial_ranges[i][1] - self.grid.spatial_ranges[i][0]) / self.grid.grid_points[i+1]
-            for i in range(len(self.grid.spatial_ranges))
-        ])
+        spatial_spacing = np.min(
+            [
+                (self.grid.spatial_ranges[i][1] - self.grid.spatial_ranges[i][0])
+                / self.grid.grid_points[i + 1]
+                for i in range(len(self.grid.spatial_ranges))
+            ]
+        )
         return spatial_spacing  # In natural units c = 1
 
     def _extract_relaxation_part(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -1102,7 +1134,9 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             # Fall back to heuristic splitting
             return self._heuristic_relaxation_extraction(rhs)
 
-    def _physics_based_relaxation_extraction(self, rhs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def _physics_based_relaxation_extraction(
+        self, rhs: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
         """Extract relaxation terms using physics knowledge."""
         relaxation = {}
 

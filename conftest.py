@@ -1,12 +1,14 @@
 """
 Pytest configuration with hard memory limits to prevent system crashes.
 """
-import psutil
-import pytest
-import threading
-import time
+
 import os
 import signal
+import threading
+import time
+
+import psutil
+import pytest
 
 
 class MemoryMonitor:
@@ -54,7 +56,9 @@ class MemoryMonitor:
                 memory_gb = total_memory / (1024**3)
 
                 if total_memory > self.max_memory_bytes:
-                    print(f"\n!!! MEMORY LIMIT EXCEEDED: {memory_gb:.2f} GB > {self.max_memory_bytes/(1024**3):.1f} GB !!!")
+                    print(
+                        f"\n!!! MEMORY LIMIT EXCEEDED: {memory_gb:.2f} GB > {self.max_memory_bytes/(1024**3):.1f} GB !!!"
+                    )
                     print("!!! TERMINATING PYTEST TO PREVENT SYSTEM CRASH !!!")
 
                     # Force terminate the entire process group

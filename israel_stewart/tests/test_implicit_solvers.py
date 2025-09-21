@@ -8,8 +8,10 @@ including Jacobian accuracy, Newton convergence, and physics integration.
 import numpy as np
 import pytest
 import scipy.sparse as sparse
+
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -155,8 +157,10 @@ class TestBackwardEulerSolver(TestImplicitSolverBase):
         numerical_diag = np.diag(numerical_jac)
 
         np.testing.assert_allclose(
-            analytical_diag, numerical_diag, rtol=1e-4,
-            err_msg="Analytical and numerical Jacobian diagonals should agree"
+            analytical_diag,
+            numerical_diag,
+            rtol=1e-4,
+            err_msg="Analytical and numerical Jacobian diagonals should agree",
         )
 
     def test_newton_convergence(self, solver: BackwardEulerSolver, setup_fields) -> None:
@@ -187,7 +191,9 @@ class TestBackwardEulerSolver(TestImplicitSolverBase):
 
         # Larger timesteps should lead to more relaxation
         pi_values = [np.max(np.abs(r.Pi)) for r in results]
-        assert pi_values[0] > pi_values[1] > pi_values[2], "Larger timesteps should cause more decay"
+        assert (
+            pi_values[0] > pi_values[1] > pi_values[2]
+        ), "Larger timesteps should cause more decay"
 
     def test_error_handling(self, solver: BackwardEulerSolver, setup_fields) -> None:
         """Test error handling for problematic cases."""
@@ -324,8 +330,10 @@ class TestExponentialIntegrator(TestImplicitSolverBase):
         # Check exponential decay
         actual_factor = np.max(result.Pi) / np.max(fields.Pi)
         np.testing.assert_allclose(
-            actual_factor, expected_factor, rtol=1e-3,
-            err_msg="Exponential integrator should be exact for linear relaxation"
+            actual_factor,
+            expected_factor,
+            rtol=1e-3,
+            err_msg="Exponential integrator should be exact for linear relaxation",
         )
 
     def test_large_timestep_stability(self, solver: ExponentialIntegrator, setup_fields) -> None:
@@ -355,10 +363,7 @@ class TestImplicitSolverFactory:
         )
 
         metric = MinkowskiMetric()
-        coefficients = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05
-        )
+        coefficients = TransportCoefficients(shear_viscosity=0.1, bulk_viscosity=0.05)
 
         return grid, metric, coefficients
 
@@ -410,13 +415,17 @@ class TestImplicitSolverPerformance:
         if PSUTIL_AVAILABLE:
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             if available_memory_gb < 2.0:
-                pytest.skip("Insufficient memory for performance tests (need at least 2GB available)")
+                pytest.skip(
+                    "Insufficient memory for performance tests (need at least 2GB available)"
+                )
         else:
             # Conservative fallback when psutil not available
             pytest.skip("Memory monitoring unavailable, skipping performance tests for safety")
 
     @pytest.fixture
-    def setup_performance_problem(self) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
+    def setup_performance_problem(
+        self,
+    ) -> tuple[SpacetimeGrid, MinkowskiMetric, TransportCoefficients, ISFieldConfiguration]:
         """Setup larger problem for performance testing."""
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
@@ -426,10 +435,7 @@ class TestImplicitSolverPerformance:
         )
 
         metric = MinkowskiMetric()
-        coefficients = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05
-        )
+        coefficients = TransportCoefficients(shear_viscosity=0.1, bulk_viscosity=0.05)
         fields = ISFieldConfiguration(grid)
 
         return grid, metric, coefficients, fields
@@ -452,7 +458,7 @@ class TestImplicitSolverPerformance:
         if PSUTIL_AVAILABLE:
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             field_size = fields.to_state_vector().size
-            estimated_memory_gb = (field_size ** 2) * 8 / (1024**3)  # 8 bytes per float64
+            estimated_memory_gb = (field_size**2) * 8 / (1024**3)  # 8 bytes per float64
 
             if estimated_memory_gb < available_memory_gb * 0.5:  # Use max 50% of available memory
                 start_time = time.time()
@@ -495,10 +501,7 @@ class TestImplicitSolverConvergence:
         )
 
         metric = MinkowskiMetric()
-        coefficients = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05
-        )
+        coefficients = TransportCoefficients(shear_viscosity=0.1, bulk_viscosity=0.05)
         solver = BackwardEulerSolver(grid, metric, coefficients, tolerance=1e-12)
 
         fields = ISFieldConfiguration(grid)
@@ -521,10 +524,7 @@ class TestImplicitSolverConvergence:
         )
 
         metric = MinkowskiMetric()
-        coefficients = TransportCoefficients(
-            shear_viscosity=0.1,
-            bulk_viscosity=0.05
-        )
+        coefficients = TransportCoefficients(shear_viscosity=0.1, bulk_viscosity=0.05)
 
         # Test different orders
         solvers = [
@@ -550,4 +550,6 @@ class TestImplicitSolverConvergence:
                 errors.append(error)
 
             # Check convergence (errors should decrease)
-            assert errors[0] > errors[1] > errors[2], "Errors should decrease with smaller timesteps"
+            assert (
+                errors[0] > errors[1] > errors[2]
+            ), "Errors should decrease with smaller timesteps"

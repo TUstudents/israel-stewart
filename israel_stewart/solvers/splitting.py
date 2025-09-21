@@ -22,6 +22,7 @@ from ..core.spacetime_grid import SpacetimeGrid
 try:
     from ..equations.conservation import ConservationLaws
     from ..equations.relaxation import ISRelaxationEquations
+
     PHYSICS_AVAILABLE = True
 except ImportError:
     PHYSICS_AVAILABLE = False
@@ -151,15 +152,17 @@ class OperatorSplittingBase(ABC):
                 min_dx = min(self.grid.spatial_spacing)
             else:
                 # Fallback: compute from grid definition
-                min_dx = min([
-                    (r[1] - r[0]) / max(1, n - 1)
-                    for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
-                ])
+                min_dx = min(
+                    [
+                        (r[1] - r[0]) / max(1, n - 1)
+                        for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
+                    ]
+                )
 
             cfl_dt = min(dt, 0.5 * min_dx / max_speed)
 
             # Update conserved quantities: ∂_t u = -∇·F(u)
-            if hasattr(div_T, 'shape') and len(div_T.shape) >= 2:
+            if hasattr(div_T, "shape") and len(div_T.shape) >= 2:
                 # Energy-momentum conservation: ∂_t T^0ν = -∇_i T^iν
                 if div_T.shape[-1] >= 4:
                     # Energy density evolution (ν=0 component)
@@ -239,7 +242,7 @@ class OperatorSplittingBase(ABC):
             fields: Field configuration with potentially unnormalized four-velocity
         """
         # Compute spatial velocity squared: |v|² = Σᵢ (u^i)²
-        u_spatial_sq = np.sum(fields.u_mu[..., 1:4]**2, axis=-1)
+        u_spatial_sq = np.sum(fields.u_mu[..., 1:4] ** 2, axis=-1)
 
         # Relativistic normalization: γ = √(1 + |v|²)
         # This ensures u^μ u_μ = -γ² + γ²|v|² = -1
@@ -384,6 +387,15 @@ class OperatorSplittingBase(ABC):
             "avg_splitting_error": np.mean(self.splitting_errors) if self.splitting_errors else 0.0,
             "max_splitting_error": np.max(self.splitting_errors) if self.splitting_errors else 0.0,
         }
+
+    @abstractmethod
+    def advance_timestep_no_error(
+        self,
+        fields: ISFieldConfiguration,
+        dt: float,
+    ) -> ISFieldConfiguration:
+        """Advance timestep without error estimation (to avoid recursion)."""
+        pass
 
 
 class StrangSplitting(OperatorSplittingBase):
@@ -615,6 +627,30 @@ class LieTrotterSplitting(OperatorSplittingBase):
 
         return result
 
+    def advance_timestep_no_error(
+        self,
+        fields: ISFieldConfiguration,
+        dt: float,
+    ) -> ISFieldConfiguration:
+        """Advance timestep without error estimation (to avoid recursion)."""
+        # Use the same logic as advance_timestep but skip error tracking
+        intermediate = fields
+
+        if self.order == "HR":
+            # Hyperbolic step
+            intermediate = self.hyperbolic_solver(intermediate, dt)
+            # Relaxation step
+            result = self.relaxation_solver(intermediate, dt)
+        elif self.order == "RH":
+            # Relaxation step
+            intermediate = self.relaxation_solver(intermediate, dt)
+            # Hyperbolic step
+            result = self.hyperbolic_solver(intermediate, dt)
+        else:
+            raise ValueError(f"Unknown order: {self.order}. Use 'HR' or 'RH'.")
+
+        return result
+
     def estimate_splitting_error(
         self,
         fields: ISFieldConfiguration,
@@ -756,6 +792,16 @@ class AdaptiveSplitting(OperatorSplittingBase):
 
         return result
 
+    def advance_timestep_no_error(
+        self,
+        fields: ISFieldConfiguration,
+        dt: float,
+    ) -> ISFieldConfiguration:
+        """Advance timestep without error estimation (to avoid recursion)."""
+        # Choose method and advance timestep
+        method = self._choose_splitting_method(fields, dt)
+        return method.advance_timestep_no_error(fields, dt)
+
     def _choose_splitting_method(
         self,
         fields: ISFieldConfiguration,
@@ -851,17 +897,19 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         # Relaxation timescales
         tau_pi = self.coefficients.shear_relaxation_time or 0.1
         tau_Pi = self.coefficients.bulk_relaxation_time or 0.1
-        tau_q = getattr(self.coefficients, "heat_relaxation_time", 0.1)
+        tau_q = getattr(self.coefficients, "heat_relaxation_time", 0.1) or 0.1
 
         # Hydrodynamic timescale (sound crossing time)
         if hasattr(self.grid, "spatial_spacing") and self.grid.spatial_spacing:
             L_char = min(self.grid.spatial_spacing)  # Characteristic length scale
         else:
             # Fallback: estimate from grid ranges and points
-            L_char = min([
-                (r[1] - r[0]) / max(1, n - 1)
-                for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
-            ])
+            L_char = min(
+                [
+                    (r[1] - r[0]) / max(1, n - 1)
+                    for r, n in zip(self.grid.spatial_ranges, self.grid.grid_points[1:])
+                ]
+            )
 
         cs = 1.0 / np.sqrt(3.0)  # Speed of sound
         tau_hydro = L_char / cs
@@ -1036,6 +1084,32 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
             result = self.relaxation_solver(result, dt_relax)
 
         # Sub-step hydrodynamics (medium process)
+        dt_hydro = dt / n_hydro
+        for _ in range(n_hydro):
+            result = self.hyperbolic_solver(result, dt_hydro)
+
+        # Single step thermodynamics (slowest process)
+        result = self.thermodynamic_solver(result, dt)
+
+        return result
+
+    def advance_timestep_no_error(
+        self,
+        fields: ISFieldConfiguration,
+        dt: float,
+    ) -> ISFieldConfiguration:
+        """Advance timestep without error estimation (to avoid recursion)."""
+        # Use the same logic as advance_timestep but skip error estimation
+        result = fields.copy()
+
+        # Relaxation substeps (fastest processes)
+        n_relax = max(1, int(np.ceil(dt / self.timescales["relaxation_min"])))
+        dt_relax = dt / n_relax
+        for _ in range(n_relax):
+            result = self.relaxation_solver(result, dt_relax)
+
+        # Hydrodynamic substeps (intermediate timescale)
+        n_hydro = max(1, int(np.ceil(dt / self.timescales["hydrodynamic"])))
         dt_hydro = dt / n_hydro
         for _ in range(n_hydro):
             result = self.hyperbolic_solver(result, dt_hydro)

@@ -167,9 +167,32 @@ class OperatorSplittingBase(ABC):
                     result.rho += cfl_dt * energy_source
 
                     # Momentum density evolution (ν=i components)
-                    # This would update four-velocity, simplified for now
                     momentum_source = -div_T[..., 1:4]
-                    # Apply momentum conservation with proper normalization
+
+                    # Apply momentum conservation with proper relativistic treatment
+                    # Current momentum density: T^0i = (ρ + p) γ u^i
+                    enthalpy = result.rho + result.pressure
+                    gamma = result.u_mu[..., 0]
+
+                    # Ensure proper broadcasting for momentum calculation
+                    enthalpy_gamma = enthalpy * gamma
+                    current_momentum = enthalpy_gamma[..., np.newaxis] * result.u_mu[..., 1:4]
+
+                    # Update momentum density using conservation law
+                    # Ensure momentum_source has compatible shape
+                    if momentum_source.shape != current_momentum.shape:
+                        # Handle potential shape mismatch
+                        momentum_source = np.broadcast_to(momentum_source, current_momentum.shape)
+
+                    updated_momentum = current_momentum + cfl_dt * momentum_source
+
+                    # Convert back to four-velocity components
+                    # u^i = p^i / ((ρ + p) γ), handle division by zero safely
+                    safe_enthalpy_gamma = np.maximum(enthalpy_gamma, 1e-15)
+                    result.u_mu[..., 1:4] = updated_momentum / safe_enthalpy_gamma[..., np.newaxis]
+
+                    # Renormalize four-velocity to maintain u^μ u_μ = -1
+                    self._renormalize_four_velocity(result)
 
             # Ensure physical constraints
             result.rho = np.maximum(result.rho, 1e-12)  # Positive energy density
@@ -204,6 +227,29 @@ class OperatorSplittingBase(ABC):
         result.pressure = result.rho / 3.0  # Conformal equation of state
 
         return result
+
+    def _renormalize_four_velocity(self, fields: ISFieldConfiguration) -> None:
+        """
+        Renormalize four-velocity to satisfy relativistic constraint u^μ u_μ = -1.
+
+        After momentum updates, the four-velocity may not satisfy the normalization
+        condition. This method ensures proper relativistic normalization.
+
+        Args:
+            fields: Field configuration with potentially unnormalized four-velocity
+        """
+        # Compute spatial velocity squared: |v|² = Σᵢ (u^i)²
+        u_spatial_sq = np.sum(fields.u_mu[..., 1:4]**2, axis=-1)
+
+        # Relativistic normalization: γ = √(1 + |v|²)
+        # This ensures u^μ u_μ = -γ² + γ²|v|² = -1
+        gamma = np.sqrt(1.0 + u_spatial_sq)
+
+        # Handle numerical safety: avoid division by zero
+        gamma = np.maximum(gamma, 1e-15)
+
+        # Update time component to ensure normalization
+        fields.u_mu[..., 0] = gamma
 
     def _estimate_maximum_characteristic_speed(self, fields: ISFieldConfiguration) -> float:
         """

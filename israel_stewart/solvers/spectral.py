@@ -352,37 +352,46 @@ class SpectralISolver:
         """
         Apply 2/3 rule dealiasing to prevent aliasing errors.
 
-        Properly handles the fftfreq layout where high frequencies are split between
-        the beginning and end of the array. Filters out the upper 1/3 of frequencies
-        in each direction to prevent aliasing from nonlinear terms.
+        Uses magnitude-based filtering: zeros out modes where |k| > (2/3) * k_max
+        in any direction. This properly implements the 2/3 rule independent of
+        the FFT frequency layout.
+
+        Args:
+            field_k: FFT coefficients in k-space
+
+        Returns:
+            Dealiased FFT coefficients
         """
         nx, ny, nz = field_k.shape
         result = field_k.copy()
 
-        # 2/3 rule: keep only lower 2/3 of frequencies in each direction
-        # For fftfreq layout: [0, 1, 2, ..., N/2-1, -N/2, -N/2+1, ..., -1]
-        # We zero out modes where |k| > (2/3) * kmax
+        # Get actual frequency values using fftfreq
+        kx_vals = np.fft.fftfreq(nx, self.dx) * 2 * np.pi
+        ky_vals = np.fft.fftfreq(ny, self.dy) * 2 * np.pi
+        kz_vals = np.fft.fftfreq(nz, self.dz) * 2 * np.pi
 
-        kx_cutoff = int(nx // 3)  # Upper 1/3 to zero out
-        ky_cutoff = int(ny // 3)
-        kz_cutoff = int(nz // 3)
+        # Maximum frequencies (Nyquist frequency)
+        kx_max = np.pi / self.dx
+        ky_max = np.pi / self.dy
+        kz_max = np.pi / self.dz
 
-        # Zero out high positive frequencies (upper part of positive range)
-        if kx_cutoff > 0:
-            kx_start = nx // 2 - kx_cutoff
-            result[kx_start : nx // 2, :, :] = 0
-            # Zero out high negative frequencies (lower part of negative range)
-            result[nx // 2 : nx // 2 + kx_cutoff, :, :] = 0
+        # 2/3 rule cutoffs
+        kx_cutoff = (2.0 / 3.0) * kx_max
+        ky_cutoff = (2.0 / 3.0) * ky_max
+        kz_cutoff = (2.0 / 3.0) * kz_max
 
-        if ky_cutoff > 0:
-            ky_start = ny // 2 - ky_cutoff
-            result[:, ky_start : ny // 2, :] = 0
-            result[:, ny // 2 : ny // 2 + ky_cutoff, :] = 0
+        # Create 3D meshgrid of frequency values
+        kx_grid, ky_grid, kz_grid = np.meshgrid(kx_vals, ky_vals, kz_vals, indexing="ij")
 
-        if kz_cutoff > 0:
-            kz_start = nz // 2 - kz_cutoff
-            result[:, :, kz_start : nz // 2] = 0
-            result[:, :, nz // 2 : nz // 2 + kz_cutoff] = 0
+        # Create dealiasing mask: zero where |k| > (2/3) * k_max in any direction
+        dealias_mask = (
+            (np.abs(kx_grid) <= kx_cutoff)
+            & (np.abs(ky_grid) <= ky_cutoff)
+            & (np.abs(kz_grid) <= kz_cutoff)
+        )
+
+        # Apply dealiasing mask
+        result *= dealias_mask
 
         return result
 
@@ -489,7 +498,7 @@ class SpectralISolver:
             eta = self.coeffs.shear_viscosity or 0.0
 
             # Apply to each component of shear tensor
-            if hasattr(fields, 'pi_munu') and fields.pi_munu.ndim >= 2:
+            if hasattr(fields, "pi_munu") and fields.pi_munu.ndim >= 2:
                 # Ensure tensor has expected shape (..., 4, 4)
                 tensor_shape = fields.pi_munu.shape
                 if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
@@ -501,7 +510,7 @@ class SpectralISolver:
                 else:
                     warnings.warn(
                         f"pi_munu tensor shape {tensor_shape} incompatible with 4x4 indices",
-                        stacklevel=2
+                        stacklevel=2,
                     )
 
     def _implicit_spectral_advance(self, fields: "ISFieldConfiguration", dt: float) -> None:
@@ -544,11 +553,13 @@ class SpectralISolver:
                 fields_k["pi_munu"] = np.zeros_like(fields.pi_munu, dtype=complex)
                 for mu in range(4):
                     for nu in range(4):
-                        fields_k["pi_munu"][..., mu, nu] = self.fft_plan(fields.pi_munu[..., mu, nu])
+                        fields_k["pi_munu"][..., mu, nu] = self.fft_plan(
+                            fields.pi_munu[..., mu, nu]
+                        )
             else:
                 warnings.warn(
                     f"pi_munu tensor shape {tensor_shape} incompatible with 4x4 indices",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         # Heat flux
@@ -561,7 +572,7 @@ class SpectralISolver:
             else:
                 warnings.warn(
                     f"q_mu vector shape {vector_shape} incompatible with 4-component index",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         return fields_k
@@ -585,7 +596,7 @@ class SpectralISolver:
             else:
                 warnings.warn(
                     f"pi_munu tensor shape {fields.pi_munu.shape} incompatible with 4x4 indices",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         # Heat flux
@@ -596,7 +607,7 @@ class SpectralISolver:
             else:
                 warnings.warn(
                     f"q_mu vector shape {fields.q_mu.shape} incompatible with 4-component index",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
     def _solve_implicit_diffusion(self, fields_k: dict[str, np.ndarray], dt: float) -> None:
@@ -633,7 +644,7 @@ class SpectralISolver:
             else:
                 warnings.warn(
                     f"pi_munu Fourier tensor shape {tensor_shape} incompatible with 4x4 indices",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         # Apply to heat flux
@@ -647,7 +658,7 @@ class SpectralISolver:
             else:
                 warnings.warn(
                     f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
     def _solve_implicit_relaxation(self, fields_k: dict[str, np.ndarray], dt: float) -> None:
@@ -686,7 +697,7 @@ class SpectralISolver:
                 else:
                     warnings.warn(
                         f"pi_munu Fourier tensor shape {tensor_shape} incompatible with 4x4 indices",
-                        stacklevel=2
+                        stacklevel=2,
                     )
 
         # Heat flux relaxation (if available)
@@ -701,7 +712,7 @@ class SpectralISolver:
                 else:
                     warnings.warn(
                         f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
-                        stacklevel=2
+                        stacklevel=2,
                     )
 
     def clear_cache(self) -> None:
@@ -895,7 +906,9 @@ class SpectralISHydrodynamics:
         # Load final result into self.fields
         self._restore_fields(final_dict)
 
-    def _compute_explicit_rhs_for_fields(self, fields: "ISFieldConfiguration") -> dict[str, np.ndarray]:
+    def _compute_explicit_rhs_for_fields(
+        self, fields: "ISFieldConfiguration"
+    ) -> dict[str, np.ndarray]:
         """
         Compute explicit RHS terms F(Y) for specific field configuration.
 
@@ -1037,7 +1050,7 @@ class SpectralISHydrodynamics:
     def _restore_fields(
         self,
         field_backup: dict[str, np.ndarray],
-        target_fields: Optional["ISFieldConfiguration"] = None
+        target_fields: Optional["ISFieldConfiguration"] = None,
     ) -> None:
         """
         Restore field configuration from backup.
@@ -1230,7 +1243,7 @@ class SpectralISHydrodynamics:
         self,
         fields_base: dict[str, np.ndarray],
         fields_to_add: dict[str, np.ndarray],
-        scale: float = 1.0
+        scale: float = 1.0,
     ) -> dict[str, np.ndarray]:
         """
         Combine field dictionaries: result = base + scale * to_add.
@@ -1251,7 +1264,9 @@ class SpectralISHydrodynamics:
                 result[key] = fields_base[key].copy()
         return result
 
-    def _scale_fields(self, field_dict: dict[str, np.ndarray], scale: float) -> dict[str, np.ndarray]:
+    def _scale_fields(
+        self, field_dict: dict[str, np.ndarray], scale: float
+    ) -> dict[str, np.ndarray]:
         """
         Scale all fields in dictionary by a constant factor.
 
@@ -1280,7 +1295,9 @@ class SpectralISHydrodynamics:
         self._restore_fields(field_dict, target_fields=new_fields)
         return new_fields
 
-    def _solve_implicit_stage(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+    def _solve_implicit_stage(
+        self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
+    ) -> dict[str, np.ndarray]:
         """
         Solve implicit stage equation: (I - γ·dt·∂G/∂y)·Y = RHS for ARS(2,2,2).
 
@@ -1303,13 +1320,14 @@ class SpectralISHydrodynamics:
             return self._newton_krylov_solve(rhs_dict, gamma_dt)
         except Exception as e:
             warnings.warn(
-                f"Implicit stage solve failed: {e}. Using explicit approximation.",
-                stacklevel=2
+                f"Implicit stage solve failed: {e}. Using explicit approximation.", stacklevel=2
             )
             # Fallback: first-order explicit approximation
             return self._explicit_approximation(rhs_dict, gamma_dt)
 
-    def _newton_krylov_solve(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+    def _newton_krylov_solve(
+        self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
+    ) -> dict[str, np.ndarray]:
         """
         Newton-Krylov solver for implicit stage equation.
 
@@ -1341,11 +1359,11 @@ class SpectralISHydrodynamics:
             solution_flat = newton_krylov(
                 residual_function,
                 y0_flat,
-                method='lgmres',  # Left-preconditioned GMRES
+                method="lgmres",  # Left-preconditioned GMRES
                 verbose=False,
-                maxiter=10,       # Limit iterations for performance
-                f_tol=1e-8,       # Reasonable tolerance for PDE context
-                f_rtol=1e-6
+                maxiter=10,  # Limit iterations for performance
+                f_tol=1e-8,  # Reasonable tolerance for PDE context
+                f_rtol=1e-6,
             )
             return self._flat_to_dict(solution_flat, rhs_dict)
 
@@ -1366,8 +1384,10 @@ class SpectralISHydrodynamics:
 
         if self.coeffs is None:
             # No stiff terms
-            return {key: np.zeros_like(getattr(fields, key))
-                   for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]}
+            return {
+                key: np.zeros_like(getattr(fields, key))
+                for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
+            }
 
         # Bulk viscous diffusion: ∇²Π term
         if hasattr(self.coeffs, "bulk_viscosity") and self.coeffs.bulk_viscosity:
@@ -1382,7 +1402,9 @@ class SpectralISHydrodynamics:
             for mu in range(4):
                 for nu in range(4):
                     if fields.pi_munu.shape[-2:] == (4, 4):
-                        pi_laplacian[..., mu, nu] = self._compute_laplacian(fields.pi_munu[..., mu, nu])
+                        pi_laplacian[..., mu, nu] = self._compute_laplacian(
+                            fields.pi_munu[..., mu, nu]
+                        )
             stiff_terms["pi_munu"] = self.coeffs.shear_viscosity * pi_laplacian
         else:
             stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
@@ -1418,21 +1440,25 @@ class SpectralISHydrodynamics:
 
             if field.ndim == 4:
                 # Spacetime field (nt, nx, ny, nz) - use latest time slice for spatial Laplacian
-                expected_nt = self.spectral.nt if hasattr(self, 'spectral') else self.nt
+                expected_nt = self.spectral.nt if hasattr(self, "spectral") else self.nt
                 if field.shape[0] == expected_nt:
                     spatial_field = field[-1, :, :, :]  # Latest time slice
                     compute_4d = True
                 else:
-                    raise ValueError(f"4D field shape {field.shape} incompatible with grid time dimension {expected_nt}")
+                    raise ValueError(
+                        f"4D field shape {field.shape} incompatible with grid time dimension {expected_nt}"
+                    )
             elif field.ndim == 3:
                 # Pure spatial field (nx, ny, nz)
                 spatial_field = field
                 compute_4d = False
             else:
-                raise ValueError(f"Field must be 3D (spatial) or 4D (spacetime), got shape {field.shape}")
+                raise ValueError(
+                    f"Field must be 3D (spatial) or 4D (spacetime), got shape {field.shape}"
+                )
 
             # Validate spatial dimensions
-            if hasattr(self, 'spectral'):
+            if hasattr(self, "spectral"):
                 expected_spatial = (self.spectral.nx, self.spectral.ny, self.spectral.nz)
                 spectral_solver = self.spectral
             else:
@@ -1440,7 +1466,9 @@ class SpectralISHydrodynamics:
                 spectral_solver = self
 
             if spatial_field.shape != expected_spatial:
-                raise ValueError(f"Spatial field shape {spatial_field.shape} != grid shape {expected_spatial}")
+                raise ValueError(
+                    f"Spatial field shape {spatial_field.shape} != grid shape {expected_spatial}"
+                )
 
             # Transform to Fourier space using existing FFT plans
             field_k = spectral_solver.fft_plan(spatial_field)
@@ -1468,12 +1496,14 @@ class SpectralISHydrodynamics:
             warnings.warn(
                 f"Spectral Laplacian computation failed: {e}. "
                 f"Using zero diffusion (WARNING: This breaks Israel-Stewart physics!)",
-                stacklevel=2
+                stacklevel=2,
             )
             # Emergency fallback - this breaks physics but maintains stability
             return np.zeros_like(field)
 
-    def _explicit_approximation(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+    def _explicit_approximation(
+        self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
+    ) -> dict[str, np.ndarray]:
         """
         Explicit approximation for implicit stage: Y ≈ RHS + γ·dt·G(RHS).
 
@@ -1495,7 +1525,9 @@ class SpectralISHydrodynamics:
                 arrays.append(field_dict[key].ravel())
         return np.concatenate(arrays) if arrays else np.array([])
 
-    def _flat_to_dict(self, flat_array: np.ndarray, template_dict: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def _flat_to_dict(
+        self, flat_array: np.ndarray, template_dict: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
         """Convert flat array back to field dictionary using template shapes."""
         result = {}
         offset = 0
@@ -1504,7 +1536,7 @@ class SpectralISHydrodynamics:
             if key in template_dict:
                 shape = template_dict[key].shape
                 size = template_dict[key].size
-                result[key] = flat_array[offset:offset + size].reshape(shape)
+                result[key] = flat_array[offset : offset + size].reshape(shape)
                 offset += size
 
         return result

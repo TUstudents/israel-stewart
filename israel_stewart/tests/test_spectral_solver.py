@@ -677,40 +677,67 @@ class TestSpectralSolverFixes:
             except AttributeError:
                 pytest.skip("Fallback conservation method not available")
 
-    def test_dealiasing_fix(self, setup_fixed_solver: tuple) -> None:
-        """Test that dealiasing properly respects fftfreq layout."""
+    def test_dealiasing_physics_validation(self, setup_fixed_solver: tuple) -> None:
+        """Test dealiasing with physics-based validation using known signal components."""
         solver, fields = setup_fixed_solver
 
-        # Create field with known high-frequency content
+        # Setup grid parameters (must match the solver's grid)
         nx, ny, nz = 16, 16, 16
-        field_k = np.random.rand(nx, ny, nz) + 1j * np.random.rand(nx, ny, nz)
+
+        # Create coordinate arrays matching the solver's grid spacing
+        x = np.linspace(0, 2 * np.pi, nx, endpoint=False)
+        y = np.linspace(0, 2 * np.pi, ny, endpoint=False)
+        z = np.linspace(0, 2 * np.pi, nz, endpoint=False)
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+        # Create test signal: low frequency (k=1) + high frequency (k=10)
+        # For 16-point grid: k=10 > (2/3)*8 = 5.33, so should be filtered out
+        low_freq_signal = np.sin(X)  # k=1, should be preserved
+        high_freq_signal = np.sin(10 * X)  # k=10, should be removed by 2/3 rule
+        combined_signal = low_freq_signal + 0.5 * high_freq_signal
+
+        # FFT → convolution with dummy field → dealiasing → IFFT
+        signal_k = solver.spectral.fft_plan(combined_signal)
+        dummy_field_k = np.ones_like(signal_k)  # Dummy convolution partner
+
+        # Simulate nonlinear convolution (this would create aliasing without dealiasing)
+        conv_k = signal_k * dummy_field_k
 
         # Apply dealiasing
-        dealiased_k = solver.spectral._apply_dealiasing(field_k)
+        dealiased_k = solver.spectral._apply_dealiasing(conv_k)
 
-        # Check that proper 2/3 rule is applied respecting fftfreq layout
-        # For fftfreq: [0, 1, 2, ..., N/2-1, -N/2, -N/2+1, ..., -1]
-        # Should zero out upper 1/3 of positive and negative frequencies
+        # Transform back to real space
+        dealiased_signal = solver.spectral.ifft_plan(dealiased_k).real
 
-        kx_cutoff = int(nx // 3)
-        ky_cutoff = int(ny // 3)
-        kz_cutoff = int(nz // 3)
+        # Physics validation: check that high frequency is removed, low frequency preserved
+        # Compare with pure low frequency signal
+        low_freq_reference = solver.spectral.ifft_plan(
+            solver.spectral._apply_dealiasing(solver.spectral.fft_plan(low_freq_signal))
+        ).real
 
-        if kx_cutoff > 0:
-            # Check high positive frequencies are zeroed
-            kx_start = nx // 2 - kx_cutoff
-            assert np.allclose(
-                dealiased_k[kx_start : nx // 2, :, :], 0
-            ), "High positive kx modes zeroed"
+        # Low frequency component should be well-preserved (within numerical tolerance)
+        low_freq_correlation = np.corrcoef(
+            dealiased_signal.flatten(), low_freq_reference.flatten()
+        )[0, 1]
+        assert (
+            low_freq_correlation > 0.98
+        ), f"Low frequency preserved: correlation = {low_freq_correlation:.4f}"
 
-            # Check high negative frequencies are zeroed
-            assert np.allclose(
-                dealiased_k[nx // 2 : nx // 2 + kx_cutoff, :, :], 0
-            ), "High negative kx modes zeroed"
+        # High frequency should be significantly reduced
+        high_freq_reference = solver.spectral.ifft_plan(
+            solver.spectral.fft_plan(high_freq_signal)
+        ).real
+        high_freq_correlation = np.corrcoef(
+            dealiased_signal.flatten(), high_freq_reference.flatten()
+        )[0, 1]
+        assert (
+            abs(high_freq_correlation) < 0.1
+        ), f"High frequency removed: correlation = {high_freq_correlation:.4f}"
 
-        # Low frequencies should be preserved
-        low_freq_preserved = not np.allclose(dealiased_k[: nx // 4, : nx // 4, : nz // 4], 0)
-        assert low_freq_preserved, "Low frequency modes are preserved"
+        # Verify dealiasing reduces total signal energy (removes high-frequency components)
+        original_energy = np.sum(np.abs(conv_k) ** 2)
+        dealiased_energy = np.sum(np.abs(dealiased_k) ** 2)
+        assert dealiased_energy < original_energy, "Dealiasing reduces total spectral energy"
 
     def test_grid_spacing_warning(self, capfd) -> None:
         """Test that grid spacing fallback warning is issued."""
@@ -1013,7 +1040,9 @@ class TestSpectralSolverCriticalFixes:
             final_Pi = np.mean(fields.Pi)
 
             # Allow for small numerical changes
-            energy_change = abs(final_energy - initial_energy) / initial_energy if initial_energy > 0 else 0
+            energy_change = (
+                abs(final_energy - initial_energy) / initial_energy if initial_energy > 0 else 0
+            )
             assert energy_change < 0.1, "IMEX-RK2 produces reasonable energy evolution"
 
         except Exception as e:
@@ -1112,8 +1141,8 @@ class TestARS22IMEXRK:
         fields = ISFieldConfiguration(grid)
 
         # Initialize with smooth, well-conditioned fields
-        x = np.linspace(0, 2*np.pi, 16)
-        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, 16)
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
         # Energy density (smooth, positive)
         fields.rho = np.broadcast_to(1.0 + 0.1 * np.sin(X) * np.cos(Y), (*grid.shape,))
@@ -1126,7 +1155,7 @@ class TestARS22IMEXRK:
         fields.u_mu[..., 0] = 1.0  # u^0 = 1 (rest frame)
 
         # Bulk pressure (small)
-        fields.Pi = np.broadcast_to(0.01 * np.sin(2*X), (*grid.shape,))
+        fields.Pi = np.broadcast_to(0.01 * np.sin(2 * X), (*grid.shape,))
 
         # Shear tensor (small, symmetric, traceless)
         fields.pi_munu = np.zeros((*grid.shape, 4, 4))
@@ -1182,17 +1211,23 @@ class TestARS22IMEXRK:
 
         # Test _add_fields
         fields_doubled = hydro_solver._add_fields(fields_copy, fields_copy, scale=1.0)
-        assert np.allclose(fields_doubled["rho"], 2.0 * fields_copy["rho"]), "_add_fields works correctly"
+        assert np.allclose(
+            fields_doubled["rho"], 2.0 * fields_copy["rho"]
+        ), "_add_fields works correctly"
 
         # Test _scale_fields
         fields_half = hydro_solver._scale_fields(fields_copy, scale=0.5)
-        assert np.allclose(fields_half["rho"], 0.5 * fields_copy["rho"]), "_scale_fields works correctly"
+        assert np.allclose(
+            fields_half["rho"], 0.5 * fields_copy["rho"]
+        ), "_scale_fields works correctly"
 
         # Test _config_from_dict
         try:
             config_from_dict = hydro_solver._config_from_dict(fields_copy)
             assert hasattr(config_from_dict, "rho"), "Config object created correctly"
-            assert np.allclose(config_from_dict.rho, fields_copy["rho"]), "Values transferred correctly"
+            assert np.allclose(
+                config_from_dict.rho, fields_copy["rho"]
+            ), "Values transferred correctly"
         except Exception as e:
             pytest.fail(f"_config_from_dict failed: {e}")
 
@@ -1230,7 +1265,9 @@ class TestARS22IMEXRK:
             required_fields = ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
             for field in required_fields:
                 assert field in stiff_terms, f"Stiff terms contain {field}"
-                assert stiff_terms[field].shape == getattr(fields, field).shape, f"Shape consistency for {field}"
+                assert (
+                    stiff_terms[field].shape == getattr(fields, field).shape
+                ), f"Shape consistency for {field}"
                 assert np.all(np.isfinite(stiff_terms[field])), f"Finite stiff terms for {field}"
 
             # For viscous terms, should have correct sign (dissipative)
@@ -1272,52 +1309,93 @@ class TestARS22IMEXRK:
             assert energy_change < 0.5, "Approximate energy conservation"
 
             # Momentum conservation (should be better conserved)
-            momentum_change = np.linalg.norm(final_momentum - initial_momentum) / (np.linalg.norm(initial_momentum) + 1e-10)
+            momentum_change = np.linalg.norm(final_momentum - initial_momentum) / (
+                np.linalg.norm(initial_momentum) + 1e-10
+            )
             assert momentum_change < 0.1, "Approximate momentum conservation"
 
         except Exception as e:
             pytest.fail(f"ARS conservation test failed: {e}")
 
-    def test_ars_order_verification(self, setup_ars_solver: tuple) -> None:
-        """Test 2nd-order accuracy of ARS(2,2,2) scheme (simplified)."""
+    def test_ars_convergence_validation(self, setup_ars_solver: tuple) -> None:
+        """Test ARS(2,2,2) convergence properties with simplified validation."""
         hydro_solver, fields, grid, coeffs = setup_ars_solver
 
-        # Set up simple test case with known behavior
-        # Use very small viscosity so solution is nearly inviscid
-        coeffs.shear_viscosity = 1e-6
-        coeffs.bulk_viscosity = 1e-6
+        # Use a simple analytical test case: exponential decay
+        # ∂u/∂t = -λu, exact solution: u(t) = u₀ * exp(-λt)
+        decay_rate = 2.0
+        initial_value = 1.0
+        final_time = 0.1
+        timesteps = [0.02, 0.01, 0.005]  # h, h/2, h/4
+        errors = []
 
-        # Store initial state
-        initial_fields = hydro_solver._copy_fields()
+        # Setup minimal system for convergence test
+        coeffs.shear_viscosity = 1e-8
+        coeffs.bulk_viscosity = 1e-8
+        coeffs.shear_relaxation_time = 1.0 / decay_rate  # Relaxation time = 1/λ
+        coeffs.bulk_relaxation_time = 1.0 / decay_rate
 
-        # Test with two different timesteps
-        dt_coarse = 0.01
-        dt_fine = 0.005
+        for dt in timesteps:
+            # Create test field configuration
+            test_fields = ISFieldConfiguration(grid)
 
-        # Evolve with coarse timestep
-        hydro_solver._restore_fields(initial_fields)
-        hydro_solver._imex_rk2_step(dt_coarse)
-        solution_coarse = hydro_solver._copy_fields()
+            # Initialize with non-equilibrium bulk pressure for exponential relaxation
+            test_fields.rho.fill(1.0)  # Constant background
+            test_fields.pressure.fill(0.33)  # Equilibrium pressure
+            test_fields.Pi.fill(initial_value)  # Initial bulk pressure (will decay)
+            test_fields.pi_munu.fill(0.0)
+            test_fields.q_mu.fill(0.0)
 
-        # Evolve with fine timestep (2 steps)
-        hydro_solver._restore_fields(initial_fields)
-        hydro_solver._imex_rk2_step(dt_fine)
-        hydro_solver._imex_rk2_step(dt_fine)
-        solution_fine = hydro_solver._copy_fields()
+            # Create solver instance
+            test_hydro_solver = SpectralISHydrodynamics(grid, test_fields, coeffs)
+
+            # Evolve with ARS(2,2,2)
+            n_steps = int(final_time / dt)
+            for _ in range(n_steps):
+                test_hydro_solver._imex_rk2_step(dt)
+
+            # Get numerical solution
+            numerical_solution = test_hydro_solver._copy_fields()
+
+            # Analytical solution for exponential decay
+            exact_value = initial_value * np.exp(-decay_rate * final_time)
+
+            # Compute error in bulk pressure
+            numerical_Pi = np.mean(numerical_solution["Pi"])
+            error = abs(numerical_Pi - exact_value) / abs(exact_value)
+            errors.append(error)
 
         try:
-            # For 2nd-order method, error should scale as h²
-            # This is a simplified test - just check that fine timestep gives different result
-            rho_diff = np.abs(solution_coarse["rho"] - solution_fine["rho"])
-            relative_diff = np.mean(rho_diff) / np.mean(np.abs(solution_fine["rho"]))
+            # Validate that errors decrease and estimate convergence rate
+            if len(errors) >= 3:
+                # Check that errors decrease with finer timesteps
+                assert (
+                    errors[1] < errors[0] * 1.2
+                ), f"Error should decrease with finer timestep: {errors[0]} → {errors[1]}"
+                assert (
+                    errors[2] < errors[1] * 1.2
+                ), f"Error should decrease with finer timestep: {errors[1]} → {errors[2]}"
 
-            # Should see some difference between timesteps (method is working)
-            assert relative_diff > 1e-8, "ARS method produces timestep-dependent results"
-            # But difference shouldn't be huge (method is stable)
-            assert relative_diff < 0.1, "ARS method is stable across timesteps"
+                # Estimate convergence rate (should be close to 2 for 2nd-order method)
+                if errors[1] > 1e-10 and errors[2] > 1e-10:
+                    rate_1 = np.log(errors[0] / errors[1]) / np.log(2.0)
+                    rate_2 = np.log(errors[1] / errors[2]) / np.log(2.0)
+
+                    # For ARS(2,2,2), expect 1st to 2nd order convergence
+                    avg_rate = (rate_1 + rate_2) / 2.0
+                    assert 0.8 < avg_rate < 3.0, (
+                        f"ARS(2,2,2) convergence rate {avg_rate:.3f} outside reasonable range. "
+                        f"Errors: {errors}, Rates: [{rate_1:.3f}, {rate_2:.3f}]"
+                    )
+
+                # Test passes if we get decreasing errors and reasonable convergence rate
+                assert all(e < 0.5 for e in errors), f"All errors should be reasonable: {errors}"
+
+            else:
+                pytest.fail(f"Convergence test failed: insufficient error data {errors}")
 
         except Exception as e:
-            pytest.fail(f"ARS order verification failed: {e}")
+            pytest.fail(f"ARS(2,2,2) convergence validation failed: {e}")
 
     def test_ars_l_stability(self, setup_ars_solver: tuple) -> None:
         """Test L-stability properties of ARS(2,2,2) implicit part."""
@@ -1416,8 +1494,8 @@ class TestSpectralLaplacianPhysics:
 
         # Create analytical test function: f(x,y,z) = sin(kx*x) * cos(ky*y) * sin(kz*z)
         kx, ky, kz = 2, 3, 1  # Wave numbers well-represented on 32³ grid
-        x = np.linspace(0, 2*np.pi, 32, endpoint=False)  # Periodic grid
-        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, 32, endpoint=False)  # Periodic grid
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
         # Test function with multiple modes
         test_field = np.sin(kx * X) * np.cos(ky * Y) * np.sin(kz * Z)
@@ -1434,7 +1512,9 @@ class TestSpectralLaplacianPhysics:
             max_relative_error = np.max(relative_error) / np.max(np.abs(expected_laplacian))
 
             # Spectral methods should achieve machine precision for represented modes
-            assert max_relative_error < 1e-12, f"Spectral Laplacian error too large: {max_relative_error}"
+            assert (
+                max_relative_error < 1e-12
+            ), f"Spectral Laplacian error too large: {max_relative_error}"
             assert computed_laplacian.shape == test_field.shape, "Shape preservation"
 
         except Exception as e:
@@ -1471,8 +1551,8 @@ class TestSpectralLaplacianPhysics:
         hydro_solver, fields, grid, coeffs = setup_laplacian_test
 
         # Create field with sharp gradient (should diffuse)
-        x = np.linspace(0, 2*np.pi, 32)
-        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, 32)
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
         # Step function in bulk pressure (sharp gradient)
         fields.Pi = np.where(X < np.pi, 1.0, 0.0)
@@ -1493,7 +1573,9 @@ class TestSpectralLaplacianPhysics:
             center_idx = 16  # Middle of domain
             if fields.Pi[center_idx, center_idx, center_idx] > 0.5:
                 # High field region should have negative Laplacian (diffusion outward)
-                assert laplacian_Pi[center_idx, center_idx, center_idx] < 0, "Diffusion opposes gradients"
+                assert (
+                    laplacian_Pi[center_idx, center_idx, center_idx] < 0
+                ), "Diffusion opposes gradients"
 
         except Exception as e:
             pytest.fail(f"Viscous diffusion physics test failed: {e}")
@@ -1537,11 +1619,11 @@ class TestSpectralLaplacianPhysics:
 
         # Create test field matching the solver's spatial grid
         nt, nx, ny, nz = grid.grid_points
-        x = np.linspace(0, 2*np.pi, nx, endpoint=False)
-        y = np.linspace(0, 2*np.pi, ny, endpoint=False)
-        z = np.linspace(0, 2*np.pi, nz, endpoint=False)
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
-        test_field = np.exp(-((X - np.pi)**2 + (Y - np.pi)**2 + (Z - np.pi)**2) / 0.5)
+        x = np.linspace(0, 2 * np.pi, nx, endpoint=False)
+        y = np.linspace(0, 2 * np.pi, ny, endpoint=False)
+        z = np.linspace(0, 2 * np.pi, nz, endpoint=False)
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+        test_field = np.exp(-((X - np.pi) ** 2 + (Y - np.pi) ** 2 + (Z - np.pi) ** 2) / 0.5)
 
         try:
             # Test the Laplacian operator directly
@@ -1571,10 +1653,10 @@ class TestSpectralLaplacianPhysics:
 
         # Create simple spatially varying field matching the solver's grid
         nt, nx, ny, nz = grid.grid_points
-        x = np.linspace(0, 2*np.pi, nx, endpoint=False)
-        y = np.linspace(0, 2*np.pi, ny, endpoint=False)
-        z = np.linspace(0, 2*np.pi, nz, endpoint=False)
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, nx, endpoint=False)
+        y = np.linspace(0, 2 * np.pi, ny, endpoint=False)
+        z = np.linspace(0, 2 * np.pi, nz, endpoint=False)
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
         test_field = 0.1 * np.sin(X) * np.cos(Y)
 
         try:
@@ -1584,10 +1666,14 @@ class TestSpectralLaplacianPhysics:
             # For periodic boundary conditions, integral of Laplacian should be zero
             # This is because ∫∇²f dV = ∮∇f·dA = 0 for periodic domains
             total_laplacian = np.sum(laplacian_result)
-            relative_conservation = abs(total_laplacian) / (np.max(np.abs(laplacian_result)) + 1e-12)
+            relative_conservation = abs(total_laplacian) / (
+                np.max(np.abs(laplacian_result)) + 1e-12
+            )
 
             # Check that integral of Laplacian is approximately zero (conservation)
-            assert relative_conservation < 1e-10, f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
+            assert (
+                relative_conservation < 1e-10
+            ), f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
 
             # Check that Laplacian is not identically zero (it should do something)
             max_laplacian = np.max(np.abs(laplacian_result))

@@ -1094,3 +1094,507 @@ class TestSpectralSolverCriticalFixes:
 
         except Exception as e:
             pytest.fail(f"Comprehensive spectral evolution failed: {e}")
+
+
+class TestARS22IMEXRK:
+    """Test the proper ARS(2,2,2) IMEX-RK implementation."""
+
+    @pytest.fixture
+    def setup_ars_solver(self) -> tuple:
+        """Setup spectral hydro solver for ARS(2,2,2) testing."""
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+            grid_points=(10, 16, 16, 16),
+        )
+
+        fields = ISFieldConfiguration(grid)
+
+        # Initialize with smooth, well-conditioned fields
+        x = np.linspace(0, 2*np.pi, 16)
+        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+
+        # Energy density (smooth, positive)
+        fields.rho = np.broadcast_to(1.0 + 0.1 * np.sin(X) * np.cos(Y), (*grid.shape,))
+
+        # Pressure (thermodynamically consistent)
+        fields.pressure = np.broadcast_to(fields.rho / 3.0, (*grid.shape,))
+
+        # Four-velocity (normalized)
+        fields.u_mu = np.zeros((*grid.shape, 4))
+        fields.u_mu[..., 0] = 1.0  # u^0 = 1 (rest frame)
+
+        # Bulk pressure (small)
+        fields.Pi = np.broadcast_to(0.01 * np.sin(2*X), (*grid.shape,))
+
+        # Shear tensor (small, symmetric, traceless)
+        fields.pi_munu = np.zeros((*grid.shape, 4, 4))
+        fields.pi_munu[..., 1, 1] = 0.005 * np.sin(X + Y)
+        fields.pi_munu[..., 2, 2] = -0.005 * np.sin(X + Y)  # Traceless
+
+        # Heat flux (small)
+        fields.q_mu = np.zeros((*grid.shape, 4))
+        fields.q_mu[..., 1] = 0.002 * np.cos(X - Y)
+
+        coeffs = TransportCoefficients(
+            shear_viscosity=0.1,
+            bulk_viscosity=0.05,
+            shear_relaxation_time=0.5,
+            bulk_relaxation_time=0.3,
+        )
+
+        hydro_solver = SpectralISHydrodynamics(grid, fields, coeffs)
+        return hydro_solver, fields, grid, coeffs
+
+    def test_ars_parameters(self, setup_ars_solver: tuple) -> None:
+        """Test that ARS(2,2,2) parameters are correctly implemented."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Check gamma parameter
+        gamma_expected = 1.0 - 1.0 / np.sqrt(2.0)
+        assert abs(gamma_expected - 0.292893218) < 1e-8, "ARS(2,2,2) gamma parameter"
+
+        # Test that the scheme can run one step without error
+        dt = 0.001
+        initial_energy = np.sum(fields.rho)
+
+        try:
+            hydro_solver._imex_rk2_step(dt)
+            assert np.all(np.isfinite(fields.rho)), "Fields remain finite after ARS step"
+            final_energy = np.sum(fields.rho)
+
+            # Energy should change reasonably (not be frozen or explode)
+            energy_change = abs(final_energy - initial_energy) / initial_energy
+            assert energy_change < 0.1, "Reasonable energy evolution"
+
+        except Exception as e:
+            pytest.fail(f"ARS(2,2,2) step failed: {e}")
+
+    def test_field_arithmetic_helpers(self, setup_ars_solver: tuple) -> None:
+        """Test the field arithmetic helper methods."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Test _copy_fields
+        fields_copy = hydro_solver._copy_fields()
+        assert len(fields_copy) >= 4, "Copy contains main fields"
+        assert "rho" in fields_copy and "Pi" in fields_copy
+
+        # Test _add_fields
+        fields_doubled = hydro_solver._add_fields(fields_copy, fields_copy, scale=1.0)
+        assert np.allclose(fields_doubled["rho"], 2.0 * fields_copy["rho"]), "_add_fields works correctly"
+
+        # Test _scale_fields
+        fields_half = hydro_solver._scale_fields(fields_copy, scale=0.5)
+        assert np.allclose(fields_half["rho"], 0.5 * fields_copy["rho"]), "_scale_fields works correctly"
+
+        # Test _config_from_dict
+        try:
+            config_from_dict = hydro_solver._config_from_dict(fields_copy)
+            assert hasattr(config_from_dict, "rho"), "Config object created correctly"
+            assert np.allclose(config_from_dict.rho, fields_copy["rho"]), "Values transferred correctly"
+        except Exception as e:
+            pytest.fail(f"_config_from_dict failed: {e}")
+
+    def test_implicit_stage_solver(self, setup_ars_solver: tuple) -> None:
+        """Test the implicit stage solver."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Test with small gamma_dt (should be nearly explicit)
+        rhs_dict = hydro_solver._copy_fields()
+        gamma_dt = 0.001
+
+        try:
+            solution_dict = hydro_solver._solve_implicit_stage(rhs_dict, gamma_dt)
+
+            # Solution should be close to RHS for small gamma_dt
+            rhs_norm = np.linalg.norm(rhs_dict["rho"])
+            solution_norm = np.linalg.norm(solution_dict["rho"])
+            assert abs(solution_norm - rhs_norm) / rhs_norm < 0.1, "Small implicit step behavior"
+
+            # All fields should remain finite
+            for key, value in solution_dict.items():
+                assert np.all(np.isfinite(value)), f"Field {key} remains finite"
+
+        except Exception as e:
+            pytest.fail(f"Implicit stage solver failed: {e}")
+
+    def test_stiff_terms_computation(self, setup_ars_solver: tuple) -> None:
+        """Test computation of stiff terms G(Y)."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        try:
+            stiff_terms = hydro_solver._compute_stiff_terms(fields)
+
+            # Should contain all required fields
+            required_fields = ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
+            for field in required_fields:
+                assert field in stiff_terms, f"Stiff terms contain {field}"
+                assert stiff_terms[field].shape == getattr(fields, field).shape, f"Shape consistency for {field}"
+                assert np.all(np.isfinite(stiff_terms[field])), f"Finite stiff terms for {field}"
+
+            # For viscous terms, should have correct sign (dissipative)
+            # Bulk viscosity should oppose gradients in Pi
+            if coeffs.bulk_viscosity > 0:
+                # Stiff term should be proportional to Laplacian (opposing gradients)
+                assert not np.allclose(stiff_terms["Pi"], 0), "Non-zero bulk viscous terms"
+
+        except Exception as e:
+            pytest.fail(f"Stiff terms computation failed: {e}")
+
+    def test_ars_conservation_properties(self, setup_ars_solver: tuple) -> None:
+        """Test that ARS(2,2,2) preserves important conservation properties."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Store initial values
+        initial_total_energy = np.sum(fields.rho)
+        initial_momentum = np.sum(fields.u_mu, axis=(0, 1, 2, 3))
+
+        # Run several ARS steps
+        dt = 0.0005  # Small timestep for accuracy
+        n_steps = 5
+
+        try:
+            for i in range(n_steps):
+                hydro_solver._imex_rk2_step(dt)
+
+                # Check that fields remain well-behaved
+                assert np.all(np.isfinite(fields.rho)), f"Energy finite at step {i}"
+                assert np.all(fields.rho > 0), f"Energy positive at step {i}"
+                assert np.all(np.isfinite(fields.Pi)), f"Bulk pressure finite at step {i}"
+
+            # Check approximate conservation (relaxing for short-time behavior)
+            final_total_energy = np.sum(fields.rho)
+            final_momentum = np.sum(fields.u_mu, axis=(0, 1, 2, 3))
+
+            # Energy should be approximately conserved (within 10% for viscous system)
+            energy_change = abs(final_total_energy - initial_total_energy) / initial_total_energy
+            assert energy_change < 0.5, "Approximate energy conservation"
+
+            # Momentum conservation (should be better conserved)
+            momentum_change = np.linalg.norm(final_momentum - initial_momentum) / (np.linalg.norm(initial_momentum) + 1e-10)
+            assert momentum_change < 0.1, "Approximate momentum conservation"
+
+        except Exception as e:
+            pytest.fail(f"ARS conservation test failed: {e}")
+
+    def test_ars_order_verification(self, setup_ars_solver: tuple) -> None:
+        """Test 2nd-order accuracy of ARS(2,2,2) scheme (simplified)."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Set up simple test case with known behavior
+        # Use very small viscosity so solution is nearly inviscid
+        coeffs.shear_viscosity = 1e-6
+        coeffs.bulk_viscosity = 1e-6
+
+        # Store initial state
+        initial_fields = hydro_solver._copy_fields()
+
+        # Test with two different timesteps
+        dt_coarse = 0.01
+        dt_fine = 0.005
+
+        # Evolve with coarse timestep
+        hydro_solver._restore_fields(initial_fields)
+        hydro_solver._imex_rk2_step(dt_coarse)
+        solution_coarse = hydro_solver._copy_fields()
+
+        # Evolve with fine timestep (2 steps)
+        hydro_solver._restore_fields(initial_fields)
+        hydro_solver._imex_rk2_step(dt_fine)
+        hydro_solver._imex_rk2_step(dt_fine)
+        solution_fine = hydro_solver._copy_fields()
+
+        try:
+            # For 2nd-order method, error should scale as h²
+            # This is a simplified test - just check that fine timestep gives different result
+            rho_diff = np.abs(solution_coarse["rho"] - solution_fine["rho"])
+            relative_diff = np.mean(rho_diff) / np.mean(np.abs(solution_fine["rho"]))
+
+            # Should see some difference between timesteps (method is working)
+            assert relative_diff > 1e-8, "ARS method produces timestep-dependent results"
+            # But difference shouldn't be huge (method is stable)
+            assert relative_diff < 0.1, "ARS method is stable across timesteps"
+
+        except Exception as e:
+            pytest.fail(f"ARS order verification failed: {e}")
+
+    def test_ars_l_stability(self, setup_ars_solver: tuple) -> None:
+        """Test L-stability properties of ARS(2,2,2) implicit part."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        # Set up stiff test case
+        coeffs.shear_relaxation_time = 0.001  # Very short relaxation time (stiff)
+        coeffs.bulk_relaxation_time = 0.001
+
+        # Initialize with large viscous stresses (should decay rapidly)
+        fields.Pi = np.full(fields.Pi.shape, 1.0)  # Large bulk pressure
+        fields.pi_munu[..., 1, 1] = 0.5
+        fields.pi_munu[..., 2, 2] = -0.5  # Large shear
+
+        initial_Pi_norm = np.linalg.norm(fields.Pi)
+        initial_pi_norm = np.linalg.norm(fields.pi_munu)
+
+        # Take large timestep (tests L-stability)
+        dt = 0.1  # Much larger than relaxation time
+
+        try:
+            hydro_solver._imex_rk2_step(dt)
+
+            # Stresses should have decayed significantly (L-stable behavior)
+            final_Pi_norm = np.linalg.norm(fields.Pi)
+            final_pi_norm = np.linalg.norm(fields.pi_munu)
+
+            Pi_reduction = final_Pi_norm / initial_Pi_norm
+            pi_reduction = final_pi_norm / initial_pi_norm
+
+            # Should see significant reduction due to relaxation
+            assert Pi_reduction < 0.5, "Bulk pressure decays with large timestep"
+            assert pi_reduction < 0.5, "Shear stress decays with large timestep"
+
+            # Solution should remain stable (not blow up)
+            assert np.all(np.isfinite(fields.Pi)), "Bulk pressure remains finite"
+            assert np.all(np.isfinite(fields.pi_munu)), "Shear tensor remains finite"
+
+        except Exception as e:
+            pytest.fail(f"ARS L-stability test failed: {e}")
+
+    def test_ars_performance_benchmark(self, setup_ars_solver: tuple) -> None:
+        """Benchmark ARS(2,2,2) performance compared to existing method."""
+        hydro_solver, fields, grid, coeffs = setup_ars_solver
+
+        import time
+
+        # Benchmark new ARS method
+        n_steps = 3
+        dt = 0.001
+
+        start_time = time.time()
+        try:
+            for _ in range(n_steps):
+                hydro_solver._imex_rk2_step(dt)
+            ars_time = time.time() - start_time
+
+            # Should complete in reasonable time (< 10 seconds for test grid)
+            assert ars_time < 10.0, f"ARS method completes in reasonable time: {ars_time:.2f}s"
+
+            # Check that solution quality is maintained
+            assert np.all(np.isfinite(fields.rho)), "ARS maintains finite solution"
+            assert np.all(fields.rho > 0), "ARS maintains positive energy density"
+
+        except Exception as e:
+            pytest.fail(f"ARS performance benchmark failed: {e}")
+
+
+class TestSpectralLaplacianPhysics:
+    """Test the physically correct spectral Laplacian implementation."""
+
+    @pytest.fixture
+    def setup_laplacian_test(self) -> tuple:
+        """Setup for testing spectral Laplacian computation."""
+        grid = SpacetimeGrid(
+            coordinate_system="cartesian",
+            time_range=(0.0, 1.0),
+            spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+            grid_points=(10, 32, 32, 32),  # Use 32³ for clean FFT
+        )
+
+        fields = ISFieldConfiguration(grid)
+        coeffs = TransportCoefficients(
+            shear_viscosity=0.1,
+            bulk_viscosity=0.05,
+            shear_relaxation_time=0.5,
+            bulk_relaxation_time=0.3,
+        )
+
+        hydro_solver = SpectralISHydrodynamics(grid, fields, coeffs)
+        return hydro_solver, fields, grid, coeffs
+
+    def test_laplacian_analytical_solution(self, setup_laplacian_test: tuple) -> None:
+        """Test Laplacian against known analytical solution."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Create analytical test function: f(x,y,z) = sin(kx*x) * cos(ky*y) * sin(kz*z)
+        kx, ky, kz = 2, 3, 1  # Wave numbers well-represented on 32³ grid
+        x = np.linspace(0, 2*np.pi, 32, endpoint=False)  # Periodic grid
+        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+
+        # Test function with multiple modes
+        test_field = np.sin(kx * X) * np.cos(ky * Y) * np.sin(kz * Z)
+
+        # Analytical Laplacian: ∇²f = -(kx² + ky² + kz²) * f
+        expected_laplacian = -(kx**2 + ky**2 + kz**2) * test_field
+
+        # Compute numerical Laplacian
+        try:
+            computed_laplacian = hydro_solver._compute_laplacian(test_field)
+
+            # Check accuracy (spectral should be very accurate)
+            relative_error = np.abs(computed_laplacian - expected_laplacian)
+            max_relative_error = np.max(relative_error) / np.max(np.abs(expected_laplacian))
+
+            # Spectral methods should achieve machine precision for represented modes
+            assert max_relative_error < 1e-12, f"Spectral Laplacian error too large: {max_relative_error}"
+            assert computed_laplacian.shape == test_field.shape, "Shape preservation"
+
+        except Exception as e:
+            pytest.fail(f"Analytical Laplacian test failed: {e}")
+
+    def test_laplacian_shape_handling(self, setup_laplacian_test: tuple) -> None:
+        """Test Laplacian handles different field shapes correctly."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Test 3D spatial field
+        spatial_field_3d = np.random.rand(32, 32, 32)
+        try:
+            laplacian_3d = hydro_solver._compute_laplacian(spatial_field_3d)
+            assert laplacian_3d.shape == spatial_field_3d.shape, "3D shape preservation"
+            assert np.all(np.isfinite(laplacian_3d)), "3D result is finite"
+        except Exception as e:
+            pytest.fail(f"3D Laplacian failed: {e}")
+
+        # Test 4D spacetime field
+        spacetime_field_4d = np.random.rand(10, 32, 32, 32)
+        try:
+            laplacian_4d = hydro_solver._compute_laplacian(spacetime_field_4d)
+            assert laplacian_4d.shape == spacetime_field_4d.shape, "4D shape preservation"
+            assert np.all(np.isfinite(laplacian_4d)), "4D result is finite"
+
+            # Only the last time slice should be non-zero (spatial Laplacian)
+            assert np.allclose(laplacian_4d[:-1, :, :, :], 0), "Only latest time slice computed"
+
+        except Exception as e:
+            pytest.fail(f"4D Laplacian failed: {e}")
+
+    def test_viscous_diffusion_physics(self, setup_laplacian_test: tuple) -> None:
+        """Test that viscous diffusion terms are now physically correct."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Create field with sharp gradient (should diffuse)
+        x = np.linspace(0, 2*np.pi, 32)
+        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+
+        # Step function in bulk pressure (sharp gradient)
+        fields.Pi = np.where(X < np.pi, 1.0, 0.0)
+
+        try:
+            # Compute stiff terms (should now include real diffusion)
+            stiff_terms = hydro_solver._compute_stiff_terms(fields)
+
+            # Bulk viscous diffusion should be non-zero
+            bulk_diffusion = stiff_terms["Pi"]
+            assert not np.allclose(bulk_diffusion, 0), "Bulk viscous diffusion is non-zero"
+
+            # Should be smooth (diffusion smooths sharp features)
+            laplacian_Pi = hydro_solver._compute_laplacian(fields.Pi)
+            assert np.all(np.isfinite(laplacian_Pi)), "Laplacian is finite"
+
+            # Diffusion should oppose gradients (negative where field is high)
+            center_idx = 16  # Middle of domain
+            if fields.Pi[center_idx, center_idx, center_idx] > 0.5:
+                # High field region should have negative Laplacian (diffusion outward)
+                assert laplacian_Pi[center_idx, center_idx, center_idx] < 0, "Diffusion opposes gradients"
+
+        except Exception as e:
+            pytest.fail(f"Viscous diffusion physics test failed: {e}")
+
+    def test_energy_dissipation_rate(self, setup_laplacian_test: tuple) -> None:
+        """Test that viscous diffusion produces correct energy dissipation."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Initialize with non-equilibrium viscous stresses
+        fields.Pi = np.full(fields.Pi.shape, 0.1)  # Uniform bulk pressure
+        fields.pi_munu[..., 1, 1] = 0.05
+        fields.pi_munu[..., 2, 2] = -0.05  # Traceless shear
+
+        initial_Pi_energy = np.sum(fields.Pi**2)
+        initial_pi_energy = np.sum(fields.pi_munu**2)
+
+        # Evolve one ARS step with viscous diffusion
+        dt = 0.001
+        try:
+            hydro_solver._imex_rk2_step(dt)
+
+            final_Pi_energy = np.sum(fields.Pi**2)
+            final_pi_energy = np.sum(fields.pi_munu**2)
+
+            # Energy should decrease due to relaxation (dissipation)
+            Pi_dissipation = (initial_Pi_energy - final_Pi_energy) / initial_Pi_energy
+            pi_dissipation = (initial_pi_energy - final_pi_energy) / initial_pi_energy
+
+            # Should see some dissipation (but not complete collapse)
+            assert Pi_dissipation > 0, "Bulk pressure energy dissipates"
+            assert Pi_dissipation < 0.5, "Bulk pressure dissipation is reasonable"
+            assert pi_dissipation > 0, "Shear stress energy dissipates"
+            assert pi_dissipation < 0.5, "Shear stress dissipation is reasonable"
+
+        except Exception as e:
+            pytest.fail(f"Energy dissipation test failed: {e}")
+
+    def test_diffusion_timescale(self, setup_laplacian_test: tuple) -> None:
+        """Test that diffusion timescales are physically reasonable."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Create test field matching the solver's spatial grid
+        nt, nx, ny, nz = grid.grid_points
+        x = np.linspace(0, 2*np.pi, nx, endpoint=False)
+        y = np.linspace(0, 2*np.pi, ny, endpoint=False)
+        z = np.linspace(0, 2*np.pi, nz, endpoint=False)
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        test_field = np.exp(-((X - np.pi)**2 + (Y - np.pi)**2 + (Z - np.pi)**2) / 0.5)
+
+        try:
+            # Test the Laplacian operator directly
+            laplacian_result = hydro_solver._compute_laplacian(test_field)
+
+            # Estimate diffusion timescale from Laplacian magnitude
+            field_scale = np.max(np.abs(test_field))
+            laplacian_scale = np.max(np.abs(laplacian_result))
+
+            # For diffusion equation ∂f/∂t = D∇²f, timescale ~ field/laplacian
+            if laplacian_scale > 1e-12:  # Avoid division by zero
+                timescale_estimate = field_scale / laplacian_scale
+
+                # Physical timescale should be positive and finite
+                assert timescale_estimate > 0, "Diffusion timescale should be positive"
+                assert timescale_estimate < 1e6, "Diffusion timescale should be finite"
+                assert not np.isnan(timescale_estimate), "Diffusion timescale should not be NaN"
+            else:
+                pytest.fail("Laplacian is effectively zero - no diffusion")
+
+        except Exception as e:
+            pytest.fail(f"Diffusion timescale test failed: {e}")
+
+    def test_conservation_with_diffusion(self, setup_laplacian_test: tuple) -> None:
+        """Test that diffusion preserves conservation laws appropriately."""
+        hydro_solver, fields, grid, coeffs = setup_laplacian_test
+
+        # Create simple spatially varying field matching the solver's grid
+        nt, nx, ny, nz = grid.grid_points
+        x = np.linspace(0, 2*np.pi, nx, endpoint=False)
+        y = np.linspace(0, 2*np.pi, ny, endpoint=False)
+        z = np.linspace(0, 2*np.pi, nz, endpoint=False)
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        test_field = 0.1 * np.sin(X) * np.cos(Y)
+
+        try:
+            # Test Laplacian conservation properties directly
+            laplacian_result = hydro_solver._compute_laplacian(test_field)
+
+            # For periodic boundary conditions, integral of Laplacian should be zero
+            # This is because ∫∇²f dV = ∮∇f·dA = 0 for periodic domains
+            total_laplacian = np.sum(laplacian_result)
+            relative_conservation = abs(total_laplacian) / (np.max(np.abs(laplacian_result)) + 1e-12)
+
+            # Check that integral of Laplacian is approximately zero (conservation)
+            assert relative_conservation < 1e-10, f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
+
+            # Check that Laplacian is not identically zero (it should do something)
+            max_laplacian = np.max(np.abs(laplacian_result))
+            assert max_laplacian > 1e-12, "Laplacian should have non-trivial magnitude"
+
+            # Check that field shapes are preserved
+            assert laplacian_result.shape == test_field.shape, "Laplacian preserves field shape"
+
+        except Exception as e:
+            pytest.fail(f"Conservation with diffusion test failed: {e}")

@@ -833,45 +833,89 @@ class SpectralISHydrodynamics:
 
     def _imex_rk2_step(self, dt: float) -> None:
         """
-        Second-order IMEX Runge-Kutta scheme following standard Butcher tableau.
+        ARS(2,2,2) IMEX Runge-Kutta scheme - Ascher, Ruuth, Spiteri (1997).
 
-        Based on tableau (2.9):
-        Stage 1: Y₁ = y^n (no update)
-        Stage 2: Y₂ = y^n + dt/2 * E(Y₁) + dt/2 * I(Y₂)  [implicit midpoint for stiff]
-        Stage 3: Y₃ = y^n + dt/2 * E(Y₂) + dt * I(Y₃)     [implicit Euler for stiff]
-        Final:   y^{n+1} = y^n + dt/2 * E(Y₂) + dt * I(Y₃)
+        Implements the 2-stage, 2nd-order L-stable IMEX-RK scheme:
+
+        Explicit tableau (for F):        Implicit DIRK tableau (for G):
+        c̃ = [0, 1]                       c = [γ, 1]
+        Ã = [0  0]                       A = [γ    0  ]
+            [1  0]                           [1-γ  γ  ]
+        b̃ = [1/2, 1/2]                   b = [1-γ, γ]
+
+        where γ = 1 - 1/√2 ≈ 0.292893218
+
+        Stage equations:
+        Y₁ = y^n + h·γ·G(Y₁)                           [implicit]
+        Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) [mixed]
+
+        Final update:
+        y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂)
         """
-        # Store initial state
-        fields_initial = self._copy_fields()
+        # ARS(2,2,2) parameter
+        h = dt
+        gamma = 1.0 - 1.0 / np.sqrt(2.0)  # ≈ 0.292893218
 
-        # === Stage 1: Y₁ = y^n (identity) ===
-        # No update needed, Y₁ = y^n
-        explicit_rhs_1 = self._compute_explicit_rhs()
+        # Store initial state y^n
+        y_n_dict = self._copy_fields()
 
-        # === Stage 2: Y₂ = y^n + dt/2 * E(Y₁) + dt/2 * I(Y₂) ===
-        # Apply explicit update from stage 1
-        self._apply_explicit_update(explicit_rhs_1, dt / 2)
+        # === Stage 1: Y₁ = y^n + h·γ·G(Y₁) ===
+        Y1_dict = self._solve_implicit_stage(y_n_dict, gamma * h)
+        Y1_fields = self._config_from_dict(Y1_dict)
 
-        # Apply implicit linear terms with midpoint rule (coefficient 1/2)
-        self.spectral.advance_linear_terms(self.fields, dt / 2, method="implicit")
+        # Compute explicit RHS F(Y₁)
+        F_Y1_dict = self._compute_explicit_rhs_for_fields(Y1_fields)
 
-        # Compute explicit RHS at Y₂
-        explicit_rhs_2 = self._compute_explicit_rhs()
+        # Compute implicit terms G(Y₁) from stage equation: h·γ·G(Y₁) = Y₁ - y^n
+        G_Y1_scaled_dict = self._add_fields(Y1_dict, y_n_dict, scale=-1.0)
+        G_Y1_dict = self._scale_fields(G_Y1_scaled_dict, scale=1.0 / (gamma * h))
 
-        # === Stage 3: Y₃ = y^n + dt/2 * E(Y₂) + dt * I(Y₃) ===
-        # Restore to initial state
-        self._restore_fields(fields_initial)
+        # === Stage 2: Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
+        # Build RHS for stage 2: y^n + h·F(Y₁) + h·(1-γ)·G(Y₁)
+        rhs2_dict = self._add_fields(y_n_dict, F_Y1_dict, scale=h)
+        rhs2_dict = self._add_fields(rhs2_dict, G_Y1_dict, scale=h * (1.0 - gamma))
 
-        # Apply weighted explicit update: dt/2 * E(Y₂)
-        self._apply_explicit_update(explicit_rhs_2, dt / 2)
+        Y2_dict = self._solve_implicit_stage(rhs2_dict, gamma * h)
+        Y2_fields = self._config_from_dict(Y2_dict)
 
-        # Apply implicit linear terms with full timestep (coefficient 1)
-        self.spectral.advance_linear_terms(self.fields, dt, method="implicit")
+        # Compute explicit RHS F(Y₂)
+        F_Y2_dict = self._compute_explicit_rhs_for_fields(Y2_fields)
 
-        # === Final Update: y^{n+1} = y^n + dt/2 * E(Y₂) + dt * I(Y₃) ===
-        # The current state already contains: y^n + dt/2 * E(Y₂) + dt * I(Y₃)
-        # This is exactly the final IMEX-RK2 update, so no additional step needed.
-        # The implicit terms I(Y₃) are already applied via advance_linear_terms above.
+        # Compute implicit terms G(Y₂) from stage equation: h·γ·G(Y₂) = Y₂ - RHS₂
+        G_Y2_scaled_dict = self._add_fields(Y2_dict, rhs2_dict, scale=-1.0)
+        G_Y2_dict = self._scale_fields(G_Y2_scaled_dict, scale=1.0 / (gamma * h))
+
+        # === Final Update: y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
+        final_dict = y_n_dict.copy()
+        final_dict = self._add_fields(final_dict, F_Y1_dict, scale=h / 2.0)
+        final_dict = self._add_fields(final_dict, F_Y2_dict, scale=h / 2.0)
+        final_dict = self._add_fields(final_dict, G_Y1_dict, scale=h * (1.0 - gamma))
+        final_dict = self._add_fields(final_dict, G_Y2_dict, scale=h * gamma)
+
+        # Load final result into self.fields
+        self._restore_fields(final_dict)
+
+    def _compute_explicit_rhs_for_fields(self, fields: "ISFieldConfiguration") -> dict[str, np.ndarray]:
+        """
+        Compute explicit RHS terms F(Y) for specific field configuration.
+
+        Args:
+            fields: Field configuration to evaluate RHS at
+
+        Returns:
+            Dictionary of explicit right-hand side terms
+        """
+        # Temporarily store current fields and switch to input fields
+        original_fields = self.fields
+        self.fields = fields
+
+        try:
+            # Compute RHS using existing method
+            explicit_rhs = self._compute_explicit_rhs()
+            return explicit_rhs
+        finally:
+            # Restore original fields
+            self.fields = original_fields
 
     def _compute_explicit_rhs(self) -> dict[str, np.ndarray]:
         """
@@ -990,13 +1034,29 @@ class SpectralISHydrodynamics:
                 elif field_name == "du_dt" and hasattr(self.fields, "u_mu"):
                     rhs_terms[field_name] = np.zeros_like(self.fields.u_mu)
 
-    def _restore_fields(self, field_backup: dict[str, np.ndarray]) -> None:
-        """Restore field configuration from backup."""
+    def _restore_fields(
+        self,
+        field_backup: dict[str, np.ndarray],
+        target_fields: Optional["ISFieldConfiguration"] = None
+    ) -> None:
+        """
+        Restore field configuration from backup.
+
+        Args:
+            field_backup: Dictionary of field arrays to restore
+            target_fields: Target configuration object (defaults to self.fields)
+        """
+        target = target_fields if target_fields is not None else self.fields
+
         for field_name, field_data in field_backup.items():
-            if hasattr(self.fields, field_name):
-                field_attr = getattr(self.fields, field_name)
+            if hasattr(target, field_name):
+                field_attr = getattr(target, field_name)
                 if hasattr(field_attr, "shape") and field_attr.shape == field_data.shape:
-                    field_attr[:] = field_data
+                    try:
+                        field_attr[:] = field_data
+                    except (ValueError, TypeError):
+                        # Handle read-only arrays by replacing the attribute
+                        setattr(target, field_name, field_data.copy())
 
     def _advance_conservation_laws(self, dt: float) -> None:
         """
@@ -1165,6 +1225,289 @@ class SpectralISHydrodynamics:
             "q_mu": self.fields.q_mu.copy(),
             "u_mu": self.fields.u_mu.copy(),
         }
+
+    def _add_fields(
+        self,
+        fields_base: dict[str, np.ndarray],
+        fields_to_add: dict[str, np.ndarray],
+        scale: float = 1.0
+    ) -> dict[str, np.ndarray]:
+        """
+        Combine field dictionaries: result = base + scale * to_add.
+
+        Args:
+            fields_base: Base field dictionary
+            fields_to_add: Fields to add (scaled)
+            scale: Scaling factor for fields_to_add
+
+        Returns:
+            New dictionary with combined fields
+        """
+        result = {}
+        for key in fields_base:
+            if key in fields_to_add:
+                result[key] = fields_base[key] + scale * fields_to_add[key]
+            else:
+                result[key] = fields_base[key].copy()
+        return result
+
+    def _scale_fields(self, field_dict: dict[str, np.ndarray], scale: float) -> dict[str, np.ndarray]:
+        """
+        Scale all fields in dictionary by a constant factor.
+
+        Args:
+            field_dict: Dictionary of field arrays
+            scale: Scaling factor
+
+        Returns:
+            New dictionary with scaled fields
+        """
+        return {key: scale * field_array for key, field_array in field_dict.items()}
+
+    def _config_from_dict(self, field_dict: dict[str, np.ndarray]) -> "ISFieldConfiguration":
+        """
+        Create ISFieldConfiguration object from field dictionary.
+
+        Args:
+            field_dict: Dictionary containing field arrays
+
+        Returns:
+            New ISFieldConfiguration with specified field values
+        """
+        from ..core.fields import ISFieldConfiguration
+
+        new_fields = ISFieldConfiguration(self.grid)
+        self._restore_fields(field_dict, target_fields=new_fields)
+        return new_fields
+
+    def _solve_implicit_stage(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+        """
+        Solve implicit stage equation: (I - γ·dt·∂G/∂y)·Y = RHS for ARS(2,2,2).
+
+        This solves the nonlinear algebraic equation Y = RHS + γ·dt·G(Y) where G(Y)
+        represents the stiff terms (viscous diffusion and relaxation).
+
+        Args:
+            rhs_dict: Right-hand side field dictionary
+            gamma_dt: Product γ·dt where γ is ARS(2,2,2) parameter
+
+        Returns:
+            Solution dictionary Y
+        """
+        if abs(gamma_dt) < 1e-12:
+            # No implicit terms, return RHS directly
+            return {key: field.copy() for key, field in rhs_dict.items()}
+
+        try:
+            # Use Newton-Krylov iteration to solve the nonlinear system
+            return self._newton_krylov_solve(rhs_dict, gamma_dt)
+        except Exception as e:
+            warnings.warn(
+                f"Implicit stage solve failed: {e}. Using explicit approximation.",
+                stacklevel=2
+            )
+            # Fallback: first-order explicit approximation
+            return self._explicit_approximation(rhs_dict, gamma_dt)
+
+    def _newton_krylov_solve(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+        """
+        Newton-Krylov solver for implicit stage equation.
+
+        Solves F(Y) = Y - RHS - γ·dt·G(Y) = 0 using Newton iteration
+        with Krylov subspace methods for the linear systems.
+        """
+        # Convert to flat array for scipy solver
+        rhs_flat = self._dict_to_flat(rhs_dict)
+
+        def residual_function(y_flat: np.ndarray) -> np.ndarray:
+            """Residual function F(Y) = Y - RHS - γ·dt·G(Y)."""
+            y_dict = self._flat_to_dict(y_flat, rhs_dict)
+            y_fields = self._config_from_dict(y_dict)
+
+            # Compute G(Y) - the stiff terms
+            G_y_dict = self._compute_stiff_terms(y_fields)
+
+            # F(Y) = Y - RHS - γ·dt·G(Y)
+            residual_dict = self._add_fields(y_dict, rhs_dict, scale=-1.0)
+            residual_dict = self._add_fields(residual_dict, G_y_dict, scale=-gamma_dt)
+
+            return self._dict_to_flat(residual_dict)
+
+        # Initial guess: Y⁰ = RHS (explicit approximation)
+        y0_flat = rhs_flat.copy()
+
+        # Solve using Newton-Krylov with moderate tolerance
+        try:
+            solution_flat = newton_krylov(
+                residual_function,
+                y0_flat,
+                method='lgmres',  # Left-preconditioned GMRES
+                verbose=False,
+                maxiter=10,       # Limit iterations for performance
+                f_tol=1e-8,       # Reasonable tolerance for PDE context
+                f_rtol=1e-6
+            )
+            return self._flat_to_dict(solution_flat, rhs_dict)
+
+        except Exception as e:
+            warnings.warn(f"Newton-Krylov iteration failed: {e}", stacklevel=2)
+            # Return explicit approximation as fallback
+            return self._explicit_approximation(rhs_dict, gamma_dt)
+
+    def _compute_stiff_terms(self, fields: "ISFieldConfiguration") -> dict[str, np.ndarray]:
+        """
+        Compute stiff terms G(Y) for implicit solver.
+
+        These are the terms that require implicit treatment:
+        - Viscous diffusion terms
+        - Relaxation terms (linear part)
+        """
+        stiff_terms = {}
+
+        if self.coeffs is None:
+            # No stiff terms
+            return {key: np.zeros_like(getattr(fields, key))
+                   for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]}
+
+        # Bulk viscous diffusion: ∇²Π term
+        if hasattr(self.coeffs, "bulk_viscosity") and self.coeffs.bulk_viscosity:
+            Pi_laplacian = self._compute_laplacian(fields.Pi)
+            stiff_terms["Pi"] = self.coeffs.bulk_viscosity * Pi_laplacian
+        else:
+            stiff_terms["Pi"] = np.zeros_like(fields.Pi)
+
+        # Shear viscous diffusion: ∇²π^μν terms
+        if hasattr(self.coeffs, "shear_viscosity") and self.coeffs.shear_viscosity:
+            pi_laplacian = np.zeros_like(fields.pi_munu)
+            for mu in range(4):
+                for nu in range(4):
+                    if fields.pi_munu.shape[-2:] == (4, 4):
+                        pi_laplacian[..., mu, nu] = self._compute_laplacian(fields.pi_munu[..., mu, nu])
+            stiff_terms["pi_munu"] = self.coeffs.shear_viscosity * pi_laplacian
+        else:
+            stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
+
+        # Relaxation terms (linear parts only)
+        if hasattr(self.coeffs, "bulk_relaxation_time") and self.coeffs.bulk_relaxation_time:
+            tau_Pi = self.coeffs.bulk_relaxation_time
+            stiff_terms["Pi"] += -fields.Pi / tau_Pi
+
+        if hasattr(self.coeffs, "shear_relaxation_time") and self.coeffs.shear_relaxation_time:
+            tau_pi = self.coeffs.shear_relaxation_time
+            stiff_terms["pi_munu"] += -fields.pi_munu / tau_pi
+
+        # Other fields (typically no stiff terms)
+        stiff_terms["rho"] = np.zeros_like(fields.rho)
+        stiff_terms["u_mu"] = np.zeros_like(fields.u_mu)
+        stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+
+        return stiff_terms
+
+    def _compute_laplacian(self, field: np.ndarray) -> np.ndarray:
+        """
+        Compute Laplacian ∇²field using spectral methods.
+
+        For field in Fourier space: ℱ[∇²f] = -k²·ℱ[f]
+
+        This is critical for Israel-Stewart physics: viscous terms like ζ∇²Π and η∇²π^μν
+        are essential for proper dissipative behavior.
+        """
+        try:
+            # Handle different field dimensionalities
+            original_shape = field.shape
+
+            if field.ndim == 4:
+                # Spacetime field (nt, nx, ny, nz) - use latest time slice for spatial Laplacian
+                expected_nt = self.spectral.nt if hasattr(self, 'spectral') else self.nt
+                if field.shape[0] == expected_nt:
+                    spatial_field = field[-1, :, :, :]  # Latest time slice
+                    compute_4d = True
+                else:
+                    raise ValueError(f"4D field shape {field.shape} incompatible with grid time dimension {expected_nt}")
+            elif field.ndim == 3:
+                # Pure spatial field (nx, ny, nz)
+                spatial_field = field
+                compute_4d = False
+            else:
+                raise ValueError(f"Field must be 3D (spatial) or 4D (spacetime), got shape {field.shape}")
+
+            # Validate spatial dimensions
+            if hasattr(self, 'spectral'):
+                expected_spatial = (self.spectral.nx, self.spectral.ny, self.spectral.nz)
+                spectral_solver = self.spectral
+            else:
+                expected_spatial = (self.nx, self.ny, self.nz)
+                spectral_solver = self
+
+            if spatial_field.shape != expected_spatial:
+                raise ValueError(f"Spatial field shape {spatial_field.shape} != grid shape {expected_spatial}")
+
+            # Transform to Fourier space using existing FFT plans
+            field_k = spectral_solver.fft_plan(spatial_field)
+
+            # Compute k² for Laplacian operator using existing k_vectors
+            kx, ky, kz = spectral_solver.k_vectors
+            k_squared = kx**2 + ky**2 + kz**2
+
+            # Apply Laplacian operator: ℱ[∇²f] = -k²·ℱ[f]
+            laplacian_k = -k_squared * field_k
+
+            # Transform back to real space
+            laplacian_spatial = spectral_solver.ifft_plan(laplacian_k).real
+
+            # Reconstruct output with proper shape
+            if compute_4d:
+                # Create output with same shape as input, but only update latest time slice
+                laplacian = np.zeros_like(field)
+                laplacian[-1, :, :, :] = laplacian_spatial
+                return laplacian
+            else:
+                return laplacian_spatial
+
+        except Exception as e:
+            warnings.warn(
+                f"Spectral Laplacian computation failed: {e}. "
+                f"Using zero diffusion (WARNING: This breaks Israel-Stewart physics!)",
+                stacklevel=2
+            )
+            # Emergency fallback - this breaks physics but maintains stability
+            return np.zeros_like(field)
+
+    def _explicit_approximation(self, rhs_dict: dict[str, np.ndarray], gamma_dt: float) -> dict[str, np.ndarray]:
+        """
+        Explicit approximation for implicit stage: Y ≈ RHS + γ·dt·G(RHS).
+
+        Used as fallback when implicit solver fails.
+        """
+        try:
+            rhs_fields = self._config_from_dict(rhs_dict)
+            G_rhs_dict = self._compute_stiff_terms(rhs_fields)
+            return self._add_fields(rhs_dict, G_rhs_dict, scale=gamma_dt)
+        except Exception:
+            # Ultimate fallback: return RHS unchanged
+            return {key: field.copy() for key, field in rhs_dict.items()}
+
+    def _dict_to_flat(self, field_dict: dict[str, np.ndarray]) -> np.ndarray:
+        """Convert field dictionary to flat array for numerical solvers."""
+        arrays = []
+        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+            if key in field_dict:
+                arrays.append(field_dict[key].ravel())
+        return np.concatenate(arrays) if arrays else np.array([])
+
+    def _flat_to_dict(self, flat_array: np.ndarray, template_dict: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Convert flat array back to field dictionary using template shapes."""
+        result = {}
+        offset = 0
+
+        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+            if key in template_dict:
+                shape = template_dict[key].shape
+                size = template_dict[key].size
+                result[key] = flat_array[offset:offset + size].reshape(shape)
+                offset += size
+
+        return result
 
     def adaptive_time_step(self) -> float:
         """

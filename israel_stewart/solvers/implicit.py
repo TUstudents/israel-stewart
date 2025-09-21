@@ -463,6 +463,14 @@ class BackwardEulerSolver(ImplicitSolverBase):
         This is much more efficient than column-by-column computation,
         especially for large systems.
         """
+        # MEMORY LEAK PROTECTION: Early detection and prevention
+        try:
+            import psutil
+            process = psutil.Process()
+            initial_memory = process.memory_info().rss / (1024**2)  # MB
+        except ImportError:
+            initial_memory = 0
+
         # Get baseline state
         baseline_rhs = rhs_func(fields)
         baseline_vector = self._rhs_to_vector(baseline_rhs)
@@ -472,9 +480,24 @@ class BackwardEulerSolver(ImplicitSolverBase):
         if n == 0:
             return sparse.csr_matrix((0, 0)) if self.use_sparse else np.array([[]])
 
+        # CRITICAL: Check memory requirements before proceeding
+        jacobian_memory_mb = (n ** 2) * 8 / (1024**2)  # 8 bytes per float64
+        if jacobian_memory_mb > 1000:  # More than 1GB
+            warnings.warn(
+                f"MEMORY WARNING: Jacobian would require {jacobian_memory_mb:.0f} MB. "
+                f"State vector size: {n}. Consider using analytical Jacobian or smaller grid.",
+                UserWarning
+            )
+            if jacobian_memory_mb > 4000:  # More than 4GB - abort
+                raise MemoryError(
+                    f"Jacobian computation would require {jacobian_memory_mb:.0f} MB, "
+                    "which could cause system crash. Use analytical Jacobian instead."
+                )
+
         # Use complex-step derivatives for better accuracy when possible
         try:
-            return self._compute_complex_step_jacobian(fields, rhs_func, current_vector, baseline_vector)
+            result = self._compute_complex_step_jacobian(fields, rhs_func, current_vector, baseline_vector)
+            return result
         except Exception:
             # Fall back to standard finite differences
             pass
@@ -482,19 +505,48 @@ class BackwardEulerSolver(ImplicitSolverBase):
         # Vectorized finite differences
         # Perturb multiple components simultaneously for efficiency
         jacobian_columns = []
-        batch_size = min(n, 50)  # Process in batches to control memory usage
+        batch_size = min(n, 20)  # REDUCED: Smaller batches to prevent memory explosion
+
+        print(f"MEMORY DEBUG: Starting Jacobian computation with n={n}, batches={n//batch_size + 1}")
 
         for batch_start in range(0, n, batch_size):
             batch_end = min(batch_start + batch_size, n)
             batch_columns = []
 
+            # MEMORY TRACKING: Monitor memory growth per batch
+            if initial_memory > 0:
+                try:
+                    current_memory = process.memory_info().rss / (1024**2)
+                    memory_growth = current_memory - initial_memory
+                    if memory_growth > 500:  # More than 500MB growth
+                        warnings.warn(
+                            f"MEMORY LEAK DETECTED: Batch {batch_start//batch_size + 1} "
+                            f"caused {memory_growth:.0f} MB growth. "
+                            f"Total memory: {current_memory:.0f} MB",
+                            UserWarning
+                        )
+                        if memory_growth > 2000:  # More than 2GB growth - abort
+                            raise MemoryError(
+                                f"Memory growth {memory_growth:.0f} MB exceeds safety limit. "
+                                "Aborting to prevent system crash."
+                            )
+                except Exception:
+                    pass
+
             for i in range(batch_start, batch_end):
-                # Perturb i-th component
-                perturbed_vector = current_vector.copy()
-                perturbed_vector[i] += perturbation
+                # MEMORY OPTIMIZATION: Explicit cleanup of temporary objects
+                perturbed_vector = None
+                perturbed_fields = None
+                perturbed_rhs = None
+                perturbed_vector_rhs = None
+                column = None
 
                 try:
-                    # Create perturbed fields
+                    # Perturb i-th component
+                    perturbed_vector = current_vector.copy()
+                    perturbed_vector[i] += perturbation
+
+                    # Create perturbed fields - POTENTIAL MEMORY LEAK SOURCE
                     perturbed_fields = ISFieldConfiguration(self.grid)
                     self._vector_to_fields(perturbed_vector, perturbed_fields)
 
@@ -504,19 +556,42 @@ class BackwardEulerSolver(ImplicitSolverBase):
 
                     # Finite difference column
                     column = (perturbed_vector_rhs - baseline_vector) / perturbation
-                    batch_columns.append(column)
+                    batch_columns.append(column.copy())  # Explicit copy to break references
+
+                    # CRITICAL: Explicit cleanup to force garbage collection
+                    del perturbed_vector, perturbed_fields, perturbed_rhs, perturbed_vector_rhs, column
 
                 except Exception as e:
+                    # Clean up on error to prevent memory leaks in exception handling
+                    try:
+                        del perturbed_vector, perturbed_fields, perturbed_rhs, perturbed_vector_rhs, column
+                    except:
+                        pass
                     warnings.warn(f"Failed to compute Jacobian column {i}: {e}", UserWarning)
                     batch_columns.append(np.zeros_like(baseline_vector))
 
-            jacobian_columns.extend(batch_columns)
+            # MEMORY OPTIMIZATION: Process and clear batches immediately
+            if batch_columns:
+                jacobian_columns.extend(batch_columns)
+                del batch_columns  # Explicit cleanup
 
         # Assemble Jacobian matrix
+        print(f"MEMORY DEBUG: Assembling final Jacobian matrix...")
         if self.use_sparse:
             jacobian = sparse.csr_matrix(np.column_stack(jacobian_columns))
         else:
             jacobian = np.column_stack(jacobian_columns)
+
+        # Final memory cleanup
+        del jacobian_columns
+
+        if initial_memory > 0:
+            try:
+                final_memory = process.memory_info().rss / (1024**2)
+                total_growth = final_memory - initial_memory
+                print(f"MEMORY DEBUG: Jacobian computation complete. Memory growth: {total_growth:.0f} MB")
+            except Exception:
+                pass
 
         return jacobian
 

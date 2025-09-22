@@ -202,21 +202,18 @@ class SoundWaveAnalysis:
 
     def _estimate_sound_speed(self) -> float:
         """Estimate sound speed from thermodynamic properties."""
-        # For radiation: c_s^2 = 1/3
-        # Include viscous corrections
         rho = np.mean(self.background_fields.rho)
         p = np.mean(self.background_fields.pressure)
 
         if rho <= 0:
             return 1.0 / np.sqrt(3.0)
 
-        # Ideal gas sound speed
-        cs_squared = p / (rho + p)
+        # Proper thermodynamic sound speed: c_s² = ∂p/∂ε
+        # For conformal radiation fluid: p = ε/3 → c_s² = 1/3
+        cs_squared = p / rho  # This gives 1/3 for radiation background
 
-        # Viscous corrections (first-order estimate)
-        if hasattr(self.transport_coeffs, "bulk_viscosity"):
-            zeta = self.transport_coeffs.bulk_viscosity
-            cs_squared *= 1.0 - zeta / (rho + p)
+        # Note: Viscous corrections affect dispersion relation, not ideal sound speed
+        # Keep this as the thermodynamic sound speed without viscous modifications
 
         return np.sqrt(max(0.0, min(1.0, cs_squared)))
 
@@ -499,81 +496,7 @@ class DispersionRelation:
     def __init__(self, analysis: SoundWaveAnalysis):
         """Initialize with sound wave analysis instance."""
         self.analysis = analysis
-        self._polynomial_cache: dict[tuple[float, ...], npt.NDArray[np.complex128]] = {}
 
-    def solve_exact_dispersion(self, k: float, max_order: int = 4) -> list[complex]:
-        """
-        Solve exact dispersion relation polynomial.
-
-        Args:
-            k: Wave number magnitude
-            max_order: Maximum polynomial order to consider
-
-        Returns:
-            List of complex frequency solutions
-        """
-        # Build characteristic polynomial
-        coeffs = self._build_characteristic_polynomial(k, max_order)
-
-        # Solve polynomial
-        roots = np.roots(coeffs)
-
-        # Filter physical solutions
-        physical_roots = []
-        for root in roots:
-            omega = root
-            if np.isreal(omega) and np.real(omega) >= 0:
-                physical_roots.append(omega)
-            elif np.imag(omega) < 0:  # Stable growing mode
-                physical_roots.append(omega)
-
-        return physical_roots
-
-    def _build_characteristic_polynomial(
-        self, k: float, max_order: int
-    ) -> npt.NDArray[np.complex128]:
-        """Build characteristic polynomial for dispersion relation."""
-        # Cache check
-        cache_key = (k, max_order)
-        if cache_key in self._polynomial_cache:
-            return self._polynomial_cache[cache_key]
-
-        # Transport coefficients
-        eta = getattr(self.analysis.transport_coeffs, "shear_viscosity", 0.0)
-        zeta = getattr(self.analysis.transport_coeffs, "bulk_viscosity", 0.0)
-        tau_pi = getattr(self.analysis.transport_coeffs, "shear_relaxation_time", 0.1) or 0.1
-        tau_Pi = getattr(self.analysis.transport_coeffs, "bulk_relaxation_time", 0.1) or 0.1
-
-        # Background state
-        rho0 = np.mean(self.analysis.background_fields.rho)
-        p0 = np.mean(self.analysis.background_fields.pressure)
-        cs_squared = p0 / (rho0 + p0)
-
-        # Build polynomial coefficients
-        # General form: sum_n a_n * omega^n = 0
-        coeffs = np.zeros(max_order + 1, dtype=np.complex128)
-
-        # Leading order (ideal fluid)
-        coeffs[2] = 1.0  # omega^2 term
-        coeffs[0] = -cs_squared * k**2  # constant term
-
-        # First-order viscous corrections
-        if max_order >= 3:
-            coeffs[3] = tau_pi + tau_Pi  # omega^3 term
-            coeffs[1] = -(eta + zeta) * k**2 / (rho0 + p0)  # omega term
-
-        # Second-order corrections
-        if max_order >= 4:
-            lambda_pi_pi = getattr(self.analysis.transport_coeffs, "lambda_pi_pi", 0.0)
-            xi_1 = getattr(self.analysis.transport_coeffs, "xi_1", 0.0)
-
-            coeffs[4] = tau_pi * tau_Pi  # omega^4 term
-            coeffs[2] += (lambda_pi_pi + xi_1) * k**2  # omega^2 correction
-
-        # Cache result
-        self._polynomial_cache[cache_key] = coeffs
-
-        return coeffs
 
     def analyze_dispersion_curve(
         self, k_range: npt.NDArray[np.float64], mode_type: str = "sound"
@@ -601,40 +524,25 @@ class DispersionRelation:
                 group_velocities.append(0.0)
                 continue
 
-            # Solve for this k
-            roots = self.solve_exact_dispersion(k)
+            # Use determinant-based solver from SoundWaveAnalysis
+            wave_vector = np.array([k, 0.0, 0.0])
+            modes = self.analysis.analyze_dispersion_relation(wave_vector)
 
-            if not roots:
+            if not modes:
                 frequencies.append(np.nan)
                 attenuations.append(np.nan)
                 phase_velocities.append(np.nan)
                 group_velocities.append(np.nan)
                 continue
 
-            # Select appropriate mode
-            if mode_type == "sound":
-                # Take mode closest to sound speed
-                cs = self.analysis._estimate_sound_speed()
-                target_omega = cs * k
-                best_root = min(roots, key=lambda r: abs(np.real(r) - target_omega))
-            else:
-                # Take most physical mode
-                best_root = max(roots, key=lambda r: np.real(r))
+            # Select the most appropriate mode (usually the first physical mode)
+            best_mode = modes[0]
 
-            omega = best_root
-            frequencies.append(np.real(omega))
-            attenuations.append(-np.imag(omega))
-            phase_velocities.append(np.real(omega) / k if k > 0 else 0)
-
-            # Group velocity (numerical derivative)
-            dk = 0.01 * k
-            roots_plus = self.solve_exact_dispersion(k + dk)
-            if roots_plus:
-                omega_plus = min(roots_plus, key=lambda r: abs(r - omega))
-                group_vel = np.real(omega_plus - omega) / dk
-            else:
-                group_vel = np.real(omega) / k
-            group_velocities.append(group_vel)
+            omega = best_mode.frequency
+            frequencies.append(omega)
+            attenuations.append(best_mode.attenuation)
+            phase_velocities.append(best_mode.phase_velocity)
+            group_velocities.append(best_mode.group_velocity)
 
         return {
             "k": k_range,
@@ -1218,7 +1126,7 @@ class NumericalSoundWaveBenchmark:
 
             # Evolve fields one timestep
             try:
-                self.solver.evolve(dt_cfl)
+                self.solver.time_step(dt_cfl)
                 current_time += dt_cfl
             except Exception as e:
                 warnings.warn(f"Simulation failed at t={current_time}: {e}", stacklevel=2)

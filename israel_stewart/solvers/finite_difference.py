@@ -9,7 +9,7 @@ conservative and non-conservative forms with proper boundary treatment.
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import scipy.sparse as sparse
@@ -163,7 +163,7 @@ class FiniteDifferenceScheme(ABC):
         elif self.boundary_conditions == "reflecting":
             return self._apply_reflecting_bc(field, axis)
         else:
-            warnings.warn(f"Unknown boundary condition: {self.boundary_conditions}")
+            warnings.warn(f"Unknown boundary condition: {self.boundary_conditions}", stacklevel=2)
             return field
 
     def _apply_periodic_bc(self, field: np.ndarray, axis: int) -> np.ndarray:
@@ -334,7 +334,7 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
 
         else:
             # For higher-order schemes, implement more complex stencils
-            warnings.warn(f"Flux computation for offset {offset} not implemented")
+            warnings.warn(f"Flux computation for offset {offset} not implemented", stacklevel=2)
             return np.zeros_like(extended_field)
 
         return flux

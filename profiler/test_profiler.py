@@ -6,16 +6,17 @@ This script demonstrates the new hierarchical profiling capabilities
 and tests FFT profiling on a minimal Israel-Stewart solver setup.
 """
 
-import numpy as np
-import time
 import json
+import time
+
+import numpy as np
 
 from israel_stewart.core.performance import (
-    profile_operation,
     detailed_performance_report,
-    get_fft_profiler,
     fft_efficiency_report,
-    reset_performance_stats
+    get_fft_profiler,
+    profile_operation,
+    reset_performance_stats,
 )
 
 
@@ -25,8 +26,8 @@ def simulate_fft_operations():
 
     # Test various FFT sizes
     test_sizes = [
-        (64, 64, 32),     # Small grid
-        (128, 128, 64),   # Medium grid
+        (64, 64, 32),  # Small grid
+        (128, 128, 64),  # Medium grid
         (256, 256, 128),  # Large grid
     ]
 
@@ -56,7 +57,6 @@ def simulate_spectral_operations():
     grid_size = (64, 64, 32, 32)
 
     with profile_operation("spectral_timestep", {"grid_size": grid_size}):
-
         # Simulate stress tensor computation
         with profile_operation("stress_energy_tensor"):
             # Simulate heavy computation
@@ -65,7 +65,7 @@ def simulate_spectral_operations():
 
             # Simulate tensor contractions
             with profile_operation("tensor_contractions"):
-                contracted = np.einsum('ijklmn,ijklnp->ijklmp', stress_tensor, stress_tensor)
+                contracted = np.einsum("ijklmn,ijklnp->ijklmp", stress_tensor, stress_tensor)
                 time.sleep(0.05)
 
         # Simulate divergence computation
@@ -83,7 +83,7 @@ def simulate_spectral_operations():
                 time.sleep(0.03)
 
         # Simulate viscous operator
-        for i in range(5):  # Multiple calls to test frequency tracking
+        for _i in range(5):  # Multiple calls to test frequency tracking
             with profile_operation("viscous_operator"):
                 viscous_term = np.random.rand(*grid_size[:3])
                 time.sleep(0.02)
@@ -97,7 +97,7 @@ def simulate_large_memory_allocation():
         large_array1 = np.zeros((512, 512, 256))  # ~500MB
         time.sleep(0.01)
 
-        large_array2 = np.ones((512, 512, 256))   # Another ~500MB
+        large_array2 = np.ones((512, 512, 256))  # Another ~500MB
         time.sleep(0.01)
 
         # Simulate computation
@@ -162,7 +162,9 @@ def run_profiling_test():
     for parent, data in list(hierarchy.items())[:3]:
         print(f"\n  {parent} ({data['parent_total_time']:.3f}s total):")
         for child, child_data in list(data["children"].items())[:2]:
-            print(f"    └─ {child}: {child_data['percentage']:.1f}% ({child_data['total_time']:.3f}s)")
+            print(
+                f"    └─ {child}: {child_data['percentage']:.1f}% ({child_data['total_time']:.3f}s)"
+            )
 
     # Memory analysis
     print("\n💾 MEMORY HOTSPOTS:")

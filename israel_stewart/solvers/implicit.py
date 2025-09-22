@@ -771,7 +771,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
                 self.relaxation_equations = ISRelaxationEquations(grid, metric, coefficients)
                 # Conservation laws will be initialized when fields are available
             except Exception as e:
-                warnings.warn(f"Failed to initialize physics modules: {e}", UserWarning)
+                warnings.warn(f"Failed to initialize physics modules: {e}", UserWarning, stacklevel=2)
 
     def _setup_imex_euler(self) -> None:
         """Setup coefficients for first-order IMEX Euler scheme."""
@@ -841,7 +841,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             try:
                 self.conservation_laws = ConservationLaws(fields)
             except Exception as e:
-                warnings.warn(f"Failed to initialize conservation laws: {e}", UserWarning)
+                warnings.warn(f"Failed to initialize conservation laws: {e}", UserWarning, stacklevel=2)
 
     def _compute_explicit_sum(
         self,
@@ -901,7 +901,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
         # System: G(u) = u - u_base - implicit_weight * f_I(u) = 0
         u_base = self._fields_to_vector(result)  # Initial guess including explicit terms
 
-        for newton_iter in range(self.max_iterations):
+        for _newton_iter in range(self.max_iterations):
             # Current state vector
             u_current = self._fields_to_vector(result)
 
@@ -933,7 +933,7 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
 
             except (np.linalg.LinAlgError, ValueError) as e:
                 # If Newton fails, fall back to simpler method
-                warnings.warn(f"Newton iteration failed in IMEX stage {stage}: {e}", UserWarning)
+                warnings.warn(f"Newton iteration failed in IMEX stage {stage}: {e}", UserWarning, stacklevel=2)
                 # Simple explicit-like update as fallback
                 implicit_vector_scaled = implicit_weight * implicit_vector
                 u_fallback = u_base + implicit_vector_scaled

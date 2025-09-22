@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import numpy as np
 from scipy.optimize import newton_krylov
 
+from ..core.memory_optimization import (
+    get_array_pool,
+    get_fft_manager,
+    get_inplace_ops,
+    memory_optimized_context,
+)
 from ..core.performance import monitor_performance, profile_operation
 from ..core.tensor_utils import optimized_einsum
-from ..core.memory_optimization import (
-    get_array_pool, get_fft_manager, get_inplace_ops,
-    memory_optimized_context
-)
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
@@ -104,8 +106,8 @@ class SpectralISolver:
         # Pre-allocate FFT workspaces
         common_shapes = [
             spatial_shape,  # 3D spatial fields
-            field_shape,    # 4D spacetime fields
-            tensor_shape    # Stress tensors
+            field_shape,  # 4D spacetime fields
+            tensor_shape,  # Stress tensors
         ]
 
         # Initialize FFT workspace manager with common shapes
@@ -499,7 +501,9 @@ class SpectralISolver:
             # Get appropriate workspace
             if np.isrealobj(field) and self.use_real_fft:
                 # Real FFT with workspace
-                real_workspace, complex_workspace = self.fft_manager.get_real_fft_workspace(field.shape)
+                real_workspace, complex_workspace = self.fft_manager.get_real_fft_workspace(
+                    field.shape
+                )
 
                 # Copy input to workspace to avoid modifying original
                 self.inplace_ops.copy_with_slicing(real_workspace, field)
@@ -515,8 +519,8 @@ class SpectralISolver:
                 workspace = self.fft_manager.get_workspace(field.shape, np.complex128)
 
                 # Copy input to workspace
-                workspace.real = field.real if hasattr(field, 'real') else field
-                if hasattr(field, 'imag'):
+                workspace.real = field.real if hasattr(field, "real") else field
+                if hasattr(field, "imag"):
                     workspace.imag = field.imag
 
                 # Perform FFT in-place

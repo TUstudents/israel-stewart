@@ -6,24 +6,25 @@ This script compares the original methods with memory-optimized versions
 to demonstrate reduced memory allocation and improved performance.
 """
 
-import numpy as np
 import time
 import tracemalloc
 
+import numpy as np
+
 from israel_stewart.core.memory_optimization import (
-    memory_usage_report, get_array_pool, get_fft_manager,
-    memory_optimized_context
+    get_array_pool,
+    get_fft_manager,
+    memory_optimized_context,
+    memory_usage_report,
 )
-from israel_stewart.core.performance import (
-    detailed_performance_report, reset_performance_stats
-)
+from israel_stewart.core.performance import detailed_performance_report, reset_performance_stats
 
 
 def simulate_spectral_operations():
     """Simulate spectral operations to test memory optimization."""
 
     # Import here to avoid import issues during testing
-    from israel_stewart.core import SpacetimeGrid, MinkowskiMetric, TransportCoefficients
+    from israel_stewart.core import MinkowskiMetric, SpacetimeGrid, TransportCoefficients
     from israel_stewart.core.fields import ISFieldConfiguration
     from israel_stewart.solvers.spectral import SpectralISolver
 
@@ -33,15 +34,12 @@ def simulate_spectral_operations():
     grid = SpacetimeGrid(
         coordinate_system="cartesian",
         time_range=(0.0, 1.0),
-        spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
-        grid_points=(8, 32, 32, 16)  # Moderate size for testing
+        spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
+        grid_points=(8, 32, 32, 16),  # Moderate size for testing
     )
 
     fields = ISFieldConfiguration(grid)
-    transport_coeffs = TransportCoefficients(
-        shear_viscosity=0.1,
-        bulk_viscosity=0.05
-    )
+    transport_coeffs = TransportCoefficients(shear_viscosity=0.1, bulk_viscosity=0.05)
 
     # Initialize solver (this will set up memory optimization)
     solver = SpectralISolver(grid, fields, transport_coeffs)
@@ -138,7 +136,9 @@ def test_divergence_memory_optimization():
 
     # Compare results
     print(f"  Original divergence:   {original_time:.4f}s, {original_memory/(1024**2):.1f}MB peak")
-    print(f"  Optimized divergence:  {optimized_time:.4f}s, {optimized_memory/(1024**2):.1f}MB peak")
+    print(
+        f"  Optimized divergence:  {optimized_time:.4f}s, {optimized_memory/(1024**2):.1f}MB peak"
+    )
     print(f"  Speedup:               {original_time/optimized_time:.2f}x")
     print(f"  Memory reduction:      {(original_memory-optimized_memory)/original_memory*100:.1f}%")
 
@@ -167,10 +167,12 @@ def test_array_pool_efficiency():
     arrays = []
     print("Requesting arrays:")
 
-    for i, shape in enumerate(test_shapes):
+    for _i, shape in enumerate(test_shapes):
         array = array_pool.get_array(shape, np.float64)
         arrays.append(array)
-        print(f"  Array {i+1}: shape {shape} - {'New' if shape not in [s.shape for s in arrays[:-1]] else 'Reused'}")
+        print(
+            f"  Array {_i+1}: shape {shape} - {'New' if shape not in [s.shape for s in arrays[:-1]] else 'Reused'}"
+        )
 
     # Return arrays to pool
     print("\nReturning arrays to pool...")
@@ -179,13 +181,13 @@ def test_array_pool_efficiency():
 
     # Test reuse efficiency
     print("\nRequesting same arrays again:")
-    for i, shape in enumerate(test_shapes):
+    for _i, shape in enumerate(test_shapes):
         array = array_pool.get_array(shape, np.float64)
         array_pool.return_array(array)
 
     # Get efficiency stats
     stats = array_pool.get_efficiency_stats()
-    print(f"\nArray Pool Efficiency:")
+    print("\nArray Pool Efficiency:")
     print(f"  Total requests: {stats['total_requests']}")
     print(f"  New allocations: {stats['allocations']}")
     print(f"  Array reuses: {stats['reuses']}")
@@ -211,13 +213,13 @@ def test_fft_workspace_efficiency():
     ]
 
     print("Requesting FFT workspaces:")
-    for i, shape in enumerate(test_shapes):
+    for _i, shape in enumerate(test_shapes):
         workspace = fft_manager.get_workspace(shape, np.complex128)
-        print(f"  Workspace {i+1}: shape {shape}")
+        print(f"  Workspace {_i+1}: shape {shape}")
 
     # Get efficiency stats
     stats = fft_manager.get_efficiency_stats()
-    print(f"\nFFT Workspace Efficiency:")
+    print("\nFFT Workspace Efficiency:")
     print(f"  Total requests: {stats['total_requests']}")
     print(f"  Cache hits: {stats['cache_hits']}")
     print(f"  Cache misses: {stats['cache_misses']}")
@@ -250,23 +252,25 @@ def run_memory_optimization_test():
 
         # Summary statistics
         summary = detailed_report["summary"]
-        print(f"\nOperation Summary:")
+        print("\nOperation Summary:")
         print(f"  Total operations: {summary['total_operations']}")
         print(f"  Total time: {summary['total_time']:.3f}s")
-        print(f"  Memory optimized operations: {len([op for op in summary['slowest_operations'] if 'memory_optimized' in op[0]])}")
+        print(
+            f"  Memory optimized operations: {len([op for op in summary['slowest_operations'] if 'memory_optimized' in op[0]])}"
+        )
 
         # Memory optimization statistics
-        print(f"\nMemory Optimization Stats:")
-        array_stats = memory_report['array_pool']
+        print("\nMemory Optimization Stats:")
+        array_stats = memory_report["array_pool"]
         print(f"  Array pool reuse rate: {array_stats['reuse_rate']:.1%}")
         print(f"  Arrays in pool: {array_stats['total_pooled_arrays']}")
 
-        fft_stats = memory_report['fft_workspace']
+        fft_stats = memory_report["fft_workspace"]
         print(f"  FFT workspace hit rate: {fft_stats['hit_rate']:.1%}")
         print(f"  FFT memory usage: {fft_stats['memory_usage_mb']:.1f}MB")
 
         # Top optimization targets
-        print(f"\nTop Optimization Targets:")
+        print("\nTop Optimization Targets:")
         targets = detailed_report["optimization_targets"][:3]
         for i, target in enumerate(targets, 1):
             print(f"  {i}. {target['operation']} ({target['type']})")
@@ -277,6 +281,7 @@ def run_memory_optimization_test():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
 
 

@@ -12,14 +12,15 @@ Usage:
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import (
+    DispersionRelation,
     NumericalSoundWaveBenchmark,
     SoundWaveAnalysis,
-    DispersionRelation
 )
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
-from israel_stewart.core.metrics import MinkowskiMetric
 from israel_stewart.core.fields import TransportCoefficients
+from israel_stewart.core.metrics import MinkowskiMetric
+from israel_stewart.core.spacetime_grid import SpacetimeGrid
 
 
 def run_analytical_validation():
@@ -71,7 +72,7 @@ def run_analytical_validation():
         avg_sound_speed = np.mean(sound_speeds)
         theoretical_c_s = 1/np.sqrt(3)  # Radiation EOS
 
-        print(f'\nSOUND SPEED ANALYSIS:')
+        print('\nSOUND SPEED ANALYSIS:')
         print(f'   Theoretical: c_s = 1/√3 = {theoretical_c_s:.6f}')
         print(f'   Numerical:   c_s = {avg_sound_speed:.6f}')
         print(f'   Error:       {abs(avg_sound_speed - theoretical_c_s)/theoretical_c_s * 100:.2f}%')

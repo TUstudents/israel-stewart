@@ -28,7 +28,7 @@ def run_minimal_benchmark():
     benchmark = NumericalSoundWaveBenchmark(
         domain_size=2 * np.pi,
         grid_points=(16, 16, 8, 8),  # Very small grid for speed
-        #grid_points=(32, 32, 16, 16),
+        # grid_points=(32, 32, 16, 16),
     )
     print(f"✅ Grid: {benchmark.grid_points} (minimal for speed)")
     print()

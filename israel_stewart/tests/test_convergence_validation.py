@@ -5,35 +5,45 @@ Tests solver accuracy against known analytical solutions from benchmark modules
 and performs systematic convergence studies to validate numerical methods.
 """
 
-import pytest
-import numpy as np
-from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pytest
 
 # Core framework
 from israel_stewart.core import (
-    SpacetimeGrid, MinkowskiMetric, ISFieldConfiguration,
-    TransportCoefficients, FourVector
+    FourVector,
+    ISFieldConfiguration,
+    MinkowskiMetric,
+    SpacetimeGrid,
+    TransportCoefficients,
 )
 
 # Solver modules
 from israel_stewart.solvers import (
-    BackwardEulerSolver, IMEXRungeKuttaSolver, ExponentialIntegrator,
-    ConservativeFiniteDifference, UpwindFiniteDifference, WENOFiniteDifference,
-    StrangSplitting, LieTrotterSplitting, AdaptiveSplitting,
-    create_solver
+    AdaptiveSplitting,
+    BackwardEulerSolver,
+    ConservativeFiniteDifference,
+    ExponentialIntegrator,
+    IMEXRungeKuttaSolver,
+    LieTrotterSplitting,
+    StrangSplitting,
+    UpwindFiniteDifference,
+    WENOFiniteDifference,
+    create_solver,
 )
 
 # Physics equations (with availability check)
 try:
-    from israel_stewart.equations import ISRelaxationEquations, ConservationLaws
+    from israel_stewart.equations import ConservationLaws, ISRelaxationEquations
     PHYSICS_AVAILABLE = True
 except ImportError:
     PHYSICS_AVAILABLE = False
 
 # Benchmark modules (with availability check)
 try:
-    from israel_stewart.benchmarks import BjorkenFlow, SoundWaves, EquilibrationTest
+    from israel_stewart.benchmarks import BjorkenFlow, EquilibrationTest, SoundWaves
     BENCHMARKS_AVAILABLE = True
 except ImportError:
     BENCHMARKS_AVAILABLE = False
@@ -42,8 +52,8 @@ except ImportError:
 @dataclass
 class ConvergenceResult:
     """Results from convergence analysis."""
-    grid_sizes: List[int]
-    errors: List[float]
+    grid_sizes: list[int]
+    errors: list[float]
     convergence_rate: float
     theoretical_rate: float
     r_squared: float
@@ -58,14 +68,14 @@ class ValidationResult:
     max_error: float
     relative_error: float
     passes_tolerance: bool
-    solution_data: Dict[str, np.ndarray]
+    solution_data: dict[str, np.ndarray]
 
 
 class ConvergenceAnalyzer:
     """Analyzes convergence rates for numerical methods."""
 
     @staticmethod
-    def compute_convergence_rate(grid_sizes: List[int], errors: List[float]) -> Tuple[float, float]:
+    def compute_convergence_rate(grid_sizes: list[int], errors: list[float]) -> tuple[float, float]:
         """
         Compute convergence rate using least squares fit.
 

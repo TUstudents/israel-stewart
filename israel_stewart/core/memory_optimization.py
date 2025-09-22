@@ -6,9 +6,10 @@ and improve performance for large-scale relativistic hydrodynamics simulations.
 """
 
 import warnings
-from typing import Any, Dict, Tuple, Optional, Union
-import numpy as np
 from contextlib import contextmanager
+from typing import Any, Optional, Union
+
+import numpy as np
 
 
 class ArrayPool:
@@ -27,11 +28,11 @@ class ArrayPool:
             max_pool_size: Maximum number of arrays to keep in pool
         """
         self.max_pool_size = max_pool_size
-        self.pool: Dict[Tuple[Tuple[int, ...], str], list[np.ndarray]] = {}
+        self.pool: dict[tuple[tuple[int, ...], str], list[np.ndarray]] = {}
         self.allocation_count = 0
         self.reuse_count = 0
 
-    def get_array(self, shape: Tuple[int, ...], dtype: Union[str, np.dtype] = np.float64) -> np.ndarray:
+    def get_array(self, shape: tuple[int, ...], dtype: str | np.dtype = np.float64) -> np.ndarray:
         """
         Get array from pool or create new one.
 
@@ -72,7 +73,7 @@ class ArrayPool:
         if len(self.pool[key]) < self.max_pool_size:
             self.pool[key].append(array)
 
-    def get_efficiency_stats(self) -> Dict[str, Any]:
+    def get_efficiency_stats(self) -> dict[str, Any]:
         """Get pool efficiency statistics."""
         total_requests = self.allocation_count + self.reuse_count
         reuse_rate = self.reuse_count / total_requests if total_requests > 0 else 0
@@ -83,7 +84,7 @@ class ArrayPool:
             "reuses": self.reuse_count,
             "reuse_rate": reuse_rate,
             "pool_sizes": {str(key): len(arrays) for key, arrays in self.pool.items()},
-            "total_pooled_arrays": sum(len(arrays) for arrays in self.pool.values())
+            "total_pooled_arrays": sum(len(arrays) for arrays in self.pool.values()),
         }
 
     def clear_pool(self) -> None:
@@ -103,11 +104,13 @@ class FFTWorkspaceManager:
 
     def __init__(self):
         """Initialize FFT workspace manager."""
-        self.workspaces: Dict[Tuple[Tuple[int, ...], str], np.ndarray] = {}
-        self.fft_plans: Dict[Tuple[Tuple[int, ...], str], Any] = {}
-        self.usage_stats: Dict[str, int] = {"hits": 0, "misses": 0}
+        self.workspaces: dict[tuple[tuple[int, ...], str], np.ndarray] = {}
+        self.fft_plans: dict[tuple[tuple[int, ...], str], Any] = {}
+        self.usage_stats: dict[str, int] = {"hits": 0, "misses": 0}
 
-    def get_workspace(self, shape: Tuple[int, ...], dtype: Union[str, np.dtype] = np.complex128) -> np.ndarray:
+    def get_workspace(
+        self, shape: tuple[int, ...], dtype: str | np.dtype = np.complex128
+    ) -> np.ndarray:
         """
         Get pre-allocated workspace for FFT operations.
 
@@ -133,7 +136,7 @@ class FFTWorkspaceManager:
             self.workspaces[key] = workspace
             return workspace
 
-    def get_real_fft_workspace(self, real_shape: Tuple[int, ...]) -> Tuple[np.ndarray, np.ndarray]:
+    def get_real_fft_workspace(self, real_shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
         """
         Get workspaces for real FFT operations.
 
@@ -153,7 +156,7 @@ class FFTWorkspaceManager:
 
         return real_workspace, complex_workspace
 
-    def precompute_fft_plans(self, shapes: list[Tuple[int, ...]], use_scipy: bool = True) -> None:
+    def precompute_fft_plans(self, shapes: list[tuple[int, ...]], use_scipy: bool = True) -> None:
         """
         Precompute FFT plans for given shapes.
 
@@ -164,9 +167,10 @@ class FFTWorkspaceManager:
         if use_scipy:
             try:
                 import scipy.fft
+
                 fft_module = scipy.fft
             except ImportError:
-                warnings.warn("scipy not available, falling back to numpy.fft")
+                warnings.warn("scipy not available, falling back to numpy.fft", stacklevel=2)
                 fft_module = np.fft
         else:
             fft_module = np.fft
@@ -177,21 +181,13 @@ class FFTWorkspaceManager:
 
             # Store plan information (in real implementation, would cache actual plans)
             plan_key = (shape, "forward")
-            self.fft_plans[plan_key] = {
-                "module": fft_module,
-                "shape": shape,
-                "type": "forward"
-            }
+            self.fft_plans[plan_key] = {"module": fft_module, "shape": shape, "type": "forward"}
 
             # Also store inverse plan
             plan_key = (shape, "inverse")
-            self.fft_plans[plan_key] = {
-                "module": fft_module,
-                "shape": shape,
-                "type": "inverse"
-            }
+            self.fft_plans[plan_key] = {"module": fft_module, "shape": shape, "type": "inverse"}
 
-    def get_efficiency_stats(self) -> Dict[str, Any]:
+    def get_efficiency_stats(self) -> dict[str, Any]:
         """Get workspace efficiency statistics."""
         total_requests = self.usage_stats["hits"] + self.usage_stats["misses"]
         hit_rate = self.usage_stats["hits"] / total_requests if total_requests > 0 else 0
@@ -203,7 +199,7 @@ class FFTWorkspaceManager:
             "hit_rate": hit_rate,
             "workspaces_cached": len(self.workspaces),
             "fft_plans_cached": len(self.fft_plans),
-            "memory_usage_mb": sum(arr.nbytes for arr in self.workspaces.values()) / (1024 * 1024)
+            "memory_usage_mb": sum(arr.nbytes for arr in self.workspaces.values()) / (1024 * 1024),
         }
 
     def clear_cache(self) -> None:
@@ -241,7 +237,7 @@ class InPlaceOperations:
         return target
 
     @staticmethod
-    def multiply_inplace(target: np.ndarray, factor: Union[float, np.ndarray]) -> np.ndarray:
+    def multiply_inplace(target: np.ndarray, factor: float | np.ndarray) -> np.ndarray:
         """
         Perform in-place multiplication: target *= factor.
 
@@ -256,8 +252,9 @@ class InPlaceOperations:
         return target
 
     @staticmethod
-    def apply_operator_inplace(target: np.ndarray, operator: np.ndarray,
-                              workspace: Optional[np.ndarray] = None) -> np.ndarray:
+    def apply_operator_inplace(
+        target: np.ndarray, operator: np.ndarray, workspace: np.ndarray | None = None
+    ) -> np.ndarray:
         """
         Apply operator to array in-place using optional workspace.
 
@@ -278,8 +275,9 @@ class InPlaceOperations:
         return target
 
     @staticmethod
-    def copy_with_slicing(target: np.ndarray, source: np.ndarray,
-                         target_slice: Any = None, source_slice: Any = None) -> None:
+    def copy_with_slicing(
+        target: np.ndarray, source: np.ndarray, target_slice: Any = None, source_slice: Any = None
+    ) -> None:
         """
         Copy data between arrays with slicing to avoid full array allocation.
 
@@ -329,24 +327,26 @@ class MemoryOptimizedContext:
         # Issue warnings for poor efficiency
         if stats["array_pool"]["reuse_rate"] < 0.5 and stats["array_pool"]["total_requests"] > 100:
             warnings.warn(
-                f"Low array pool efficiency: {stats['array_pool']['reuse_rate']:.1%} reuse rate"
+                f"Low array pool efficiency: {stats['array_pool']['reuse_rate']:.1%} reuse rate",
+                stacklevel=2
             )
 
         if self.fft_manager and stats["fft_workspace"]["hit_rate"] < 0.7:
             warnings.warn(
-                f"Low FFT workspace efficiency: {stats['fft_workspace']['hit_rate']:.1%} hit rate"
+                f"Low FFT workspace efficiency: {stats['fft_workspace']['hit_rate']:.1%} hit rate",
+                stacklevel=2
             )
 
-    def get_memory_stats(self) -> Dict[str, Any]:
+    def get_memory_stats(self) -> dict[str, Any]:
         """Get comprehensive memory optimization statistics."""
         stats = {
             "array_pool": self.array_pool.get_efficiency_stats(),
-            "fft_workspace": self.fft_manager.get_efficiency_stats() if self.fft_manager else {}
+            "fft_workspace": self.fft_manager.get_efficiency_stats() if self.fft_manager else {},
         }
         return stats
 
     @contextmanager
-    def temporary_array(self, shape: Tuple[int, ...], dtype: Union[str, np.dtype] = np.float64):
+    def temporary_array(self, shape: tuple[int, ...], dtype: str | np.dtype = np.float64):
         """
         Context manager for temporary arrays that are automatically returned to pool.
 
@@ -396,9 +396,9 @@ def memory_optimized_context(array_pool_size: int = 100, enable_fft_workspace: b
         yield context
 
 
-def memory_usage_report() -> Dict[str, Any]:
+def memory_usage_report() -> dict[str, Any]:
     """Generate comprehensive memory usage report."""
     return {
         "array_pool": _global_array_pool.get_efficiency_stats(),
-        "fft_workspace": _global_fft_manager.get_efficiency_stats()
+        "fft_workspace": _global_fft_manager.get_efficiency_stats(),
     }

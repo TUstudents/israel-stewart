@@ -1127,7 +1127,7 @@ class NumericalSoundWaveBenchmark:
             try:
                 # Explicitly select the correct, high-quality IMEX solver
                 self.solver.time_step(dt_cfl, method="spectral_imex")
-                #self.solver.time_step(dt_cfl)
+                # self.solver.time_step(dt_cfl)
                 current_time += dt_cfl
             except Exception as e:
                 warnings.warn(f"Simulation failed at t={current_time}: {e}", stacklevel=2)

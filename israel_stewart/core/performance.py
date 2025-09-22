@@ -10,9 +10,9 @@ import time
 import tracemalloc
 import warnings
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any
 
 import numpy as np
 
@@ -229,11 +229,15 @@ class DetailedProfiler:
         """Initialize detailed profiler."""
         # Hierarchical timing data
         self.call_stack: list[str] = []
-        self.nested_timings: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+        self.nested_timings: dict[str, dict[str, list[float]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         self.call_hierarchy: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
         # Memory tracking
-        self.memory_snapshots: dict[str, list[tuple[float, float]]] = defaultdict(list)  # (current, peak)
+        self.memory_snapshots: dict[str, list[tuple[float, float]]] = defaultdict(
+            list
+        )  # (current, peak)
         self.large_allocations: list[dict[str, Any]] = []  # Track allocations > 10MB
 
         # FFT-specific tracking
@@ -250,7 +254,9 @@ class DetailedProfiler:
         self.operation_counts: dict[str, int] = defaultdict(int)
 
     @contextmanager
-    def profile_operation(self, operation_name: str, metadata: dict[str, Any] | None = None) -> Generator[None, None, None]:
+    def profile_operation(
+        self, operation_name: str, metadata: dict[str, Any] | None = None
+    ) -> Generator[None, None, None]:
         """
         Context manager for profiling operations with hierarchical tracking.
 
@@ -299,24 +305,33 @@ class DetailedProfiler:
                 self.nested_timings[parent_operation][operation_name].append(elapsed)
 
             # Record memory snapshots
-            self.memory_snapshots[operation_name].append((end_memory[0] / (1024 * 1024), peak_memory / (1024 * 1024)))
+            self.memory_snapshots[operation_name].append(
+                (end_memory[0] / (1024 * 1024), peak_memory / (1024 * 1024))
+            )
 
             # Track large allocations
             if memory_delta > 10 * 1024 * 1024:  # > 10MB
-                self.large_allocations.append({
-                    "operation": operation_name,
-                    "size_mb": memory_delta / (1024 * 1024),
-                    "timestamp": time.time(),
-                    "parent": parent_operation
-                })
+                self.large_allocations.append(
+                    {
+                        "operation": operation_name,
+                        "size_mb": memory_delta / (1024 * 1024),
+                        "timestamp": time.time(),
+                        "parent": parent_operation,
+                    }
+                )
 
             # Clean up
             self.call_stack.pop()
             if memory_started_here:
                 tracemalloc.stop()
 
-    def profile_fft_operation(self, operation_type: str, array_shape: tuple[int, ...],
-                             elapsed_time: float, axes: tuple[int, ...] | None = None) -> None:
+    def profile_fft_operation(
+        self,
+        operation_type: str,
+        array_shape: tuple[int, ...],
+        elapsed_time: float,
+        axes: tuple[int, ...] | None = None,
+    ) -> None:
         """
         Record FFT operation performance.
 
@@ -326,13 +341,15 @@ class DetailedProfiler:
             elapsed_time: Time taken for the operation
             axes: FFT axes (optional)
         """
-        self.fft_operations[operation_type].append({
-            "shape": array_shape,
-            "elapsed_time": elapsed_time,
-            "axes": axes,
-            "size_elements": np.prod(array_shape),
-            "timestamp": time.time()
-        })
+        self.fft_operations[operation_type].append(
+            {
+                "shape": array_shape,
+                "elapsed_time": elapsed_time,
+                "axes": axes,
+                "size_elements": np.prod(array_shape),
+                "timestamp": time.time(),
+            }
+        )
 
     def record_cache_hit(self, cache_name: str) -> None:
         """Record a cache hit."""
@@ -356,7 +373,7 @@ class DetailedProfiler:
             "fft_analysis": self._analyze_fft_performance(),
             "cache_analysis": self._analyze_cache_performance(),
             "optimization_targets": self._identify_optimization_targets(),
-            "scaling_analysis": self._analyze_scaling_behavior()
+            "scaling_analysis": self._analyze_scaling_behavior(),
         }
 
         return report
@@ -369,14 +386,12 @@ class DetailedProfiler:
         # Find slowest operations
         slowest_ops = sorted(
             [(op, sum(times)) for op, times in self.operation_times.items()],
-            key=lambda x: x[1], reverse=True
+            key=lambda x: x[1],
+            reverse=True,
         )[:5]
 
         # Find most frequent operations
-        frequent_ops = sorted(
-            self.operation_counts.items(),
-            key=lambda x: x[1], reverse=True
-        )[:5]
+        frequent_ops = sorted(self.operation_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
         return {
             "total_operations": total_operations,
@@ -384,7 +399,7 @@ class DetailedProfiler:
             "unique_operations": len(self.operation_times),
             "slowest_operations": slowest_ops,
             "most_frequent_operations": frequent_ops,
-            "large_allocations_count": len(self.large_allocations)
+            "large_allocations_count": len(self.large_allocations),
         }
 
     def _analyze_hierarchical_timing(self) -> dict[str, Any]:
@@ -397,21 +412,25 @@ class DetailedProfiler:
             child_breakdown = {}
             for child, times in children.items():
                 child_total_time = sum(times)
-                child_percentage = (child_total_time / parent_total_time * 100) if parent_total_time > 0 else 0
+                child_percentage = (
+                    (child_total_time / parent_total_time * 100) if parent_total_time > 0 else 0
+                )
                 child_breakdown[child] = {
                     "total_time": child_total_time,
                     "percentage": child_percentage,
                     "call_count": len(times),
-                    "avg_time": np.mean(times) if times else 0
+                    "avg_time": np.mean(times) if times else 0,
                 }
 
             # Sort children by total time
-            sorted_children = dict(sorted(child_breakdown.items(), key=lambda x: x[1]["total_time"], reverse=True))
+            sorted_children = dict(
+                sorted(child_breakdown.items(), key=lambda x: x[1]["total_time"], reverse=True)
+            )
 
             hierarchy_analysis[parent] = {
                 "parent_total_time": parent_total_time,
                 "children": sorted_children,
-                "call_count": self.operation_counts.get(parent, 0)
+                "call_count": self.operation_counts.get(parent, 0),
             }
 
         return hierarchy_analysis
@@ -421,7 +440,7 @@ class DetailedProfiler:
         memory_analysis = {
             "large_allocations": self.large_allocations[-10:],  # Last 10 large allocations
             "memory_hotspots": {},
-            "memory_trends": {}
+            "memory_trends": {},
         }
 
         # Analyze memory hotspots
@@ -436,14 +455,17 @@ class DetailedProfiler:
                     "avg_peak_mb": np.mean(peak_memories),
                     "max_peak_mb": np.max(peak_memories),
                     "memory_variance": np.var(current_memories),
-                    "sample_count": len(snapshots)
+                    "sample_count": len(snapshots),
                 }
 
         # Sort by maximum peak memory
-        hotspots_sorted = dict(sorted(
-            memory_analysis["memory_hotspots"].items(),
-            key=lambda x: x[1]["max_peak_mb"], reverse=True
-        ))
+        hotspots_sorted = dict(
+            sorted(
+                memory_analysis["memory_hotspots"].items(),
+                key=lambda x: x[1]["max_peak_mb"],
+                reverse=True,
+            )
+        )
         memory_analysis["memory_hotspots"] = hotspots_sorted
 
         return memory_analysis
@@ -463,7 +485,7 @@ class DetailedProfiler:
                     "avg_time": np.mean(times),
                     "time_per_element": np.mean(times) / np.mean(sizes) if sizes else 0,
                     "largest_transform": max(sizes) if sizes else 0,
-                    "smallest_transform": min(sizes) if sizes else 0
+                    "smallest_transform": min(sizes) if sizes else 0,
                 }
 
         return fft_analysis
@@ -481,7 +503,7 @@ class DetailedProfiler:
                 "misses": stats["misses"],
                 "total_requests": total_requests,
                 "hit_rate": hit_rate,
-                "efficiency": "good" if hit_rate > 0.8 else "fair" if hit_rate > 0.5 else "poor"
+                "efficiency": "good" if hit_rate > 0.8 else "fair" if hit_rate > 0.5 else "poor",
             }
 
         return cache_analysis
@@ -498,40 +520,46 @@ class DetailedProfiler:
                 call_count = len(times)
 
                 if total_time > 1.0:  # Operations taking more than 1 second total
-                    targets.append({
-                        "operation": operation,
-                        "type": "time_bottleneck",
-                        "total_time": total_time,
-                        "avg_time": avg_time,
-                        "call_count": call_count,
-                        "impact_score": total_time * call_count,
-                        "recommendation": f"High time impact: {total_time:.2f}s total, {avg_time:.3f}s average"
-                    })
+                    targets.append(
+                        {
+                            "operation": operation,
+                            "type": "time_bottleneck",
+                            "total_time": total_time,
+                            "avg_time": avg_time,
+                            "call_count": call_count,
+                            "impact_score": total_time * call_count,
+                            "recommendation": f"High time impact: {total_time:.2f}s total, {avg_time:.3f}s average",
+                        }
+                    )
 
         # Memory-based targets
         for allocation in self.large_allocations:
             if allocation["size_mb"] > 50:  # > 50MB allocations
-                targets.append({
-                    "operation": allocation["operation"],
-                    "type": "memory_bottleneck",
-                    "size_mb": allocation["size_mb"],
-                    "parent": allocation["parent"],
-                    "impact_score": allocation["size_mb"],
-                    "recommendation": f"Large allocation: {allocation['size_mb']:.1f}MB"
-                })
+                targets.append(
+                    {
+                        "operation": allocation["operation"],
+                        "type": "memory_bottleneck",
+                        "size_mb": allocation["size_mb"],
+                        "parent": allocation["parent"],
+                        "impact_score": allocation["size_mb"],
+                        "recommendation": f"Large allocation: {allocation['size_mb']:.1f}MB",
+                    }
+                )
 
         # Frequency-based targets
         for operation, count in self.operation_counts.items():
             if count > 1000:  # Very frequent operations
                 avg_time = np.mean(self.operation_times.get(operation, [0]))
-                targets.append({
-                    "operation": operation,
-                    "type": "frequency_bottleneck",
-                    "call_count": count,
-                    "avg_time": avg_time,
-                    "impact_score": count * avg_time,
-                    "recommendation": f"Very frequent: {count} calls, consider caching"
-                })
+                targets.append(
+                    {
+                        "operation": operation,
+                        "type": "frequency_bottleneck",
+                        "call_count": count,
+                        "avg_time": avg_time,
+                        "impact_score": count * avg_time,
+                        "recommendation": f"Very frequent: {count} calls, consider caching",
+                    }
+                )
 
         # Sort by impact score
         return sorted(targets, key=lambda x: x["impact_score"], reverse=True)
@@ -541,7 +569,9 @@ class DetailedProfiler:
         scaling_analysis = {}
 
         # Group operations by grid size metadata if available
-        grid_size_groups: dict[str, dict[tuple[int, ...], list[float]]] = defaultdict(lambda: defaultdict(list))
+        grid_size_groups: dict[str, dict[tuple[int, ...], list[float]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
 
         for operation, metadata in self.operation_metadata.items():
             if "grid_size" in metadata and operation in self.operation_times:
@@ -564,14 +594,18 @@ class DetailedProfiler:
                 if len(sizes_and_times) >= 2:
                     size_ratio = sizes_and_times[-1][0] / sizes_and_times[0][0]
                     time_ratio = sizes_and_times[-1][1] / sizes_and_times[0][1]
-                    scaling_exponent = np.log(time_ratio) / np.log(size_ratio) if size_ratio > 1 else 0
+                    scaling_exponent = (
+                        np.log(time_ratio) / np.log(size_ratio) if size_ratio > 1 else 0
+                    )
 
                     scaling_analysis[operation] = {
                         "scaling_exponent": scaling_exponent,
-                        "scaling_behavior": "linear" if 0.8 <= scaling_exponent <= 1.2
-                                          else "superlinear" if scaling_exponent > 1.2
-                                          else "sublinear",
-                        "data_points": sizes_and_times
+                        "scaling_behavior": "linear"
+                        if 0.8 <= scaling_exponent <= 1.2
+                        else "superlinear"
+                        if scaling_exponent > 1.2
+                        else "sublinear",
+                        "data_points": sizes_and_times,
                     }
 
         return scaling_analysis
@@ -715,8 +749,9 @@ class FFTProfiler:
         self.fft_cache: dict[tuple[int, ...], Any] = {}  # Cache FFT plans/wisdom
         self.cache_enabled = True
 
-    def profile_fft(self, array: np.ndarray, axes: tuple[int, ...] | None = None,
-                   norm: str | None = None) -> np.ndarray:
+    def profile_fft(
+        self, array: np.ndarray, axes: tuple[int, ...] | None = None, norm: str | None = None
+    ) -> np.ndarray:
         """
         Profile forward FFT operation.
 
@@ -746,8 +781,9 @@ class FFTProfiler:
 
         return result
 
-    def profile_ifft(self, array: np.ndarray, axes: tuple[int, ...] | None = None,
-                    norm: str | None = None) -> np.ndarray:
+    def profile_ifft(
+        self, array: np.ndarray, axes: tuple[int, ...] | None = None, norm: str | None = None
+    ) -> np.ndarray:
         """
         Profile inverse FFT operation.
 
@@ -777,7 +813,9 @@ class FFTProfiler:
 
         return result
 
-    def profile_rfft(self, array: np.ndarray, axis: int = -1, norm: str | None = None) -> np.ndarray:
+    def profile_rfft(
+        self, array: np.ndarray, axis: int = -1, norm: str | None = None
+    ) -> np.ndarray:
         """
         Profile real-valued forward FFT operation.
 
@@ -800,8 +838,9 @@ class FFTProfiler:
 
         return result
 
-    def profile_irfft(self, array: np.ndarray, n: int | None = None, axis: int = -1,
-                     norm: str | None = None) -> np.ndarray:
+    def profile_irfft(
+        self, array: np.ndarray, n: int | None = None, axis: int = -1, norm: str | None = None
+    ) -> np.ndarray:
         """
         Profile real-valued inverse FFT operation.
 
@@ -821,7 +860,9 @@ class FFTProfiler:
 
         # Record performance
         elapsed_time = time.perf_counter() - start_time
-        self.detailed_profiler.profile_fft_operation("inverse_real_fft", array.shape, elapsed_time, (axis,))
+        self.detailed_profiler.profile_fft_operation(
+            "inverse_real_fft", array.shape, elapsed_time, (axis,)
+        )
 
         return result
 
@@ -839,10 +880,9 @@ class FFTProfiler:
         efficiency_report = {
             "fft_operations": fft_analysis,
             "cache_performance": {
-                k: v for k, v in cache_analysis.items()
-                if "fft" in k.lower() or "plan" in k.lower()
+                k: v for k, v in cache_analysis.items() if "fft" in k.lower() or "plan" in k.lower()
             },
-            "recommendations": []
+            "recommendations": [],
         }
 
         # Generate FFT-specific recommendations

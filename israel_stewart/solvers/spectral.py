@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import numpy as np
 from scipy.optimize import newton_krylov
 
-from ..core.performance import monitor_performance
+from ..core.performance import monitor_performance, profile_operation
 from ..core.tensor_utils import optimized_einsum
+from ..core.memory_optimization import (
+    get_array_pool, get_fft_manager, get_inplace_ops,
+    memory_optimized_context
+)
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
@@ -81,6 +85,37 @@ class SpectralISolver:
         # Cache for frequently used arrays
         self._fft_cache: dict[Any, Any] = {}
         self._derivative_cache: dict[Any, Any] = {}
+
+        # Memory optimization components
+        self.array_pool = get_array_pool()
+        self.fft_manager = get_fft_manager()
+        self.inplace_ops = get_inplace_ops()
+
+        # Pre-allocate common array shapes
+        self._precompute_workspaces()
+
+    def _precompute_workspaces(self) -> None:
+        """Pre-allocate common workspace arrays for memory optimization."""
+        # Common shapes used in spectral operations
+        spatial_shape = (self.nx, self.ny, self.nz)
+        field_shape = (self.nt, self.nx, self.ny, self.nz)
+        tensor_shape = (*spatial_shape, 4, 4)
+
+        # Pre-allocate FFT workspaces
+        common_shapes = [
+            spatial_shape,  # 3D spatial fields
+            field_shape,    # 4D spacetime fields
+            tensor_shape    # Stress tensors
+        ]
+
+        # Initialize FFT workspace manager with common shapes
+        self.fft_manager.precompute_fft_plans(common_shapes)
+
+        # Pre-allocate some workspace arrays
+        for shape in common_shapes:
+            # Real and complex workspaces
+            self.fft_manager.get_workspace(shape, np.float64)
+            self.fft_manager.get_workspace(shape, np.complex128)
 
     @monitor_performance("wave_vectors")
     def _compute_wave_vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -209,6 +244,48 @@ class SpectralISolver:
             div_result += self.spatial_derivative(vector_field[..., i], i)
 
         return div_result
+
+    def memory_optimized_divergence(self, vector_field: np.ndarray) -> np.ndarray:
+        """
+        Memory-optimized spatial divergence using pre-allocated arrays.
+
+        Args:
+            vector_field: Vector field with shape (*spatial_shape, 3)
+
+        Returns:
+            Divergence ∇·v
+        """
+        if vector_field.shape[-1] != 3:
+            raise ValueError("Vector field must have 3 components")
+
+        with profile_operation("memory_optimized_divergence", {"input_shape": vector_field.shape}):
+            result_shape = vector_field.shape[:-1]
+
+            # Get temporary arrays from pool
+            div_result = self.array_pool.get_array(result_shape, np.float64)
+            temp_derivative = self.array_pool.get_array(result_shape, np.float64)
+
+            try:
+                # Initialize result
+                div_result.fill(0.0)
+
+                # Accumulate derivatives in-place
+                for i in range(3):
+                    # Compute derivative into temporary array
+                    temp_derivative[:] = self.spatial_derivative(vector_field[..., i], i)
+
+                    # Add to result in-place
+                    self.inplace_ops.add_inplace(div_result, temp_derivative)
+
+                # Return copy since we're returning temporary arrays to pool
+                result = div_result.copy()
+
+            finally:
+                # Return arrays to pool
+                self.array_pool.return_array(div_result)
+                self.array_pool.return_array(temp_derivative)
+
+            return result
 
     @monitor_performance("viscous_operator")
     def apply_viscous_operator(
@@ -407,6 +484,44 @@ class SpectralISolver:
         else:
             # Use complex FFT for complex fields or when real FFT disabled
             return self.fft_plan(field)
+
+    def memory_optimized_fft(self, field: np.ndarray) -> np.ndarray:
+        """
+        Memory-optimized FFT using pre-allocated workspaces.
+
+        Args:
+            field: Input field for FFT
+
+        Returns:
+            FFT of field in k-space
+        """
+        with profile_operation("memory_optimized_fft", {"input_shape": field.shape}):
+            # Get appropriate workspace
+            if np.isrealobj(field) and self.use_real_fft:
+                # Real FFT with workspace
+                real_workspace, complex_workspace = self.fft_manager.get_real_fft_workspace(field.shape)
+
+                # Copy input to workspace to avoid modifying original
+                self.inplace_ops.copy_with_slicing(real_workspace, field)
+
+                # Perform FFT in-place
+                result = self.rfft_plan(real_workspace)
+
+                # Copy result to output workspace
+                complex_workspace[:] = result
+                return complex_workspace
+            else:
+                # Complex FFT with workspace
+                workspace = self.fft_manager.get_workspace(field.shape, np.complex128)
+
+                # Copy input to workspace
+                workspace.real = field.real if hasattr(field, 'real') else field
+                if hasattr(field, 'imag'):
+                    workspace.imag = field.imag
+
+                # Perform FFT in-place
+                result = self.fft_plan(workspace)
+                return result
 
     def get_k_squared_for_field(self, field_k: np.ndarray) -> np.ndarray:
         """

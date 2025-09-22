@@ -497,7 +497,6 @@ class DispersionRelation:
         """Initialize with sound wave analysis instance."""
         self.analysis = analysis
 
-
     def analyze_dispersion_curve(
         self, k_range: npt.NDArray[np.float64], mode_type: str = "sound"
     ) -> dict[str, npt.NDArray[np.float64]]:
@@ -542,7 +541,7 @@ class DispersionRelation:
             frequencies.append(omega)
             attenuations.append(best_mode.attenuation)
             phase_velocities.append(best_mode.phase_velocity)
-            group_velocities.append(best_mode.group_velocity)
+            group_velocities.append(np.linalg.norm(best_mode.group_velocity))
 
         return {
             "k": k_range,
@@ -1126,7 +1125,9 @@ class NumericalSoundWaveBenchmark:
 
             # Evolve fields one timestep
             try:
-                self.solver.time_step(dt_cfl)
+                # Explicitly select the correct, high-quality IMEX solver
+                self.solver.time_step(dt_cfl, method="spectral_imex")
+                #self.solver.time_step(dt_cfl)
                 current_time += dt_cfl
             except Exception as e:
                 warnings.warn(f"Simulation failed at t={current_time}: {e}", stacklevel=2)

@@ -1,0 +1,56 @@
+{
+  "fft_operations": {
+    "forward_fft": {
+      "total_operations": 3,
+      "total_time": 1.9558553459937684,
+      "avg_time": 0.6519517819979228,
+      "time_per_element": 2.0441085041973881e-07,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "inverse_fft": {
+      "total_operations": 3,
+      "total_time": 2.478568726000958,
+      "avg_time": 0.8261895753336527,
+      "time_per_element": 2.590408038832738e-07,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "real_fft": {
+      "total_operations": 3,
+      "total_time": 0.40860234398860484,
+      "avg_time": 0.13620078132953495,
+      "time_per_element": 4.270395189976155e-08,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "inverse_real_fft": {
+      "total_operations": 3,
+      "total_time": 0.2086109610099811,
+      "avg_time": 0.06953698700332704,
+      "time_per_element": 4.3216300723655006e-08,
+      "largest_transform": "4227072",
+      "smallest_transform": "67584"
+    }
+  },
+  "cache_performance": {
+    "fft_plan_cache": {
+      "hits": 0,
+      "misses": 3,
+      "total_requests": 3,
+      "hit_rate": 0.0,
+      "efficiency": "poor"
+    },
+    "ifft_plan_cache": {
+      "hits": 0,
+      "misses": 3,
+      "total_requests": 3,
+      "hit_rate": 0.0,
+      "efficiency": "poor"
+    }
+  },
+  "recommendations": [
+    "Low FFT cache efficiency: 0.0% hit rate. Consider pre-computing FFT plans or enabling wisdom.",
+    "Low FFT cache efficiency: 0.0% hit rate. Consider pre-computing FFT plans or enabling wisdom."
+  ]
+}

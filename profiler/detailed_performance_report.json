@@ -1,0 +1,379 @@
+{
+  "summary": {
+    "total_operations": 12,
+    "total_time": 124.62947641998471,
+    "unique_operations": 8,
+    "slowest_operations": [
+      [
+        "spectral_timestep",
+        40.84243365599832
+      ],
+      [
+        "divergence_T",
+        25.868775787006598
+      ],
+      [
+        "spatial_derivatives",
+        23.493706611989182
+      ],
+      [
+        "stress_energy_tensor",
+        14.857747425994603
+      ],
+      [
+        "tensor_contractions",
+        9.419416713004466
+      ]
+    ],
+    "most_frequent_operations": [
+      [
+        "viscous_operator",
+        5
+      ],
+      [
+        "tensor_contractions",
+        1
+      ],
+      [
+        "stress_energy_tensor",
+        1
+      ],
+      [
+        "spatial_derivatives",
+        1
+      ],
+      [
+        "divergence_assembly",
+        1
+      ]
+    ],
+    "large_allocations_count": 6
+  },
+  "hierarchical_timing": {
+    "stress_energy_tensor": {
+      "parent_total_time": 14.857747425994603,
+      "children": {
+        "tensor_contractions": {
+          "total_time": 9.419416713004466,
+          "percentage": 63.39734041059669,
+          "call_count": 1,
+          "avg_time": 9.419416713004466
+        }
+      },
+      "call_count": 1
+    },
+    "spectral_timestep": {
+      "parent_total_time": 40.84243365599832,
+      "children": {
+        "divergence_T": {
+          "total_time": 25.868775787006598,
+          "percentage": 63.337988144610435,
+          "call_count": 1,
+          "avg_time": 25.868775787006598
+        },
+        "stress_energy_tensor": {
+          "total_time": 14.857747425994603,
+          "percentage": 36.37821279489921,
+          "call_count": 1,
+          "avg_time": 14.857747425994603
+        },
+        "viscous_operator": {
+          "total_time": 0.11295705699012615,
+          "percentage": 0.27656789000754545,
+          "call_count": 5,
+          "avg_time": 0.02259141139802523
+        }
+      },
+      "call_count": 1
+    },
+    "divergence_T": {
+      "parent_total_time": 25.868775787006598,
+      "children": {
+        "spatial_derivatives": {
+          "total_time": 23.493706611989182,
+          "percentage": 90.81878015963025,
+          "call_count": 1,
+          "avg_time": 23.493706611989182
+        },
+        "divergence_assembly": {
+          "total_time": 2.374376300998847,
+          "percentage": 9.178541422093318,
+          "call_count": 1,
+          "avg_time": 2.374376300998847
+        }
+      },
+      "call_count": 1
+    }
+  },
+  "memory_analysis": {
+    "large_allocations": [
+      {
+        "operation": "tensor_contractions",
+        "size_mb": 512.0003662109375,
+        "timestamp": 1758543539.3823597,
+        "parent": "stress_energy_tensor"
+      },
+      {
+        "operation": "stress_energy_tensor",
+        "size_mb": 1024.0021057128906,
+        "timestamp": 1758543539.3824458,
+        "parent": "spectral_timestep"
+      },
+      {
+        "operation": "spatial_derivatives",
+        "size_mb": 1536.0013122558594,
+        "timestamp": 1758543562.8765852,
+        "parent": "divergence_T"
+      },
+      {
+        "operation": "divergence_assembly",
+        "size_mb": 512.0000915527344,
+        "timestamp": 1758543565.251252,
+        "parent": "divergence_T"
+      },
+      {
+        "operation": "divergence_T",
+        "size_mb": 2048.0025482177734,
+        "timestamp": 1758543565.251301,
+        "parent": "spectral_timestep"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 3073.00772857666,
+        "timestamp": 1758543565.3653665,
+        "parent": "root"
+      }
+    ],
+    "memory_hotspots": {
+      "viscous_operator": {
+        "avg_current_mb": 3073.0079559326173,
+        "max_current_mb": 3073.008255004883,
+        "avg_peak_mb": 3073.8081665039062,
+        "max_peak_mb": 3074.0084838867188,
+        "memory_variance": 1.759827136993408e-07,
+        "sample_count": 5
+      },
+      "spectral_timestep": {
+        "avg_current_mb": 3073.00772857666,
+        "max_current_mb": 3073.00772857666,
+        "avg_peak_mb": 3074.0084838867188,
+        "max_peak_mb": 3074.0084838867188,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "divergence_T": {
+        "avg_current_mb": 3072.006507873535,
+        "max_current_mb": 3072.006507873535,
+        "avg_peak_mb": 3072.0074920654297,
+        "max_peak_mb": 3072.0074920654297,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "divergence_assembly": {
+        "avg_current_mb": 3072.006721496582,
+        "max_current_mb": 3072.006721496582,
+        "avg_peak_mb": 3072.006721496582,
+        "max_peak_mb": 3072.006721496582,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "spatial_derivatives": {
+        "avg_current_mb": 2560.005973815918,
+        "max_current_mb": 2560.005973815918,
+        "avg_peak_mb": 3040.13321685791,
+        "max_peak_mb": 3040.13321685791,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "large_allocation_test": {
+        "avg_current_mb": 5.340576171875e-05,
+        "max_current_mb": 5.340576171875e-05,
+        "avg_peak_mb": 1536.0003280639648,
+        "max_peak_mb": 1536.0003280639648,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "tensor_contractions": {
+        "avg_current_mb": 1024.0028991699219,
+        "max_current_mb": 1024.0028991699219,
+        "avg_peak_mb": 1024.1918087005615,
+        "max_peak_mb": 1024.1918087005615,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "stress_energy_tensor": {
+        "avg_current_mb": 1024.0033340454102,
+        "max_current_mb": 1024.0033340454102,
+        "avg_peak_mb": 1024.1918087005615,
+        "max_peak_mb": 1024.1918087005615,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      }
+    },
+    "memory_trends": {}
+  },
+  "fft_analysis": {
+    "forward_fft": {
+      "total_operations": 3,
+      "total_time": 1.9558553459937684,
+      "avg_time": 0.6519517819979228,
+      "time_per_element": 2.0441085041973881e-07,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "inverse_fft": {
+      "total_operations": 3,
+      "total_time": 2.478568726000958,
+      "avg_time": 0.8261895753336527,
+      "time_per_element": 2.590408038832738e-07,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "real_fft": {
+      "total_operations": 3,
+      "total_time": 0.40860234398860484,
+      "avg_time": 0.13620078132953495,
+      "time_per_element": 4.270395189976155e-08,
+      "largest_transform": "8388608",
+      "smallest_transform": "131072"
+    },
+    "inverse_real_fft": {
+      "total_operations": 3,
+      "total_time": 0.2086109610099811,
+      "avg_time": 0.06953698700332704,
+      "time_per_element": 4.3216300723655006e-08,
+      "largest_transform": "4227072",
+      "smallest_transform": "67584"
+    }
+  },
+  "cache_analysis": {
+    "fft_plan_cache": {
+      "hits": 0,
+      "misses": 3,
+      "total_requests": 3,
+      "hit_rate": 0.0,
+      "efficiency": "poor"
+    },
+    "ifft_plan_cache": {
+      "hits": 0,
+      "misses": 3,
+      "total_requests": 3,
+      "hit_rate": 0.0,
+      "efficiency": "poor"
+    }
+  },
+  "optimization_targets": [
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 3073.00772857666,
+      "parent": "root",
+      "impact_score": 3073.00772857666,
+      "recommendation": "Large allocation: 3073.0MB"
+    },
+    {
+      "operation": "divergence_T",
+      "type": "memory_bottleneck",
+      "size_mb": 2048.0025482177734,
+      "parent": "spectral_timestep",
+      "impact_score": 2048.0025482177734,
+      "recommendation": "Large allocation: 2048.0MB"
+    },
+    {
+      "operation": "spatial_derivatives",
+      "type": "memory_bottleneck",
+      "size_mb": 1536.0013122558594,
+      "parent": "divergence_T",
+      "impact_score": 1536.0013122558594,
+      "recommendation": "Large allocation: 1536.0MB"
+    },
+    {
+      "operation": "stress_energy_tensor",
+      "type": "memory_bottleneck",
+      "size_mb": 1024.0021057128906,
+      "parent": "spectral_timestep",
+      "impact_score": 1024.0021057128906,
+      "recommendation": "Large allocation: 1024.0MB"
+    },
+    {
+      "operation": "tensor_contractions",
+      "type": "memory_bottleneck",
+      "size_mb": 512.0003662109375,
+      "parent": "stress_energy_tensor",
+      "impact_score": 512.0003662109375,
+      "recommendation": "Large allocation: 512.0MB"
+    },
+    {
+      "operation": "divergence_assembly",
+      "type": "memory_bottleneck",
+      "size_mb": 512.0000915527344,
+      "parent": "divergence_T",
+      "impact_score": 512.0000915527344,
+      "recommendation": "Large allocation: 512.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "time_bottleneck",
+      "total_time": 40.84243365599832,
+      "avg_time": 40.84243365599832,
+      "call_count": 1,
+      "impact_score": 40.84243365599832,
+      "recommendation": "High time impact: 40.84s total, 40.842s average"
+    },
+    {
+      "operation": "divergence_T",
+      "type": "time_bottleneck",
+      "total_time": 25.868775787006598,
+      "avg_time": 25.868775787006598,
+      "call_count": 1,
+      "impact_score": 25.868775787006598,
+      "recommendation": "High time impact: 25.87s total, 25.869s average"
+    },
+    {
+      "operation": "spatial_derivatives",
+      "type": "time_bottleneck",
+      "total_time": 23.493706611989182,
+      "avg_time": 23.493706611989182,
+      "call_count": 1,
+      "impact_score": 23.493706611989182,
+      "recommendation": "High time impact: 23.49s total, 23.494s average"
+    },
+    {
+      "operation": "stress_energy_tensor",
+      "type": "time_bottleneck",
+      "total_time": 14.857747425994603,
+      "avg_time": 14.857747425994603,
+      "call_count": 1,
+      "impact_score": 14.857747425994603,
+      "recommendation": "High time impact: 14.86s total, 14.858s average"
+    },
+    {
+      "operation": "tensor_contractions",
+      "type": "time_bottleneck",
+      "total_time": 9.419416713004466,
+      "avg_time": 9.419416713004466,
+      "call_count": 1,
+      "impact_score": 9.419416713004466,
+      "recommendation": "High time impact: 9.42s total, 9.419s average"
+    },
+    {
+      "operation": "large_allocation_test",
+      "type": "time_bottleneck",
+      "total_time": 7.660062868002569,
+      "avg_time": 7.660062868002569,
+      "call_count": 1,
+      "impact_score": 7.660062868002569,
+      "recommendation": "High time impact: 7.66s total, 7.660s average"
+    },
+    {
+      "operation": "divergence_assembly",
+      "type": "time_bottleneck",
+      "total_time": 2.374376300998847,
+      "avg_time": 2.374376300998847,
+      "call_count": 1,
+      "impact_score": 2.374376300998847,
+      "recommendation": "High time impact: 2.37s total, 2.374s average"
+    }
+  ],
+  "scaling_analysis": {}
+}

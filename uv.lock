@@ -775,6 +775,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numba" },
     { name = "numpy" },
+    { name = "psutil" },
     { name = "scipy" },
     { name = "sympy" },
 ]
@@ -839,6 +840,7 @@ requires-dist = [
     { name = "numba", specifier = ">=0.57.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.4.0" },
+    { name = "psutil", specifier = ">=7.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.3.0" },

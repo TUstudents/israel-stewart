@@ -1,0 +1,1137 @@
+{
+  "summary": {
+    "total_operations": 1169,
+    "total_time": 338.87510422302876,
+    "unique_operations": 9,
+    "slowest_operations": [
+      [
+        "complete_simulation",
+        103.76199441999779
+      ],
+      [
+        "spectral_timestep",
+        103.65842825477012
+      ],
+      [
+        "evolution_equations",
+        59.119419727037894
+      ],
+      [
+        "divergence_T",
+        58.8875042781583
+      ],
+      [
+        "stress_energy_tensor",
+        13.090653601917438
+      ]
+    ],
+    "most_frequent_operations": [
+      [
+        "stress_energy_tensor",
+        212
+      ],
+      [
+        "divergence_T",
+        212
+      ],
+      [
+        "evolution_equations",
+        212
+      ],
+      [
+        "spectral_derivative",
+        212
+      ],
+      [
+        "divergence_computation",
+        212
+      ]
+    ],
+    "large_allocations_count": 103
+  },
+  "hierarchical_timing": {
+    "benchmark_initialization": {
+      "parent_total_time": 0.29252452598302625,
+      "children": {
+        "wave_vectors": {
+          "total_time": 0.0007530479924753308,
+          "percentage": 0.257430719678878,
+          "call_count": 1,
+          "avg_time": 0.0007530479924753308
+        }
+      },
+      "call_count": 1
+    },
+    "divergence_T": {
+      "parent_total_time": 58.8875042781583,
+      "children": {
+        "stress_energy_tensor": {
+          "total_time": 13.090653601917438,
+          "percentage": 22.2299344527882,
+          "call_count": 212,
+          "avg_time": 0.06174836604678037
+        }
+      },
+      "call_count": 212
+    },
+    "evolution_equations": {
+      "parent_total_time": 59.119419727037894,
+      "children": {
+        "divergence_T": {
+          "total_time": 58.8875042781583,
+          "percentage": 99.60771697362665,
+          "call_count": 212,
+          "avg_time": 0.27777124659508634
+        }
+      },
+      "call_count": 212
+    },
+    "spectral_timestep": {
+      "parent_total_time": 103.65842825477012,
+      "children": {
+        "evolution_equations": {
+          "total_time": 59.119419727037894,
+          "percentage": 57.0329115754438,
+          "call_count": 212,
+          "avg_time": 0.2788651873916882
+        },
+        "divergence_computation": {
+          "total_time": 0.0497128370043356,
+          "percentage": 0.04795831640641139,
+          "call_count": 212,
+          "avg_time": 0.00023449451417139434
+        }
+      },
+      "call_count": 106
+    },
+    "divergence_computation": {
+      "parent_total_time": 0.0497128370043356,
+      "children": {
+        "spectral_derivative": {
+          "total_time": 0.014113530167378485,
+          "percentage": 28.39011212767359,
+          "call_count": 212,
+          "avg_time": 6.657325550650228e-05
+        }
+      },
+      "call_count": 212
+    },
+    "complete_simulation": {
+      "parent_total_time": 103.76199441999779,
+      "children": {
+        "spectral_timestep": {
+          "total_time": 103.65842825477012,
+          "percentage": 99.90018872920997,
+          "call_count": 106,
+          "avg_time": 0.9779097005166992
+        }
+      },
+      "call_count": 1
+    }
+  },
+  "memory_analysis": {
+    "large_allocations": [
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587565.4521854,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587565.9933167,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587567.1732001,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.01050567626953,
+        "timestamp": 1758587567.661157,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587568.8269632,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587569.405468,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587570.0439055,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587571.3369012,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "spectral_timestep",
+        "size_mb": 52.00684356689453,
+        "timestamp": 1758587573.1382358,
+        "parent": "complete_simulation"
+      },
+      {
+        "operation": "complete_simulation",
+        "size_mb": 910.3249597549438,
+        "timestamp": 1758587573.1465006,
+        "parent": "root"
+      }
+    ],
+    "memory_hotspots": {
+      "stress_energy_tensor": {
+        "avg_current_mb": 533.6162448064337,
+        "max_current_mb": 1041.316466331482,
+        "avg_peak_mb": 946.6255785069376,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 72585.88436074306,
+        "sample_count": 212
+      },
+      "divergence_T": {
+        "avg_current_mb": 509.12130228528434,
+        "max_current_mb": 1012.2767705917358,
+        "avg_peak_mb": 946.6255785069376,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 72364.00313673244,
+        "sample_count": 212
+      },
+      "evolution_equations": {
+        "avg_current_mb": 509.12098044719335,
+        "max_current_mb": 1012.2764272689819,
+        "avg_peak_mb": 946.6255785069376,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 72364.00652903294,
+        "sample_count": 212
+      },
+      "spectral_derivative": {
+        "avg_current_mb": 509.37326413730403,
+        "max_current_mb": 1012.528678894043,
+        "avg_peak_mb": 946.6255785069376,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 72364.0040271206,
+        "sample_count": 212
+      },
+      "divergence_computation": {
+        "avg_current_mb": 509.37339484466696,
+        "max_current_mb": 1012.52880859375,
+        "avg_peak_mb": 946.6255785069376,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 72364.0200313813,
+        "sample_count": 212
+      },
+      "spectral_timestep": {
+        "avg_current_mb": 478.73327814857913,
+        "max_current_mb": 962.267165184021,
+        "avg_peak_mb": 951.3155970123579,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 71878.26931630826,
+        "sample_count": 106
+      },
+      "complete_simulation": {
+        "avg_current_mb": 910.3249597549438,
+        "max_current_mb": 910.3249597549438,
+        "avg_peak_mb": 1073.567358970642,
+        "max_peak_mb": 1073.567358970642,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "benchmark_initialization": {
+        "avg_current_mb": 23.021495819091797,
+        "max_current_mb": 23.021495819091797,
+        "avg_peak_mb": 23.031747817993164,
+        "max_peak_mb": 23.031747817993164,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      },
+      "wave_vectors": {
+        "avg_current_mb": 22.85245704650879,
+        "max_current_mb": 22.85245704650879,
+        "avg_peak_mb": 22.85387134552002,
+        "max_peak_mb": 22.85387134552002,
+        "memory_variance": 0.0,
+        "sample_count": 1
+      }
+    },
+    "memory_trends": {}
+  },
+  "fft_analysis": {},
+  "cache_analysis": {},
+  "optimization_targets": [
+    {
+      "operation": "evolution_equations",
+      "type": "time_bottleneck",
+      "total_time": 59.119419727037894,
+      "avg_time": 0.2788651873916882,
+      "call_count": 212,
+      "impact_score": 12533.316982132033,
+      "recommendation": "High time impact: 59.12s total, 0.279s average"
+    },
+    {
+      "operation": "divergence_T",
+      "type": "time_bottleneck",
+      "total_time": 58.8875042781583,
+      "avg_time": 0.27777124659508634,
+      "call_count": 212,
+      "impact_score": 12484.15090696956,
+      "recommendation": "High time impact: 58.89s total, 0.278s average"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "time_bottleneck",
+      "total_time": 103.65842825477012,
+      "avg_time": 0.9779097005166992,
+      "call_count": 106,
+      "impact_score": 10987.793395005632,
+      "recommendation": "High time impact: 103.66s total, 0.978s average"
+    },
+    {
+      "operation": "stress_energy_tensor",
+      "type": "time_bottleneck",
+      "total_time": 13.090653601917438,
+      "avg_time": 0.06174836604678037,
+      "call_count": 212,
+      "impact_score": 2775.218563606497,
+      "recommendation": "High time impact: 13.09s total, 0.062s average"
+    },
+    {
+      "operation": "complete_simulation",
+      "type": "memory_bottleneck",
+      "size_mb": 910.3249597549438,
+      "parent": "root",
+      "impact_score": 910.3249597549438,
+      "recommendation": "Large allocation: 910.3MB"
+    },
+    {
+      "operation": "complete_simulation",
+      "type": "time_bottleneck",
+      "total_time": 103.76199441999779,
+      "avg_time": 103.76199441999779,
+      "call_count": 1,
+      "impact_score": 103.76199441999779,
+      "recommendation": "High time impact: 103.76s total, 103.762s average"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.02583694458008,
+      "parent": "complete_simulation",
+      "impact_score": 52.02583694458008,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.01050567626953,
+      "parent": "complete_simulation",
+      "impact_score": 52.01050567626953,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.010047912597656,
+      "parent": "complete_simulation",
+      "impact_score": 52.010047912597656,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.009132385253906,
+      "parent": "complete_simulation",
+      "impact_score": 52.009132385253906,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.0087890625,
+      "parent": "complete_simulation",
+      "impact_score": 52.0087890625,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00867462158203,
+      "parent": "complete_simulation",
+      "impact_score": 52.00867462158203,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008514404296875,
+      "parent": "complete_simulation",
+      "impact_score": 52.008514404296875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00847625732422,
+      "parent": "complete_simulation",
+      "impact_score": 52.00847625732422,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00843048095703,
+      "parent": "complete_simulation",
+      "impact_score": 52.00843048095703,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008331298828125,
+      "parent": "complete_simulation",
+      "impact_score": 52.008331298828125,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008216857910156,
+      "parent": "complete_simulation",
+      "impact_score": 52.008216857910156,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008216857910156,
+      "parent": "complete_simulation",
+      "impact_score": 52.008216857910156,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008155822753906,
+      "parent": "complete_simulation",
+      "impact_score": 52.008155822753906,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.008079528808594,
+      "parent": "complete_simulation",
+      "impact_score": 52.008079528808594,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00764465332031,
+      "parent": "complete_simulation",
+      "impact_score": 52.00764465332031,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007591247558594,
+      "parent": "complete_simulation",
+      "impact_score": 52.007591247558594,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00745391845703,
+      "parent": "complete_simulation",
+      "impact_score": 52.00745391845703,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00739288330078,
+      "parent": "complete_simulation",
+      "impact_score": 52.00739288330078,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00731658935547,
+      "parent": "complete_simulation",
+      "impact_score": 52.00731658935547,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.0072021484375,
+      "parent": "complete_simulation",
+      "impact_score": 52.0072021484375,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007171630859375,
+      "parent": "complete_simulation",
+      "impact_score": 52.007171630859375,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007164001464844,
+      "parent": "complete_simulation",
+      "impact_score": 52.007164001464844,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007164001464844,
+      "parent": "complete_simulation",
+      "impact_score": 52.007164001464844,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007164001464844,
+      "parent": "complete_simulation",
+      "impact_score": 52.007164001464844,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.007102966308594,
+      "parent": "complete_simulation",
+      "impact_score": 52.007102966308594,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00708770751953,
+      "parent": "complete_simulation",
+      "impact_score": 52.00708770751953,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00697326660156,
+      "parent": "complete_simulation",
+      "impact_score": 52.00697326660156,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.0069580078125,
+      "parent": "complete_simulation",
+      "impact_score": 52.0069580078125,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00684356689453,
+      "parent": "complete_simulation",
+      "impact_score": 52.00684356689453,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00657653808594,
+      "parent": "complete_simulation",
+      "impact_score": 52.00657653808594,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00652313232422,
+      "parent": "complete_simulation",
+      "impact_score": 52.00652313232422,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.006202697753906,
+      "parent": "complete_simulation",
+      "impact_score": 52.006202697753906,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.006202697753906,
+      "parent": "complete_simulation",
+      "impact_score": 52.006202697753906,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    },
+    {
+      "operation": "spectral_timestep",
+      "type": "memory_bottleneck",
+      "size_mb": 52.00604248046875,
+      "parent": "complete_simulation",
+      "impact_score": 52.00604248046875,
+      "recommendation": "Large allocation: 52.0MB"
+    }
+  ],
+  "scaling_analysis": {}
+}

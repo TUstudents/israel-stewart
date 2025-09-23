@@ -17,204 +17,6 @@ from typing import Any
 import numpy as np
 
 
-class PerformanceMonitor:
-    """
-    Monitor performance of tensor operations and provide optimization hints.
-
-    Tracks computation time, memory usage, and operation counts to help
-    identify bottlenecks in relativistic hydrodynamics calculations.
-    """
-
-    def __init__(self) -> None:
-        """Initialize performance monitoring."""
-        self.operation_counts: dict[str, int] = {}
-        self.timing_data: dict[str, list[float]] = {}
-        self.memory_usage: dict[str, list[float]] = {}
-        self.warnings_issued: dict[str, bool] = {}
-
-    def time_operation(self, operation_name: str) -> Callable[[Callable], Callable]:
-        """
-        Decorator to time tensor operations.
-
-        Args:
-            operation_name: Name of operation to track
-
-        Returns:
-            Decorator function
-        """
-
-        def decorator(func: Callable) -> Callable:
-            @functools.wraps(func)
-            def wrapper(*args: Any, **kwargs: Any) -> Any:
-                # Start timing and memory tracking
-                start_time = time.perf_counter()
-
-                # Start memory tracking if tracemalloc is not already started
-                memory_started_here = False
-                if not tracemalloc.is_tracing():
-                    tracemalloc.start()
-                    memory_started_here = True
-
-                start_memory = tracemalloc.get_traced_memory()[0]  # current memory
-
-                # Execute function
-                result = func(*args, **kwargs)
-
-                # Stop timing and memory tracking
-                end_time = time.perf_counter()
-                end_memory = tracemalloc.get_traced_memory()[0]  # current memory
-
-                # Clean up memory tracing if we started it
-                if memory_started_here:
-                    tracemalloc.stop()
-
-                # Record timing
-                elapsed = end_time - start_time
-                if operation_name not in self.timing_data:
-                    self.timing_data[operation_name] = []
-                self.timing_data[operation_name].append(elapsed)
-
-                # Record memory usage delta
-                memory_delta = end_memory - start_memory
-                if operation_name not in self.memory_usage:
-                    self.memory_usage[operation_name] = []
-                self.memory_usage[operation_name].append(memory_delta)
-
-                # Update operation count
-                self.operation_counts[operation_name] = (
-                    self.operation_counts.get(operation_name, 0) + 1
-                )
-
-                # Issue performance warnings if needed
-                self._check_performance_warnings(operation_name, elapsed, memory_delta)
-
-                return result
-
-            return wrapper
-
-        return decorator
-
-    def _check_performance_warnings(
-        self, operation_name: str, elapsed_time: float, memory_delta: float = 0.0
-    ) -> None:
-        """Check if performance warnings should be issued."""
-        # Warn about slow operations (>1 second)
-        if elapsed_time > 1.0 and not self.warnings_issued.get(f"{operation_name}_slow", False):
-            warnings.warn(
-                f"Operation {operation_name} took {elapsed_time:.2f}s - consider optimization",
-                stacklevel=2,
-            )
-            self.warnings_issued[f"{operation_name}_slow"] = True
-
-        # Warn about high memory usage operations (>100MB)
-        memory_mb = memory_delta / (1024 * 1024)
-        if memory_mb > 100 and not self.warnings_issued.get(f"{operation_name}_memory", False):
-            warnings.warn(
-                f"Operation {operation_name} used {memory_mb:.1f}MB - consider memory optimization",
-                stacklevel=2,
-            )
-            self.warnings_issued[f"{operation_name}_memory"] = True
-
-        # Warn about very frequent operations (>1000 calls)
-        call_count = self.operation_counts.get(operation_name, 0)
-        if call_count > 1000 and not self.warnings_issued.get(f"{operation_name}_frequent", False):
-            warnings.warn(
-                f"Operation {operation_name} called {call_count} times - consider caching",
-                stacklevel=2,
-            )
-            self.warnings_issued[f"{operation_name}_frequent"] = True
-
-    def get_performance_report(self) -> dict[str, Any]:
-        """
-        Generate performance report.
-
-        Returns:
-            Dictionary with performance statistics
-        """
-        report: dict[str, Any] = {
-            "operation_counts": self.operation_counts.copy(),
-            "timing_statistics": {},
-            "memory_statistics": {},
-            "recommendations": [],
-        }
-
-        # Compute timing statistics
-        for op_name, times in self.timing_data.items():
-            if times:
-                times_array = np.array(times)
-                report["timing_statistics"][op_name] = {
-                    "mean_time": float(np.mean(times_array)),
-                    "std_time": float(np.std(times_array)),
-                    "min_time": float(np.min(times_array)),
-                    "max_time": float(np.max(times_array)),
-                    "total_time": float(np.sum(times_array)),
-                    "call_count": len(times),
-                }
-
-        # Compute memory statistics
-        for op_name, memory_deltas in self.memory_usage.items():
-            if memory_deltas:
-                memory_array = np.array(memory_deltas)
-                # Convert bytes to MB for readability
-                memory_mb = memory_array / (1024 * 1024)
-                report["memory_statistics"][op_name] = {
-                    "mean_memory_mb": float(np.mean(memory_mb)),
-                    "std_memory_mb": float(np.std(memory_mb)),
-                    "min_memory_mb": float(np.min(memory_mb)),
-                    "max_memory_mb": float(np.max(memory_mb)),
-                    "total_memory_mb": float(np.sum(memory_mb)),
-                    "call_count": len(memory_deltas),
-                }
-
-        # Generate recommendations
-        report["recommendations"] = self._generate_recommendations()
-
-        return report
-
-    def _generate_recommendations(self) -> list:
-        """Generate performance optimization recommendations."""
-        recommendations = []
-
-        # Check for frequently called operations
-        for op_name, count in self.operation_counts.items():
-            if count > 100:
-                recommendations.append(
-                    f"Consider caching results for frequently called operation: {op_name} ({count} calls)"
-                )
-
-        # Check for slow operations
-        for op_name, times in self.timing_data.items():
-            if times:
-                mean_time = np.mean(times)
-                if mean_time > 0.1:
-                    recommendations.append(
-                        f"Slow operation detected: {op_name} (avg {mean_time:.3f}s)"
-                    )
-
-        # Check for memory-intensive operations
-        for op_name, memory_deltas in self.memory_usage.items():
-            if memory_deltas:
-                mean_memory_mb = np.mean(memory_deltas) / (1024 * 1024)
-                if mean_memory_mb > 50:  # More than 50MB average
-                    recommendations.append(
-                        f"Memory-intensive operation: {op_name} (avg {mean_memory_mb:.1f}MB per call)"
-                    )
-
-                # Check for operations with high memory variance (potential leaks)
-                std_memory_mb = np.std(memory_deltas) / (1024 * 1024)
-                if std_memory_mb > mean_memory_mb * 2:  # High variance
-                    recommendations.append(
-                        f"Unstable memory usage in {op_name} - check for memory leaks or inefficient allocation"
-                    )
-
-        return recommendations
-
-    def reset_stats(self) -> None:
-        """Reset all performance statistics."""
-        self.operation_counts.clear()
-        self.timing_data.clear()
-        self.memory_usage.clear()
-        self.warnings_issued.clear()
 
 
 class DetailedProfiler:
@@ -624,14 +426,8 @@ class DetailedProfiler:
         self.operation_counts.clear()
 
 
-# Global performance monitor instances
-_global_monitor = PerformanceMonitor()
+# Global detailed profiler instance
 _detailed_profiler = DetailedProfiler()
-
-
-def get_performance_monitor() -> PerformanceMonitor:
-    """Get the global performance monitor instance."""
-    return _global_monitor
 
 
 def get_detailed_profiler() -> DetailedProfiler:
@@ -649,7 +445,13 @@ def monitor_performance(operation_name: str) -> Callable[[Callable], Callable]:
     Returns:
         Decorator function
     """
-    return _global_monitor.time_operation(operation_name)
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with _detailed_profiler.profile_operation(operation_name):
+                return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def profile_operation(operation_name: str, metadata: dict[str, Any] | None = None):
@@ -673,7 +475,7 @@ def performance_report() -> dict[str, Any]:
     Returns:
         Performance statistics and recommendations
     """
-    return _global_monitor.get_performance_report()
+    return _detailed_profiler.get_hierarchical_report()
 
 
 def detailed_performance_report() -> dict[str, Any]:
@@ -688,7 +490,6 @@ def detailed_performance_report() -> dict[str, Any]:
 
 def reset_performance_stats() -> None:
     """Reset all performance monitoring statistics."""
-    _global_monitor.reset_stats()
     _detailed_profiler.reset_stats()
 
 
@@ -730,204 +531,6 @@ def suggest_einsum_optimization(einsum_string: str, *tensor_shapes: tuple[int, .
     return None
 
 
-class FFTProfiler:
-    """
-    Specialized profiler for FFT operations with performance analysis.
-
-    Wraps numpy.fft operations to provide detailed timing and efficiency analysis
-    for spectral methods in Israel-Stewart hydrodynamics.
-    """
-
-    def __init__(self, detailed_profiler: DetailedProfiler | None = None) -> None:
-        """
-        Initialize FFT profiler.
-
-        Args:
-            detailed_profiler: Optional detailed profiler instance to use
-        """
-        self.detailed_profiler = detailed_profiler or _detailed_profiler
-        self.fft_cache: dict[tuple[int, ...], Any] = {}  # Cache FFT plans/wisdom
-        self.cache_enabled = True
-
-    def profile_fft(
-        self, array: np.ndarray, axes: tuple[int, ...] | None = None, norm: str | None = None
-    ) -> np.ndarray:
-        """
-        Profile forward FFT operation.
-
-        Args:
-            array: Input array for FFT
-            axes: Axes over which to compute FFT
-            norm: Normalization mode
-
-        Returns:
-            FFT result
-        """
-        start_time = time.perf_counter()
-
-        # Check cache
-        cache_key = (array.shape, axes, norm)
-        if self.cache_enabled and cache_key in self.fft_cache:
-            self.detailed_profiler.record_cache_hit("fft_plan_cache")
-        else:
-            self.detailed_profiler.record_cache_miss("fft_plan_cache")
-
-        # Perform FFT
-        result = np.fft.fftn(array, axes=axes, norm=norm)
-
-        # Record performance
-        elapsed_time = time.perf_counter() - start_time
-        self.detailed_profiler.profile_fft_operation("forward_fft", array.shape, elapsed_time, axes)
-
-        return result
-
-    def profile_ifft(
-        self, array: np.ndarray, axes: tuple[int, ...] | None = None, norm: str | None = None
-    ) -> np.ndarray:
-        """
-        Profile inverse FFT operation.
-
-        Args:
-            array: Input array for inverse FFT
-            axes: Axes over which to compute inverse FFT
-            norm: Normalization mode
-
-        Returns:
-            Inverse FFT result
-        """
-        start_time = time.perf_counter()
-
-        # Check cache
-        cache_key = (array.shape, axes, norm)
-        if self.cache_enabled and cache_key in self.fft_cache:
-            self.detailed_profiler.record_cache_hit("ifft_plan_cache")
-        else:
-            self.detailed_profiler.record_cache_miss("ifft_plan_cache")
-
-        # Perform inverse FFT
-        result = np.fft.ifftn(array, axes=axes, norm=norm)
-
-        # Record performance
-        elapsed_time = time.perf_counter() - start_time
-        self.detailed_profiler.profile_fft_operation("inverse_fft", array.shape, elapsed_time, axes)
-
-        return result
-
-    def profile_rfft(
-        self, array: np.ndarray, axis: int = -1, norm: str | None = None
-    ) -> np.ndarray:
-        """
-        Profile real-valued forward FFT operation.
-
-        Args:
-            array: Input real array for FFT
-            axis: Axis over which to compute FFT
-            norm: Normalization mode
-
-        Returns:
-            Real FFT result
-        """
-        start_time = time.perf_counter()
-
-        # Perform real FFT
-        result = np.fft.rfft(array, axis=axis, norm=norm)
-
-        # Record performance
-        elapsed_time = time.perf_counter() - start_time
-        self.detailed_profiler.profile_fft_operation("real_fft", array.shape, elapsed_time, (axis,))
-
-        return result
-
-    def profile_irfft(
-        self, array: np.ndarray, n: int | None = None, axis: int = -1, norm: str | None = None
-    ) -> np.ndarray:
-        """
-        Profile real-valued inverse FFT operation.
-
-        Args:
-            array: Input complex array for inverse real FFT
-            n: Length of transformed axis
-            axis: Axis over which to compute inverse FFT
-            norm: Normalization mode
-
-        Returns:
-            Inverse real FFT result
-        """
-        start_time = time.perf_counter()
-
-        # Perform inverse real FFT
-        result = np.fft.irfft(array, n=n, axis=axis, norm=norm)
-
-        # Record performance
-        elapsed_time = time.perf_counter() - start_time
-        self.detailed_profiler.profile_fft_operation(
-            "inverse_real_fft", array.shape, elapsed_time, (axis,)
-        )
-
-        return result
-
-    def get_fft_efficiency_report(self) -> dict[str, Any]:
-        """
-        Generate FFT-specific efficiency report.
-
-        Returns:
-            FFT performance analysis and recommendations
-        """
-        fft_analysis = self.detailed_profiler._analyze_fft_performance()
-        cache_analysis = self.detailed_profiler._analyze_cache_performance()
-
-        # Compute efficiency metrics
-        efficiency_report = {
-            "fft_operations": fft_analysis,
-            "cache_performance": {
-                k: v for k, v in cache_analysis.items() if "fft" in k.lower() or "plan" in k.lower()
-            },
-            "recommendations": [],
-        }
-
-        # Generate FFT-specific recommendations
-        recommendations = []
-
-        # Check for inefficient FFT sizes
-        for fft_type, data in fft_analysis.items():
-            if data.get("time_per_element", 0) > 1e-6:  # > 1 μs per element
-                recommendations.append(
-                    f"Slow {fft_type} detected: {data['time_per_element']:.2e}s per element. "
-                    "Consider using power-of-2 sizes or FFTW backend."
-                )
-
-        # Check cache efficiency
-        for cache_name, stats in cache_analysis.items():
-            if "fft" in cache_name.lower() and stats.get("hit_rate", 0) < 0.7:
-                recommendations.append(
-                    f"Low FFT cache efficiency: {stats['hit_rate']:.1%} hit rate. "
-                    "Consider pre-computing FFT plans or enabling wisdom."
-                )
-
-        efficiency_report["recommendations"] = recommendations
-
-        return efficiency_report
-
-    def enable_caching(self) -> None:
-        """Enable FFT plan caching."""
-        self.cache_enabled = True
-
-    def disable_caching(self) -> None:
-        """Disable FFT plan caching."""
-        self.cache_enabled = False
-
-    def clear_cache(self) -> None:
-        """Clear FFT plan cache."""
-        self.fft_cache.clear()
-
-
-# Global FFT profiler instance
-_fft_profiler = FFTProfiler()
-
-
-def get_fft_profiler() -> FFTProfiler:
-    """Get the global FFT profiler instance."""
-    return _fft_profiler
 
 
 def fft_efficiency_report() -> dict[str, Any]:

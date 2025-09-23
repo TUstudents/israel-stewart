@@ -270,24 +270,18 @@ class TestSpectralISolver:
         assert np.allclose(dealiased_k[:, ky_max:, :], 0)
         assert np.allclose(dealiased_k[:, :, kz_max:], 0)
 
-    def test_cache_functionality(self, setup_spectral_solver: tuple) -> None:
-        """Test FFT result caching."""
+    def test_derivative_consistency(self, setup_spectral_solver: tuple) -> None:
+        """Test that derivatives are consistent."""
         solver, fields, grid = setup_spectral_solver
 
         test_field = np.random.rand(32, 32, 32)
 
-        # First computation (should cache)
-        result1 = solver.spatial_derivative(test_field, 0, use_cache=True)
-
-        # Second computation (should use cache)
-        result2 = solver.spatial_derivative(test_field, 0, use_cache=True)
+        # Multiple computations should give identical results
+        result1 = solver.spatial_derivative(test_field, 0)
+        result2 = solver.spatial_derivative(test_field, 0)
 
         # Results should be identical
         assert np.allclose(result1, result2)
-
-        # Clear cache and verify
-        solver.clear_cache()
-        assert len(solver._derivative_cache) == 0
 
     def test_periodic_boundary_conditions(self, setup_spectral_solver: tuple) -> None:
         """Test that periodic boundary conditions are properly enforced."""
@@ -535,17 +529,13 @@ class TestSpectralPerformance:
         fields = ISFieldConfiguration(grid)
         solver = SpectralISolver(grid, fields)
 
-        # Generate some cached results
+        # Test basic operations
         test_field = np.random.rand(32, 32, 32)
         for i in range(3):
-            solver.spatial_derivative(test_field, i, use_cache=True)
+            solver.spatial_derivative(test_field, i)
 
-        # Check cache has entries
-        assert len(solver._derivative_cache) > 0
-
-        # Clear cache
+        # Clear cache (FFT cache only now)
         solver.clear_cache()
-        assert len(solver._derivative_cache) == 0
         assert len(solver._fft_cache) == 0
 
 

@@ -9,8 +9,6 @@ for the modularized tensor framework.
 from .derivatives import CovariantDerivative, ProjectionOperator
 from .four_vectors import FourVector
 from .performance import (
-    PerformanceMonitor,
-    get_performance_monitor,
     monitor_performance,
     performance_report,
     reset_performance_stats,
@@ -69,8 +67,6 @@ __all__ = [
     "STRICT_TOLERANCE",
     "LOOSE_TOLERANCE",
     # Performance monitoring
-    "PerformanceMonitor",
-    "get_performance_monitor",
     "monitor_performance",
     "performance_report",
     "reset_performance_stats",

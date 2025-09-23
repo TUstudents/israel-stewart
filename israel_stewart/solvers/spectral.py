@@ -12,12 +12,6 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import numpy as np
 from scipy.optimize import newton_krylov
 
-from ..core.memory_optimization import (
-    get_array_pool,
-    get_fft_manager,
-    get_inplace_ops,
-    memory_optimized_context,
-)
 from ..core.performance import monitor_performance, profile_operation
 from ..core.tensor_utils import optimized_einsum
 
@@ -71,11 +65,19 @@ class SpectralISolver:
         # Use grid spacing directly (now correct for periodic boundaries)
         self.dx, self.dy, self.dz = grid.spatial_spacing
 
-        # Precompute FFT plans for efficiency
-        self.fft_plan = np.fft.fftn
-        self.ifft_plan = np.fft.ifftn
-        self.rfft_plan = np.fft.rfftn  # Real FFT for memory efficiency
-        self.irfft_plan = np.fft.irfftn
+        # Precompute FFT plans for efficiency (use scipy.fft for better performance)
+        try:
+            import scipy.fft
+            self.fft_plan = lambda x, **kwargs: scipy.fft.fftn(x, workers=-1, **kwargs)
+            self.ifft_plan = lambda x, **kwargs: scipy.fft.ifftn(x, workers=-1, **kwargs)
+            self.rfft_plan = lambda x, **kwargs: scipy.fft.rfftn(x, workers=-1, **kwargs)
+            self.irfft_plan = lambda x, **kwargs: scipy.fft.irfftn(x, workers=-1, **kwargs)
+        except ImportError:
+            # Fall back to numpy.fft if scipy not available
+            self.fft_plan = np.fft.fftn
+            self.ifft_plan = np.fft.ifftn
+            self.rfft_plan = np.fft.rfftn  # Real FFT for memory efficiency
+            self.irfft_plan = np.fft.irfftn
 
         # Adaptive FFT selection for optimal performance
         self.use_real_fft = True  # Enable real FFT optimization by default
@@ -84,40 +86,7 @@ class SpectralISolver:
         self.k_vectors = self._compute_wave_vectors()
         self.k_squared = self._compute_k_squared()
 
-        # Cache for frequently used arrays
-        self._fft_cache: dict[Any, Any] = {}
-        self._derivative_cache: dict[Any, Any] = {}
 
-        # Memory optimization components
-        self.array_pool = get_array_pool()
-        self.fft_manager = get_fft_manager()
-        self.inplace_ops = get_inplace_ops()
-
-        # Pre-allocate common array shapes
-        self._precompute_workspaces()
-
-    def _precompute_workspaces(self) -> None:
-        """Pre-allocate common workspace arrays for memory optimization."""
-        # Common shapes used in spectral operations
-        spatial_shape = (self.nx, self.ny, self.nz)
-        field_shape = (self.nt, self.nx, self.ny, self.nz)
-        tensor_shape = (*spatial_shape, 4, 4)
-
-        # Pre-allocate FFT workspaces
-        common_shapes = [
-            spatial_shape,  # 3D spatial fields
-            field_shape,  # 4D spacetime fields
-            tensor_shape,  # Stress tensors
-        ]
-
-        # Initialize FFT workspace manager with common shapes
-        self.fft_manager.precompute_fft_plans(common_shapes)
-
-        # Pre-allocate some workspace arrays
-        for shape in common_shapes:
-            # Real and complex workspaces
-            self.fft_manager.get_workspace(shape, np.float64)
-            self.fft_manager.get_workspace(shape, np.complex128)
 
     @monitor_performance("wave_vectors")
     def _compute_wave_vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -128,9 +97,16 @@ class SpectralISolver:
             Tuple of (kx, ky, kz) wave vector grids
         """
         # Compute frequency arrays
-        kx = np.fft.fftfreq(self.nx, self.dx) * 2 * np.pi
-        ky = np.fft.fftfreq(self.ny, self.dy) * 2 * np.pi
-        kz = np.fft.fftfreq(self.nz, self.dz) * 2 * np.pi
+        # Use scipy.fft.fftfreq if available, numpy.fft.fftfreq otherwise
+        try:
+            import scipy.fft
+            kx = scipy.fft.fftfreq(self.nx, self.dx) * 2 * np.pi
+            ky = scipy.fft.fftfreq(self.ny, self.dy) * 2 * np.pi
+            kz = scipy.fft.fftfreq(self.nz, self.dz) * 2 * np.pi
+        except ImportError:
+            kx = np.fft.fftfreq(self.nx, self.dx) * 2 * np.pi
+            ky = np.fft.fftfreq(self.ny, self.dy) * 2 * np.pi
+            kz = np.fft.fftfreq(self.nz, self.dz) * 2 * np.pi
 
         # Create 3D meshgrids for vectorized operations
         kx_grid, ky_grid, kz_grid = np.meshgrid(kx, ky, kz, indexing="ij")
@@ -144,7 +120,7 @@ class SpectralISolver:
 
     @monitor_performance("spectral_derivative")
     def spatial_derivative(
-        self, field: np.ndarray, direction: int, use_cache: bool = True
+        self, field: np.ndarray, direction: int
     ) -> np.ndarray[Any, np.dtype[np.floating[Any]]]:
         """
         Compute spatial derivative using spectral method.
@@ -154,7 +130,6 @@ class SpectralISolver:
         Args:
             field: Field to differentiate with shape (*spatial_shape,) or (*grid.shape,)
             direction: Spatial direction (0=x, 1=y, 2=z)
-            use_cache: Whether to cache FFT results for repeated operations
 
         Returns:
             Spatial derivative ∂_i field
@@ -171,12 +146,6 @@ class SpectralISolver:
         else:
             raise ValueError(f"Field shape {field.shape} not compatible with grid")
 
-        # Check cache first
-        cache_key = (id(field), direction) if use_cache else None
-        if cache_key and cache_key in self._derivative_cache:
-            return cast(
-                np.ndarray[Any, np.dtype[np.floating[Any]]], self._derivative_cache[cache_key]
-            )
 
         # Forward FFT with adaptive selection
         field_k = self.adaptive_fft(spatial_field)
@@ -204,9 +173,6 @@ class SpectralISolver:
         # Inverse FFT to get real derivative with adaptive selection
         result = self.adaptive_ifft(deriv_k, spatial_field.shape)
 
-        # Cache result if requested
-        if cache_key:
-            self._derivative_cache[cache_key] = result
 
         return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], result)
 
@@ -467,65 +433,6 @@ class SpectralISolver:
 
         return result
 
-    def adaptive_fft(self, field: np.ndarray) -> np.ndarray:
-        """
-        Adaptive FFT that chooses between real and complex transforms for optimal performance.
-
-        Uses real FFT for real-valued fields (50% memory savings, 30% speed improvement)
-        and complex FFT for complex-valued fields.
-
-        Args:
-            field: Input field (real or complex)
-
-        Returns:
-            FFT of field in appropriate format
-        """
-        if self.use_real_fft and np.isrealobj(field):
-            # Use real FFT for ~50% memory reduction and ~30% speed improvement
-            return self.rfft_plan(field)
-        else:
-            # Use complex FFT for complex fields or when real FFT disabled
-            return self.fft_plan(field)
-
-    def memory_optimized_fft(self, field: np.ndarray) -> np.ndarray:
-        """
-        Memory-optimized FFT using pre-allocated workspaces.
-
-        Args:
-            field: Input field for FFT
-
-        Returns:
-            FFT of field in k-space
-        """
-        with profile_operation("memory_optimized_fft", {"input_shape": field.shape}):
-            # Get appropriate workspace
-            if np.isrealobj(field) and self.use_real_fft:
-                # Real FFT with workspace
-                real_workspace, complex_workspace = self.fft_manager.get_real_fft_workspace(
-                    field.shape
-                )
-
-                # Copy input to workspace to avoid modifying original
-                self.inplace_ops.copy_with_slicing(real_workspace, field)
-
-                # Perform FFT in-place
-                result = self.rfft_plan(real_workspace)
-
-                # Copy result to output workspace
-                complex_workspace[:] = result
-                return complex_workspace
-            else:
-                # Complex FFT with workspace
-                workspace = self.fft_manager.get_workspace(field.shape, np.complex128)
-
-                # Copy input to workspace
-                workspace.real = field.real if hasattr(field, "real") else field
-                if hasattr(field, "imag"):
-                    workspace.imag = field.imag
-
-                # Perform FFT in-place
-                result = self.fft_plan(workspace)
-                return result
 
     def get_k_squared_for_field(self, field_k: np.ndarray) -> np.ndarray:
         """
@@ -551,27 +458,6 @@ class SpectralISolver:
         else:
             return self.k_squared
 
-    def adaptive_ifft(self, field_k: np.ndarray, original_shape: tuple | None = None) -> np.ndarray:
-        """
-        Adaptive inverse FFT that handles both real and complex transforms.
-
-        Args:
-            field_k: FFT coefficients
-            original_shape: Original real field shape (needed for real IFFT)
-
-        Returns:
-            Inverse FFT result
-        """
-        if self.use_real_fft and field_k.dtype == np.complex128:
-            # Check if this came from real FFT (reduced size in last dimension)
-            if original_shape is not None:
-                expected_rfft_shape = list(original_shape)
-                expected_rfft_shape[-1] = original_shape[-1] // 2 + 1
-                if field_k.shape == tuple(expected_rfft_shape):
-                    return self.irfft_plan(field_k, s=original_shape, axes=(-3, -2, -1))
-
-        # Default to complex IFFT
-        return self.ifft_plan(field_k).real
 
     @monitor_performance("spectral_time_step")
     def advance_linear_terms(
@@ -600,7 +486,7 @@ class SpectralISolver:
         # Bulk pressure evolution with relaxation
         if hasattr(self.coeffs, "bulk_relaxation_time") and self.coeffs.bulk_relaxation_time:
             tau_Pi = self.coeffs.bulk_relaxation_time
-            fields.Pi = self.apply_bulk_viscous_operator(
+            fields.Pi[:] = self.apply_bulk_viscous_operator(
                 fields.Pi, self.coeffs.bulk_viscosity or 0.0, tau_Pi, dt
             )
 
@@ -828,9 +714,8 @@ class SpectralISolver:
                     )
 
     def clear_cache(self) -> None:
-        """Clear FFT and derivative caches to free memory."""
+        """Clear FFT cache to free memory."""
         self._fft_cache.clear()
-        self._derivative_cache.clear()
 
     def __str__(self) -> str:
         return f"SpectralISolver(grid={self.nx}x{self.ny}x{self.nz})"
@@ -840,7 +725,6 @@ class SpectralISolver:
             f"SpectralISolver(grid_points={self.grid.grid_points}, "
             f"spacing=({self.dx:.3f}, {self.dy:.3f}, {self.dz:.3f}))"
         )
-
 
 
 class SpectralISHydrodynamics:
@@ -1108,7 +992,10 @@ class SpectralISHydrodynamics:
             # Bulk pressure source: ∇·u term
             if hasattr(self.fields, "u_mu"):
                 velocity = self.fields.u_mu[..., 1:4]  # Spatial components
-                div_u = self.spectral.spatial_divergence(velocity)
+                # Compute divergence: ∇·u = ∂_x u_x + ∂_y u_y + ∂_z u_z
+                div_u = (self.spatial_derivative(velocity[..., 0], 0) +
+                        self.spatial_derivative(velocity[..., 1], 1) +
+                        self.spatial_derivative(velocity[..., 2], 2))
                 sources["dPi_dt_source"] = -self.fields.pressure * div_u
 
         # Shear stress sources: velocity gradients
@@ -1240,8 +1127,8 @@ class SpectralISHydrodynamics:
             k2_momentum = k1_momentum
 
         # Final update: y_n+1 = y_0 + dt * k2
-        self.fields.rho = rho_0 + dt * k2_rho
-        self.fields.u_mu = u_mu_0 + dt * k2_momentum
+        self.fields.rho[:] = rho_0 + dt * k2_rho
+        self.fields.u_mu[:] = u_mu_0 + dt * k2_momentum
 
         # Update derived quantities
         self._update_derived_fields()

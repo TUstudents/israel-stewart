@@ -228,7 +228,8 @@ class ISRelaxationEquations:
 
         # Expansion coupling
         if self.coeffs.lambda_pi_pi != 0:
-            expansion_term = self.coeffs.lambda_pi_pi * np.einsum(
+            from ..core.tensor_utils import optimized_einsum
+            expansion_term = self.coeffs.lambda_pi_pi * optimized_einsum(
                 "...ij,...->...ij", pi_munu, theta
             )
             nonlinear += expansion_term
@@ -243,7 +244,8 @@ class ISRelaxationEquations:
         if self.coeffs.lambda_pi_q != 0:
             # Vectorized implementation of the shear-heat coupling term
             # Term is lambda_pi_q * (q^mu * nabla^nu T + q^nu * nabla^mu T) / 2
-            outer_product = np.einsum("...i,...j->...ij", q_mu, nabla_T)
+            from ..core.tensor_utils import optimized_einsum
+            outer_product = optimized_einsum("...i,...j->...ij", q_mu, nabla_T)
             heat_term = (
                 self.coeffs.lambda_pi_q * 0.5 * (outer_product + np.swapaxes(outer_product, -1, -2))
             )
@@ -252,16 +254,18 @@ class ISRelaxationEquations:
         # Nonlinear shear terms
         if self.coeffs.tau_pi_pi != 0 and self.coeffs.shear_relaxation_time:
             # pi^mu_alpha * pi_alpha^nu term (simplified)
-            pi_pi_term = -self.coeffs.tau_pi_pi * np.einsum("...ik,...kj->...ij", pi_munu, pi_munu)
+            from ..core.tensor_utils import optimized_einsum
+            pi_pi_term = -self.coeffs.tau_pi_pi * optimized_einsum("...ik,...kj->...ij", pi_munu, pi_munu)
             pi_pi_term /= self.coeffs.shear_viscosity * self.coeffs.shear_relaxation_time
             nonlinear += pi_pi_term
 
         # Vorticity coupling
         if self.coeffs.tau_pi_omega != 0:
             # Anti-commutator: pi^mu_alpha * omega_alpha^nu - omega^mu_alpha * pi_alpha^nu
+            from ..core.tensor_utils import optimized_einsum
             vorticity_term = self.coeffs.tau_pi_omega * (
-                np.einsum("...ik,...kj->...ij", pi_munu, omega_munu)
-                - np.einsum("...ik,...kj->...ij", omega_munu, pi_munu)
+                optimized_einsum("...ik,...kj->...ij", pi_munu, omega_munu)
+                - optimized_einsum("...ik,...kj->...ij", omega_munu, pi_munu)
             )
             nonlinear += vorticity_term
 
@@ -298,7 +302,8 @@ class ISRelaxationEquations:
         if self.coeffs.lambda_q_pi != 0:
             # Vectorized implementation of the shear-heat coupling term
             # Term is lambda_q_pi * pi^munu * nabla_nu T
-            shear_heat_term = self.coeffs.lambda_q_pi * np.einsum(
+            from ..core.tensor_utils import optimized_einsum
+            shear_heat_term = self.coeffs.lambda_q_pi * optimized_einsum(
                 "...ij,...j->...i", pi_munu, nabla_T
             )
             nonlinear += shear_heat_term

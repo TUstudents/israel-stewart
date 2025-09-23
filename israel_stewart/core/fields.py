@@ -767,17 +767,17 @@ class ISFieldConfiguration:
         offset = 0
 
         # Unpack bulk pressure Π
-        self.Pi = dissipative_state[offset : offset + pi_size].reshape(self.grid.shape)
+        self.Pi[:] = dissipative_state[offset : offset + pi_size].reshape(self.grid.shape)
         offset += pi_size
 
         # Unpack shear tensor π^μν
-        self.pi_munu = dissipative_state[offset : offset + pi_munu_size].reshape(
+        self.pi_munu[:] = dissipative_state[offset : offset + pi_munu_size].reshape(
             (*self.grid.shape, 4, 4)
         )
         offset += pi_munu_size
 
         # Unpack heat flux q^μ
-        self.q_mu = dissipative_state[offset : offset + q_size].reshape((*self.grid.shape, 4))
+        self.q_mu[:] = dissipative_state[offset : offset + q_size].reshape((*self.grid.shape, 4))
 
     @property
     def dissipative_field_count(self) -> int:
@@ -887,7 +887,7 @@ class ISFieldConfiguration:
         # Remove trace: π^μν_traceless = π^μν_projected - (1/3) Δ^μν Tr(π)
         pi_traceless = pi_projected - (1.0 / 3.0) * pi_trace[..., np.newaxis, np.newaxis] * delta
 
-        self.pi_munu = pi_traceless
+        self.pi_munu[:] = pi_traceless
 
     def _project_heat_flux(self) -> None:
         """Project heat flux to be orthogonal to u^μ."""

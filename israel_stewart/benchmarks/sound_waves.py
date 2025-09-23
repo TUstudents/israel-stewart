@@ -129,7 +129,6 @@ class SoundWaveAnalysis:
         self.relaxation = ISRelaxationEquations(grid, metric, transport_coeffs)
 
         # Analysis results cache
-        self._dispersion_cache: dict[tuple[float, ...], WaveProperties] = {}
         self._stability_cache: dict[str, dict[str, Any]] = {}
 
     def _default_background(self) -> ISFieldConfiguration:
@@ -166,11 +165,6 @@ class SoundWaveAnalysis:
         """
         k_magnitude = np.linalg.norm(wave_vector)
 
-        # Check cache
-        cache_key = tuple(wave_vector)
-        if cache_key in self._dispersion_cache:
-            return [self._dispersion_cache[cache_key]]
-
         # Use robust root finding to solve det(M) = 0
         try:
             complex_roots = self._find_dispersion_roots(k_magnitude)
@@ -188,11 +182,6 @@ class SoundWaveAnalysis:
 
             # Find physical modes (finite attenuation, reasonable frequency)
             physical_modes = [mode for mode in wave_modes if self._is_physical_mode(mode)]
-
-            if physical_modes:
-                # Cache the most physical mode (usually the sound mode with smallest damping)
-                best_mode = min(physical_modes, key=lambda m: abs(m.attenuation))
-                self._dispersion_cache[cache_key] = best_mode
 
             return physical_modes
 

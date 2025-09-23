@@ -123,8 +123,8 @@ class ConservationLaws:
                 # Extract T^μν component
                 T_mu_nu = T[..., mu, nu]
 
-                # Compute partial derivative ∂_μ T^μν
-                partial_deriv = self._partial_derivative(T_mu_nu, mu, coords)
+                # Compute partial derivative ∂_μ T^μν (using FFT for periodic spatial derivatives)
+                partial_deriv = self._efficient_partial_derivative(T_mu_nu, mu, coords)
                 div_component += partial_deriv
 
                 # Add Christoffel symbol corrections if metric is not Minkowski
@@ -252,6 +252,91 @@ class ConservationLaws:
 
         return gradients[direction]  # type: ignore[no-any-return]
 
+    def _spectral_derivative(self, field: np.ndarray, direction: int) -> np.ndarray:
+        """
+        Compute partial derivative using FFT for periodic boundaries.
+
+        Much faster than numpy.gradient for periodic domains.
+
+        Args:
+            field: Field to differentiate with shape (*grid.shape,)
+            direction: Direction index (0=time, 1,2,3=spatial)
+
+        Returns:
+            Partial derivative ∂_μ field
+        """
+        # For time derivatives (direction=0), fall back to finite differences
+        if direction == 0:
+            coords = self._get_coordinate_arrays()
+            return self._partial_derivative(field, direction, coords)
+
+        # For spatial derivatives (direction=1,2,3), use FFT
+        # Map direction to spatial axis (1->0, 2->1, 3->2)
+        spatial_axis = direction - 1
+
+        # Get spatial grid spacing
+        grid = self.fields.grid
+        if spatial_axis == 0:
+            dx = grid.spatial_spacing[0]
+            nx = grid.grid_points[1]  # grid_points = (nt, nx, ny, nz)
+        elif spatial_axis == 1:
+            dx = grid.spatial_spacing[1]
+            nx = grid.grid_points[2]
+        elif spatial_axis == 2:
+            dx = grid.spatial_spacing[2]
+            nx = grid.grid_points[3]
+        else:
+            raise ValueError(f"Invalid spatial direction: {direction}")
+
+        # Compute wavenumbers
+        k = 2 * np.pi * np.fft.fftfreq(nx, dx)
+
+        # Determine correct axis for FFT based on field dimensionality
+        # If field has 3 dimensions, it's a spatial slice (t, x, y, z) -> (x, y, z)
+        # If field has 4 dimensions, it's full spacetime (t, x, y, z)
+        if field.ndim == 3:
+            # Field is a spatial slice, axis mapping is direct
+            fft_axis = spatial_axis
+        elif field.ndim == 4:
+            # Field is full spacetime, skip time axis
+            fft_axis = spatial_axis + 1
+        else:
+            raise ValueError(f"Unexpected field dimensionality: {field.ndim}")
+
+        # Create wavenumber array with proper broadcasting
+        k_shape = [1] * field.ndim
+        k_shape[fft_axis] = nx
+        k_reshaped = k.reshape(k_shape)
+
+        # FFT -> multiply by ik -> IFFT (use scipy.fft for better performance)
+        try:
+            import scipy.fft
+            field_fft = scipy.fft.fft(field, axis=fft_axis, workers=-1)
+            deriv_fft = 1j * k_reshaped * field_fft
+            derivative = scipy.fft.ifft(deriv_fft, axis=fft_axis, workers=-1).real
+        except ImportError:
+            # Fall back to numpy.fft if scipy not available
+            field_fft = np.fft.fft(field, axis=fft_axis)
+            deriv_fft = 1j * k_reshaped * field_fft
+            derivative = np.fft.ifft(deriv_fft, axis=fft_axis).real
+
+        return derivative
+
+    def _efficient_partial_derivative(self, field: np.ndarray, direction: int, coords: list) -> np.ndarray:
+        """
+        Compute partial derivative with automatic method selection.
+
+        Uses FFT for periodic spatial derivatives, finite differences otherwise.
+        """
+        # Check if we have periodic boundary conditions and spatial derivative
+        grid = self.fields.grid
+        if (hasattr(grid, 'boundary_conditions') and
+            grid.boundary_conditions == 'periodic' and
+            direction > 0):  # Spatial direction
+            return self._spectral_derivative(field, direction)
+        else:
+            return self._partial_derivative(field, direction, coords)
+
     def _covariant_div(self, tensor_component: np.ndarray, index: int) -> np.ndarray:
         """
         Compute covariant divergence of tensor component.
@@ -267,7 +352,7 @@ class ConservationLaws:
         coords = self._get_coordinate_arrays()
 
         # Partial derivative
-        partial = self._partial_derivative(tensor_component, index, coords)
+        partial = self._efficient_partial_derivative(tensor_component, index, coords)
 
         # Add connection terms if not flat spacetime
         try:
@@ -300,7 +385,7 @@ class ConservationLaws:
         div_N = np.zeros_like(N_mu[..., 0])
 
         for mu in range(4):
-            partial = self._partial_derivative(N_mu[..., mu], mu, coords)
+            partial = self._efficient_partial_derivative(N_mu[..., mu], mu, coords)
             div_N += partial
 
             # Add Christoffel corrections if needed

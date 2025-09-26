@@ -17,6 +17,16 @@ import sympy as sp
 from .four_vectors import FourVector
 from .performance import monitor_performance
 
+# Avoid circular imports
+try:
+    from ..utils.logging_config import get_logger
+except ImportError:
+    import logging
+
+    def get_logger(name):
+        return logging.getLogger(f"israel_stewart.{name}")
+
+
 # Import base classes and utilities
 from .tensor_base import TensorField
 from .tensor_utils import (
@@ -499,11 +509,14 @@ class CovariantDerivative:
 
         except ImportError:
             # SymPy Array not available - use fallback
-            warnings.warn(
-                "SymPy Array not available for symbolic covariant derivative, "
-                "using fallback implementation which may convert to numerical",
-                UserWarning,
-                stacklevel=3,
+            logger = get_logger("derivatives.symbolic")
+            logger.info(
+                "SymPy Array unavailable, using numerical fallback",
+                extra={
+                    "fallback": "numerical_derivative",
+                    "reason": "sympy_array_import_failed",
+                    "impact": "symbolic_computation_limited",
+                },
             )
             return self._fallback_tensor_covariant_derivative(tensor_field, coordinates)
 

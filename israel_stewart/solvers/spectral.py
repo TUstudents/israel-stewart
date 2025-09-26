@@ -20,6 +20,7 @@ from ..core.memory_optimization import (
 )
 from ..core.performance import monitor_performance, profile_operation
 from ..core.tensor_utils import optimized_einsum
+from ..utils.logging_config import get_logger, performance_logger, physics_logger
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
@@ -353,11 +354,8 @@ class SpectralISolver:
                 return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], result)
 
             except Exception as e:
-                warnings.warn(
-                    f"Failed to apply proper Israel-Stewart bulk evolution: {e}. "
-                    f"Falling back to simplified operator.",
-                    UserWarning,
-                    stacklevel=2,
+                physics_logger.log_physics_fallback(
+                    "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
                 )
 
         # Fallback: simplified exponential relaxation
@@ -907,7 +905,16 @@ class SpectralISHydrodynamics:
                 self.relaxation = None
 
         except ImportError as e:
-            warnings.warn(f"Could not initialize physics modules: {e}", stacklevel=2)
+            logger = get_logger("spectral.initialization")
+            logger.info(
+                "Physics modules unavailable, using simplified mode",
+                extra={
+                    "error": str(e),
+                    "fallback": "simplified_spectral_mode",
+                    "conservation": False,
+                    "relaxation": False,
+                },
+            )
             self.conservation = None
             self.relaxation = None
 
@@ -1056,7 +1063,9 @@ class SpectralISHydrodynamics:
                 conservation_rhs = self.conservation.evolution_equations()
                 explicit_rhs.update(conservation_rhs)
             except Exception as e:
-                warnings.warn(f"Conservation RHS computation failed: {e}", stacklevel=2)
+                physics_logger.log_physics_fallback(
+                    "conservation_rhs_computation", str(e), "skip_conservation_terms"
+                )
 
         # Nonlinear relaxation source terms
         if self.relaxation is not None:
@@ -1064,7 +1073,9 @@ class SpectralISHydrodynamics:
                 relaxation_rhs = self._compute_relaxation_sources()
                 explicit_rhs.update(relaxation_rhs)
             except Exception as e:
-                warnings.warn(f"Relaxation RHS computation failed: {e}", stacklevel=2)
+                physics_logger.log_physics_fallback(
+                    "relaxation_rhs_computation", str(e), "skip_relaxation_terms"
+                )
 
         # Ensure all required fields have RHS terms
         self._ensure_complete_rhs(explicit_rhs)
@@ -1089,7 +1100,9 @@ class SpectralISHydrodynamics:
                 relaxation_rhs = self._compute_basic_relaxation_sources()
 
         except Exception as e:
-            warnings.warn(f"Relaxation source computation failed: {e}", stacklevel=2)
+            physics_logger.log_physics_fallback(
+                "relaxation_source_computation", str(e), "empty_sources"
+            )
             relaxation_rhs = {}
 
         return relaxation_rhs
@@ -1204,7 +1217,9 @@ class SpectralISHydrodynamics:
             self._rk2_conservation_step(evolution_rhs, dt)
 
         except Exception as e:
-            warnings.warn(f"Conservation evolution failed, using fallback: {e}", stacklevel=2)
+            physics_logger.log_physics_fallback(
+                "conservation_evolution", str(e), "fallback_conservation_advance"
+            )
             self._fallback_conservation_advance(dt)
 
     def _rk2_conservation_step(self, evolution_rhs: dict[str, np.ndarray], dt: float) -> None:
@@ -1717,7 +1732,16 @@ class SpectralISHydrodynamics:
 
             # Progress reporting
             if step % 100 == 0:
-                print(f"Step {step}: t = {t:.4f}, dt = {dt:.6f}")
+                logger = get_logger("spectral.evolution")
+                logger.info(
+                    f"Evolution progress: Step {step}",
+                    extra={
+                        "step": step,
+                        "time": t,
+                        "timestep": dt,
+                        "progress_info": f"step_{step}_of_evolution",
+                    },
+                )
 
     def __str__(self) -> str:
         return f"SpectralISHydrodynamics(grid={self.spectral.nx}x{self.spectral.ny}x{self.spectral.nz})"

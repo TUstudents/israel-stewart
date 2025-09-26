@@ -17,6 +17,7 @@ from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.metrics import MetricBase
 from ..core.performance import monitor_performance
 from ..core.spacetime_grid import SpacetimeGrid
+from ..utils.logging_config import get_logger, physics_logger
 
 # Enhanced physics integration
 try:
@@ -202,7 +203,9 @@ class OperatorSplittingBase(ABC):
             result.pressure[:] = result.rho / 3.0  # Ideal gas relation
 
         except Exception as e:
-            warnings.warn(f"Physics-based hyperbolic solver failed: {e}", UserWarning, stacklevel=2)
+            physics_logger.log_physics_fallback(
+                "physics_based_hyperbolic_solver", str(e), "fallback_hyperbolic_solver"
+            )
             # Fall back to simple method
             result = self._fallback_hyperbolic_solver(fields, dt)
 
@@ -335,7 +338,9 @@ class OperatorSplittingBase(ABC):
             relaxation.evolve_relaxation(result, dt, method="implicit")
 
         except Exception as e:
-            warnings.warn(f"Physics-based relaxation solver failed: {e}", UserWarning, stacklevel=2)
+            physics_logger.log_physics_fallback(
+                "physics_based_relaxation_solver", str(e), "exponential_integrator"
+            )
             # Fall back to exponential integrator
             result = self._exponential_relaxation_solver(fields, dt)
 
@@ -1133,8 +1138,8 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
             result.pressure[:] = np.maximum(result.pressure, 0.0)
 
         except Exception as e:
-            warnings.warn(
-                f"Conservation-based thermodynamic solver failed: {e}", UserWarning, stacklevel=2
+            physics_logger.log_physics_fallback(
+                "conservation_based_thermodynamic_solver", str(e), "expansion_cooling_solver"
             )
             result = self._expansion_cooling_solver(fields, dt)
 

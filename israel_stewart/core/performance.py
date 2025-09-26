@@ -16,6 +16,18 @@ from typing import Any
 
 import numpy as np
 
+# Avoid circular imports by importing logging config directly
+try:
+    from ..utils.logging_config import get_logger, performance_logger
+except ImportError:
+    # Fallback for when logging is not available
+    import logging
+
+    def get_logger(name):
+        return logging.getLogger(f"israel_stewart.{name}")
+
+    performance_logger = None
+
 
 class PerformanceMonitor:
     """
@@ -85,8 +97,8 @@ class PerformanceMonitor:
                     self.operation_counts.get(operation_name, 0) + 1
                 )
 
-                # Issue performance warnings if needed
-                self._check_performance_warnings(operation_name, elapsed, memory_delta)
+                # Log performance metrics
+                self._log_performance_metrics(operation_name, elapsed, memory_delta)
 
                 return result
 
@@ -94,24 +106,67 @@ class PerformanceMonitor:
 
         return decorator
 
-    def _check_performance_warnings(
+    def log_solver_performance(
+        self,
+        solver_name: str,
+        operation: str,
+        elapsed_time: float,
+        convergence_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Log solver-specific performance with convergence context."""
+        if performance_logger:
+            # Enhanced solver logging with convergence context
+            performance_logger.log_operation(
+                f"{solver_name}.{operation}",
+                elapsed_time,
+                solver=solver_name,
+                operation=operation,
+                iterations=convergence_data.get("iterations") if convergence_data else None,
+                converged=convergence_data.get("converged") if convergence_data else None,
+                final_residual=convergence_data.get("final_residual") if convergence_data else None,
+            )
+
+    def _log_performance_metrics(
         self, operation_name: str, elapsed_time: float, memory_delta: float = 0.0
     ) -> None:
-        """Check if performance warnings should be issued."""
-        # Warn about slow operations (>1 second)
+        """Log performance metrics with structured data."""
+        # Get operation statistics for enhanced logging
+        times = self.timing_data.get(operation_name, [])
+        call_count = self.operation_counts.get(operation_name, 1)
+        avg_time = sum(times) / len(times) if times else elapsed_time
+        memory_mb = memory_delta / (1024 * 1024)
+
+        # Always log performance data to our structured logger
+        if performance_logger:
+            performance_logger.log_operation(
+                operation_name,
+                elapsed_time,
+                memory_mb=memory_mb,
+                call_count=call_count,
+                avg_time=avg_time,
+            )
+
+        # Log slow operations as diagnostic info (>1 second)
         if elapsed_time > 1.0 and not self.warnings_issued.get(f"{operation_name}_slow", False):
-            warnings.warn(
-                f"Operation {operation_name} took {elapsed_time:.2f}s - consider optimization",
-                stacklevel=2,
+            logger = get_logger("performance.timing")
+            logger.info(
+                f"Slow operation detected: {operation_name}",
+                extra={
+                    "operation": operation_name,
+                    "duration": elapsed_time,
+                    "avg_duration": avg_time,
+                    "call_count": call_count,
+                    "recommendation": "consider_optimization",
+                },
             )
             self.warnings_issued[f"{operation_name}_slow"] = True
 
-        # Warn about high memory usage operations (>100MB)
-        memory_mb = memory_delta / (1024 * 1024)
+        # CRITICAL WARNING for high memory usage (>100MB) - keep as warning!
         if memory_mb > 100 and not self.warnings_issued.get(f"{operation_name}_memory", False):
             warnings.warn(
-                f"Operation {operation_name} used {memory_mb:.1f}MB - consider memory optimization",
-                stacklevel=2,
+                f"CRITICAL: Operation {operation_name} used {memory_mb:.1f}MB - risk of memory exhaustion",
+                ResourceWarning,
+                stacklevel=3,
             )
             self.warnings_issued[f"{operation_name}_memory"] = True
 

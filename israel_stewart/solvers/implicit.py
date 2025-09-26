@@ -21,6 +21,7 @@ from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.metrics import MetricBase
 from ..core.performance import monitor_performance
 from ..core.spacetime_grid import SpacetimeGrid
+from ..utils.logging_config import get_logger, performance_logger, physics_logger
 
 # Enhanced physics integration
 try:
@@ -270,8 +271,15 @@ class BackwardEulerSolver(ImplicitSolverBase):
                 else:
                     delta = la.solve(jacobian, -residual)
             except (la.LinAlgError, spla.LinAlgError) as e:
-                warnings.warn(
-                    f"Linear solver failed at iteration {iteration}: {e}", UserWarning, stacklevel=2
+                logger = get_logger("implicit.linear_solver")
+                logger.warning(
+                    f"Linear solver failed at iteration {iteration}",
+                    extra={
+                        "iteration": iteration,
+                        "error": str(e),
+                        "jacobian_sparse": self.use_sparse,
+                        "recovery_action": "terminate_newton_iteration",
+                    },
                 )
                 break
 
@@ -336,8 +344,14 @@ class BackwardEulerSolver(ImplicitSolverBase):
             solution, info = spla.gmres(matrix, rhs, tol=self.tolerance)
 
         if info != 0:
-            warnings.warn(
-                f"GMRES failed with info={info}, using direct solve", UserWarning, stacklevel=2
+            logger = get_logger("implicit.gmres")
+            logger.info(
+                "GMRES solver failed, using direct solver fallback",
+                extra={
+                    "gmres_info": info,
+                    "fallback": "spsolve_direct",
+                    "reason": "gmres_convergence_failure",
+                },
             )
             solution = spla.spsolve(matrix, rhs)
 
@@ -517,8 +531,15 @@ class BackwardEulerSolver(ImplicitSolverBase):
         jacobian_columns = []
         batch_size = min(n, 20)  # REDUCED: Smaller batches to prevent memory explosion
 
-        print(
-            f"MEMORY DEBUG: Starting Jacobian computation with n={n}, batches={n // batch_size + 1}"
+        logger = get_logger("implicit.jacobian")
+        logger.debug(
+            "Starting Jacobian computation",
+            extra={
+                "n": n,
+                "batch_size": batch_size,
+                "total_batches": n // batch_size + 1,
+                "method": "finite_differences",
+            },
         )
 
         for batch_start in range(0, n, batch_size):
@@ -594,7 +615,7 @@ class BackwardEulerSolver(ImplicitSolverBase):
                 del batch_columns  # Explicit cleanup
 
         # Assemble Jacobian matrix
-        print("MEMORY DEBUG: Assembling final Jacobian matrix...")
+        logger.debug("Assembling final Jacobian matrix", extra={"use_sparse": self.use_sparse})
         if self.use_sparse:
             jacobian = sparse.csr_matrix(np.column_stack(jacobian_columns))
         else:
@@ -607,11 +628,15 @@ class BackwardEulerSolver(ImplicitSolverBase):
             try:
                 final_memory = process.memory_info().rss / (1024**2)
                 total_growth = final_memory - initial_memory
-                print(
-                    f"MEMORY DEBUG: Jacobian computation complete. Memory growth: {total_growth:.0f} MB"
+                performance_logger.log_memory_usage(
+                    "jacobian_computation",
+                    final_memory,
+                    memory_growth_mb=total_growth,
+                    matrix_size=n,
+                    sparse=self.use_sparse,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to track memory usage", extra={"error": str(e)})
 
         return jacobian
 
@@ -771,7 +796,15 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
                 self.relaxation_equations = ISRelaxationEquations(grid, metric, coefficients)
                 # Conservation laws will be initialized when fields are available
             except Exception as e:
-                warnings.warn(f"Failed to initialize physics modules: {e}", UserWarning, stacklevel=2)
+                logger = get_logger("implicit.initialization")
+                logger.warning(
+                    "Failed to initialize physics modules",
+                    extra={
+                        "error": str(e),
+                        "physics_available": PHYSICS_AVAILABLE,
+                        "fallback": "simplified_mode",
+                    },
+                )
 
     def _setup_imex_euler(self) -> None:
         """Setup coefficients for first-order IMEX Euler scheme."""
@@ -841,7 +874,15 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
             try:
                 self.conservation_laws = ConservationLaws(fields)
             except Exception as e:
-                warnings.warn(f"Failed to initialize conservation laws: {e}", UserWarning, stacklevel=2)
+                logger = get_logger("implicit.conservation")
+                logger.warning(
+                    "Failed to initialize conservation laws",
+                    extra={
+                        "error": str(e),
+                        "physics_available": PHYSICS_AVAILABLE,
+                        "fallback": "simplified_evolution",
+                    },
+                )
 
     def _compute_explicit_sum(
         self,
@@ -933,7 +974,16 @@ class IMEXRungeKuttaSolver(ImplicitSolverBase):
 
             except (np.linalg.LinAlgError, ValueError) as e:
                 # If Newton fails, fall back to simpler method
-                warnings.warn(f"Newton iteration failed in IMEX stage {stage}: {e}", UserWarning, stacklevel=2)
+                logger = get_logger("implicit.newton")
+                logger.warning(
+                    f"Newton iteration failed in IMEX stage {stage}",
+                    extra={
+                        "stage": stage,
+                        "error": str(e),
+                        "fallback": "explicit_like_update",
+                        "iterations_attempted": self.max_iterations,
+                    },
+                )
                 # Simple explicit-like update as fallback
                 implicit_vector_scaled = implicit_weight * implicit_vector
                 u_fallback = u_base + implicit_vector_scaled

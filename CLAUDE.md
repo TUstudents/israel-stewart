@@ -23,6 +23,12 @@ The package follows a modular physics-based architecture:
 - `fields.py`: Fluid field variables and state vectors
 - `constants.py`: Physical constants and unit systems
 
+**Utilities (`utils/`)**:
+- `logging_config.py`: Structured logging configuration with performance and physics-specific loggers
+- `visualization.py`: Plotting utilities for tensor fields and physics data
+- `io.py`: File I/O utilities for simulation data
+- `dimensionless.py`: Dimensionless variable transformations
+
 **Physics Equations (`equations/`)**:
 - `conservation.py`: Energy-momentum and particle number conservation
 - `relaxation.py`: Israel-Stewart second-order relaxation equations
@@ -76,6 +82,14 @@ The package follows a modular physics-based architecture:
 **Development Environment**:
 - `uv run jupyter lab` - Start JupyterLab
 - `uv run python -m israel_stewart` - Run package
+
+**Logging Configuration**:
+The package includes structured logging with automatic initialization. Configure via environment variables:
+- `export ISRAEL_STEWART_LOG_LEVEL=DEBUG` - Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `export ISRAEL_STEWART_LOG_FORMAT=structured` - Use structured logging (console, json, structured)
+- `export ISRAEL_STEWART_LOG_PERFORMANCE=true` - Enable performance tracking logs
+- `export ISRAEL_STEWART_LOG_MEMORY=true` - Enable memory usage logging
+- `export ISRAEL_STEWART_LOG_FILE=/path/to/logfile.log` - Optional file logging with rotation
 
 **Testing Complete Israel-Stewart System**:
 ```python
@@ -137,6 +151,7 @@ print(f"Recommended timestep: {stability['recommended_dt']}")
 - Tensor operations should respect general covariance and work in curved spacetime
 - Numerical methods should handle the stiff relaxation timescales in the IS equations
 - The RG analysis module implements field-theoretic renormalization group techniques for hydrodynamic fluctuations
+- **Logging System**: Production-ready structured logging replaces debug prints and excessive warnings. Use `from israel_stewart.utils import get_logger` for module logging, and specialized loggers for performance/physics validation.
 
 ## Development Workflow
 

@@ -14,6 +14,15 @@ from typing import Any, cast
 import numpy as np
 import sympy as sp
 
+# Avoid circular imports
+try:
+    from ..utils.logging_config import get_logger
+except ImportError:
+    import logging
+
+    def get_logger(name):
+        return logging.getLogger(f"israel_stewart.{name}")
+
 
 class MetricError(Exception):
     """Base exception for metric-related errors."""
@@ -94,9 +103,14 @@ class MetricBase(ABC):
                 # Check condition number for numerical stability
                 cond_num = np.linalg.cond(self.components)
                 if cond_num > 1e12:
-                    warnings.warn(
-                        f"Metric is poorly conditioned (cond={cond_num:.2e})",
-                        stacklevel=2,
+                    logger = get_logger("metrics.conditioning")
+                    logger.warning(
+                        "Poorly conditioned metric detected",
+                        extra={
+                            "condition_number": cond_num,
+                            "threshold": 1e12,
+                            "impact": "numerical_instability_risk",
+                        },
                     )
 
                 inv_metric = np.linalg.inv(self.components)
@@ -210,10 +224,14 @@ class MetricBase(ABC):
 
         # If no coordinate arrays provided, cannot compute derivatives
         if coordinates is None:
-            warnings.warn(
-                "Cannot compute numerical Christoffel symbols without coordinate arrays. "
-                "Returning zeros - use symbolic metric or provide coordinates.",
-                stacklevel=3,
+            logger = get_logger("metrics.christoffel")
+            logger.info(
+                "Computing Christoffel symbols without coordinate arrays",
+                extra={
+                    "fallback": "zeros",
+                    "recommendation": "use_symbolic_metric_or_provide_coordinates",
+                    "impact": "curvature_effects_ignored",
+                },
             )
             return np.zeros((4, 4, 4))
 

@@ -28,6 +28,8 @@ dependencies = [
     "numba>=0.57.0",
     "h5py>=3.8.0",
     "psutil>=7.0.0",
+    "structlog>=23.0.0",
+    "python-json-logger>=2.0.0",
 ]
 
 [project.optional-dependencies]

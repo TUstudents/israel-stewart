@@ -11,6 +11,15 @@ from typing import Any, Optional, Union
 
 import numpy as np
 
+# Avoid circular imports
+try:
+    from ..utils.logging_config import get_logger
+except ImportError:
+    import logging
+
+    def get_logger(name):
+        return logging.getLogger(f"israel_stewart.{name}")
+
 
 class ArrayPool:
     """
@@ -170,7 +179,15 @@ class FFTWorkspaceManager:
 
                 fft_module = scipy.fft
             except ImportError:
-                warnings.warn("scipy not available, falling back to numpy.fft", stacklevel=2)
+                logger = get_logger("memory.fft_fallback")
+                logger.info(
+                    "SciPy FFT unavailable, using NumPy FFT",
+                    extra={
+                        "fallback": "numpy.fft",
+                        "reason": "scipy_import_failed",
+                        "performance_impact": "minor",
+                    },
+                )
                 fft_module = np.fft
         else:
             fft_module = np.fft
@@ -324,17 +341,22 @@ class MemoryOptimizedContext:
         # Get efficiency statistics before cleanup
         stats = self.get_memory_stats()
 
-        # Issue warnings for poor efficiency
+        # Log efficiency issues as diagnostic information
         if stats["array_pool"]["reuse_rate"] < 0.5 and stats["array_pool"]["total_requests"] > 100:
-            warnings.warn(
-                f"Low array pool efficiency: {stats['array_pool']['reuse_rate']:.1%} reuse rate",
-                stacklevel=2
+            logger = get_logger("memory.efficiency")
+            logger.info(
+                "Low array pool efficiency detected",
+                extra={
+                    "reuse_rate": stats["array_pool"]["reuse_rate"],
+                    "total_requests": stats["array_pool"]["total_requests"],
+                    "recommendation": "increase_pool_size_or_adjust_allocation_pattern",
+                },
             )
 
         if self.fft_manager and stats["fft_workspace"]["hit_rate"] < 0.7:
             warnings.warn(
                 f"Low FFT workspace efficiency: {stats['fft_workspace']['hit_rate']:.1%} hit rate",
-                stacklevel=2
+                stacklevel=2,
             )
 
     def get_memory_stats(self) -> dict[str, Any]:

@@ -136,7 +136,10 @@ class OperatorSplittingBase(ABC):
         Uses the stress-energy tensor divergence to evolve conserved quantities
         according to ∂_t T^μν + ∇_μ T^μν = 0.
         """
-        result = fields.copy()
+        # Create selective copies of fields that will be modified
+        new_rho = fields.rho.copy()
+        new_pressure = fields.pressure.copy()
+        new_u_mu = fields.u_mu.copy()
 
         try:
             # Initialize conservation laws
@@ -168,19 +171,19 @@ class OperatorSplittingBase(ABC):
                 if div_T.shape[-1] >= 4:
                     # Energy density evolution (ν=0 component)
                     energy_source = -div_T[..., 0]
-                    result.rho += cfl_dt * energy_source
+                    new_rho += cfl_dt * energy_source
 
                     # Momentum density evolution (ν=i components)
                     momentum_source = -div_T[..., 1:4]
 
                     # Apply momentum conservation with proper relativistic treatment
                     # Current momentum density: T^0i = (ρ + p) γ u^i
-                    enthalpy = result.rho + result.pressure
-                    gamma = result.u_mu[..., 0]
+                    enthalpy = new_rho + new_pressure
+                    gamma = new_u_mu[..., 0]
 
                     # Ensure proper broadcasting for momentum calculation
                     enthalpy_gamma = enthalpy * gamma
-                    current_momentum = enthalpy_gamma[..., np.newaxis] * result.u_mu[..., 1:4]
+                    current_momentum = enthalpy_gamma[..., np.newaxis] * new_u_mu[..., 1:4]
 
                     # Update momentum density using conservation law
                     # Ensure momentum_source has compatible shape
@@ -193,23 +196,32 @@ class OperatorSplittingBase(ABC):
                     # Convert back to four-velocity components
                     # u^i = p^i / ((ρ + p) γ), handle division by zero safely
                     safe_enthalpy_gamma = np.maximum(enthalpy_gamma, 1e-15)
-                    result.u_mu[..., 1:4] = updated_momentum / safe_enthalpy_gamma[..., np.newaxis]
+                    new_u_mu[..., 1:4] = updated_momentum / safe_enthalpy_gamma[..., np.newaxis]
 
                     # Renormalize four-velocity to maintain u^μ u_μ = -1
-                    self._renormalize_four_velocity(result)
+                    # Create temporary field config for renormalization
+                    temp_fields = ISFieldConfiguration(fields.grid)
+                    temp_fields.u_mu = new_u_mu
+                    self._renormalize_four_velocity(temp_fields)
+                    new_u_mu = temp_fields.u_mu
 
             # Ensure physical constraints
-            result.rho[:] = np.maximum(result.rho, 1e-12)  # Positive energy density
-            result.pressure[:] = result.rho / 3.0  # Ideal gas relation
+            new_rho[:] = np.maximum(new_rho, 1e-12)  # Positive energy density
+            new_pressure[:] = new_rho / 3.0  # Ideal gas relation
+
+            # Update original fields
+            fields.rho[:] = new_rho
+            fields.pressure[:] = new_pressure
+            fields.u_mu[:] = new_u_mu
 
         except Exception as e:
             physics_logger.log_physics_fallback(
                 "physics_based_hyperbolic_solver", str(e), "fallback_hyperbolic_solver"
             )
             # Fall back to simple method
-            result = self._fallback_hyperbolic_solver(fields, dt)
+            return self._fallback_hyperbolic_solver(fields, dt)
 
-        return result
+        return fields
 
     def _fallback_hyperbolic_solver(
         self,
@@ -221,18 +233,16 @@ class OperatorSplittingBase(ABC):
 
         Uses simple expansion dynamics as approximation to conservation laws.
         """
-        result = fields.copy()
-
         # Simple Bjorken-like expansion
         expansion_time = 1.0  # Characteristic expansion time
         expansion_rate = -1.0 / expansion_time
 
         # Adiabatic evolution: ρ ∝ T^4, T ∝ a^-1, a ∝ t^1/3
         time_factor = 1.0 + expansion_rate * dt / 3.0
-        result.rho *= time_factor**4
-        result.pressure[:] = result.rho / 3.0  # Conformal equation of state
+        fields.rho *= time_factor**4
+        fields.pressure[:] = fields.rho / 3.0  # Conformal equation of state
 
-        return result
+        return fields
 
     def _renormalize_four_velocity(self, fields: ISFieldConfiguration) -> None:
         """
@@ -328,23 +338,21 @@ class OperatorSplittingBase(ABC):
         Solves the complete Israel-Stewart relaxation equations with all
         coupling terms and second-order corrections.
         """
-        result = fields.copy()
-
         try:
             # Initialize relaxation equations
             relaxation = ISRelaxationEquations(self.grid, self.metric, self.coefficients)
 
             # Use implicit method for stiff relaxation equations
-            relaxation.evolve_relaxation(result, dt, method="implicit")
+            relaxation.evolve_relaxation(fields, dt, method="implicit")
 
         except Exception as e:
             physics_logger.log_physics_fallback(
                 "physics_based_relaxation_solver", str(e), "exponential_integrator"
             )
             # Fall back to exponential integrator
-            result = self._exponential_relaxation_solver(fields, dt)
+            return self._exponential_relaxation_solver(fields, dt)
 
-        return result
+        return fields
 
     def _exponential_relaxation_solver(
         self,
@@ -356,28 +364,26 @@ class OperatorSplittingBase(ABC):
 
         Solves ∂u/∂t = -u/τ exactly for the linear relaxation part.
         """
-        result = fields.copy()
-
         # Apply exponential relaxation to dissipative fluxes
-        if hasattr(result, "Pi") and result.Pi is not None:
+        if hasattr(fields, "Pi") and fields.Pi is not None:
             tau_Pi = self.coefficients.bulk_relaxation_time or 0.1
             relaxation_factor = np.exp(-dt / tau_Pi)
-            result.Pi *= relaxation_factor
+            fields.Pi *= relaxation_factor
 
-        if hasattr(result, "pi_munu") and result.pi_munu is not None:
+        if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             tau_pi = self.coefficients.shear_relaxation_time or 0.1
             relaxation_factor = np.exp(-dt / tau_pi)
-            result.pi_munu *= relaxation_factor
+            fields.pi_munu *= relaxation_factor
 
-        if hasattr(result, "q_mu") and result.q_mu is not None:
+        if hasattr(fields, "q_mu") and fields.q_mu is not None:
             tau_q = getattr(self.coefficients, "heat_relaxation_time", 0.1) or 0.1
             relaxation_factor = np.exp(-dt / tau_q)
-            result.q_mu *= relaxation_factor
+            fields.q_mu *= relaxation_factor
 
         # Add viscous source terms for first-order contributions
-        self._add_viscous_sources(result, dt)
+        self._add_viscous_sources(fields, dt)
 
-        return result
+        return fields
 
     def _add_viscous_sources(
         self,
@@ -869,7 +875,7 @@ class AdaptiveSplitting(OperatorSplittingBase):
         """
         current_dt = min(dt, self.current_timestep)
         time_remaining = dt
-        result = fields.copy()
+        result = fields
 
         while time_remaining > 1e-12:
             # Attempt step with current timestep
@@ -1104,7 +1110,10 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         Uses the conservation laws module to ensure proper thermodynamic
         evolution with equation of state consistency.
         """
-        result = fields.copy()
+        # Create selective copies of fields that will be modified
+        new_rho = fields.rho.copy()
+        new_pressure = fields.pressure.copy()
+        new_temperature = fields.temperature.copy() if hasattr(fields, "temperature") else None
 
         try:
             # Initialize conservation laws
@@ -1114,36 +1123,52 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
             conservation_check = conservation.validate_conservation()
 
             # Apply thermodynamic consistency
-            self._enforce_thermodynamic_consistency(result)
+            # Create temporary field config for consistency check
+            temp_fields = ISFieldConfiguration(fields.grid)
+            temp_fields.rho = new_rho
+            temp_fields.pressure = new_pressure
+            if new_temperature is not None:
+                temp_fields.temperature = new_temperature
+            self._enforce_thermodynamic_consistency(temp_fields)
+            new_rho = temp_fields.rho
+            new_pressure = temp_fields.pressure
+            if new_temperature is not None:
+                new_temperature = temp_fields.temperature
 
             # Compute expansion cooling from metric
-            expansion_rate = self._compute_expansion_rate(result)
+            expansion_rate = self._compute_expansion_rate(fields)
 
             # Adiabatic evolution for ideal gas: T ∝ ρ^(γ-1)/γ
             gamma = 4.0 / 3.0  # Relativistic ideal gas
             temperature_evolution = -(gamma - 1) * expansion_rate / gamma
 
             # Update thermodynamic variables
-            if hasattr(result, "temperature"):
-                result.temperature *= np.exp(temperature_evolution * dt)
+            if new_temperature is not None:
+                new_temperature *= np.exp(temperature_evolution * dt)
 
             # Energy density evolution: ρ ∝ T^4
-            result.rho *= np.exp(4 * temperature_evolution * dt)
+            new_rho *= np.exp(4 * temperature_evolution * dt)
 
             # Pressure from equation of state
-            result.pressure[:] = result.rho / 3.0  # Conformal equation of state
+            new_pressure[:] = new_rho / 3.0  # Conformal equation of state
 
             # Ensure physical bounds
-            result.rho[:] = np.maximum(result.rho, 1e-12)
-            result.pressure[:] = np.maximum(result.pressure, 0.0)
+            new_rho[:] = np.maximum(new_rho, 1e-12)
+            new_pressure[:] = np.maximum(new_pressure, 0.0)
+
+            # Update original fields
+            fields.rho[:] = new_rho
+            fields.pressure[:] = new_pressure
+            if new_temperature is not None:
+                fields.temperature[:] = new_temperature
 
         except Exception as e:
             physics_logger.log_physics_fallback(
                 "conservation_based_thermodynamic_solver", str(e), "expansion_cooling_solver"
             )
-            result = self._expansion_cooling_solver(fields, dt)
+            return self._expansion_cooling_solver(fields, dt)
 
-        return result
+        return fields
 
     def _expansion_cooling_solver(
         self,
@@ -1156,8 +1181,6 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         Computes expansion rate from actual velocity field rather than
         using hardcoded values. Implements proper relativistic cooling.
         """
-        result = fields.copy()
-
         # Compute actual expansion rate from velocity field
         expansion_rate = self._compute_expansion_rate(fields)
 
@@ -1166,16 +1189,16 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         cooling_rate = expansion_rate / 3.0  # 1/3 from conformal equation of state
 
         # Temperature evolution: T ∝ exp(-∫ θ/3 dt) where θ is expansion scalar
-        if hasattr(result, "temperature"):
-            result.temperature *= np.exp(-cooling_rate * dt)
+        if hasattr(fields, "temperature"):
+            fields.temperature *= np.exp(-cooling_rate * dt)
 
         # Energy density: ρ ∝ T^4 for massless particles
-        result.rho *= np.exp(-4.0 * cooling_rate * dt)
+        fields.rho *= np.exp(-4.0 * cooling_rate * dt)
 
         # Pressure: p = ρ/3 for conformal equation of state
-        result.pressure[:] = result.rho / 3.0
+        fields.pressure[:] = fields.rho / 3.0
 
-        return result
+        return fields
 
     def _enforce_thermodynamic_consistency(self, fields: ISFieldConfiguration) -> None:
         """
@@ -1232,7 +1255,7 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         n_medium = max(1, int(dt / (0.5 * tau_medium)))  # Medium substeps
         n_fast = max(1, int((dt / n_medium) / (0.1 * tau_fast)))  # Fast substeps per medium step
 
-        result = fields.copy()
+        result = fields
 
         # Strang-like splitting for slow process: S_slow(dt/2)
         result = self.thermodynamic_solver(result, dt / 2.0)
@@ -1270,7 +1293,7 @@ class PhysicsBasedSplitting(OperatorSplittingBase):
         n_medium = max(1, int(dt / (0.5 * tau_medium)))
         n_fast = max(1, int((dt / n_medium) / (0.1 * tau_fast)))
 
-        result = fields.copy()
+        result = fields
 
         # Nested multi-rate splitting
         result = self.thermodynamic_solver(result, dt / 2.0)
@@ -1377,16 +1400,15 @@ def solve_hyperbolic_conservative(
     """
     # Placeholder implementation
     # In practice, this would implement the full conservation law evolution
-    result = fields.copy()
 
     # Simple expansion evolution
     expansion_rate = -1.0 / max(fields.time if hasattr(fields, "time") else 1.0, 0.1)
 
     # Apply conservation law updates
-    result.rho *= 1.0 + expansion_rate * dt / 3.0  # Adiabatic cooling
-    result.pressure[:] = result.rho / 3.0  # Ideal gas relation
+    fields.rho *= 1.0 + expansion_rate * dt / 3.0  # Adiabatic cooling
+    fields.pressure[:] = fields.rho / 3.0  # Ideal gas relation
 
-    return result
+    return fields
 
 
 def solve_relaxation_exponential(
@@ -1405,19 +1427,17 @@ def solve_relaxation_exponential(
     Returns:
         Updated fields after relaxation evolution
     """
-    result = fields.copy()
-
     # Exponential relaxation for dissipative quantities
-    if hasattr(result, "Pi") and result.Pi is not None:
+    if hasattr(fields, "Pi") and fields.Pi is not None:
         tau_Pi = coefficients.bulk_relaxation_time or 0.1
-        result.Pi *= np.exp(-dt / tau_Pi)
+        fields.Pi *= np.exp(-dt / tau_Pi)
 
-    if hasattr(result, "pi_munu") and result.pi_munu is not None:
+    if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
         tau_pi = coefficients.shear_relaxation_time or 0.1
-        result.pi_munu *= np.exp(-dt / tau_pi)
+        fields.pi_munu *= np.exp(-dt / tau_pi)
 
-    if hasattr(result, "q_mu") and result.q_mu is not None:
+    if hasattr(fields, "q_mu") and fields.q_mu is not None:
         tau_q = getattr(coefficients, "heat_relaxation_time", None) or 0.1
-        result.q_mu *= np.exp(-dt / tau_q)
+        fields.q_mu *= np.exp(-dt / tau_q)
 
-    return result
+    return fields

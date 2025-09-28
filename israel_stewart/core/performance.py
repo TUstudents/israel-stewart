@@ -6,6 +6,7 @@ for relativistic hydrodynamics tensor computations.
 """
 
 import functools
+import os
 import time
 import tracemalloc
 import warnings
@@ -15,6 +16,15 @@ from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
+
+# Global flag to enable/disable performance monitoring
+# Default to False for production performance, True for development
+_PROFILING_ENABLED = os.getenv("ISRAEL_STEWART_ENABLE_PROFILING", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
 
 # Avoid circular imports by importing logging config directly
 try:
@@ -698,12 +708,22 @@ def monitor_performance(operation_name: str) -> Callable[[Callable], Callable]:
     """
     Decorator for monitoring performance of tensor operations.
 
+    Performance monitoring can be disabled by setting the environment variable:
+    ISRAEL_STEWART_ENABLE_PROFILING=false (default for production performance)
+
     Args:
         operation_name: Name to use for tracking this operation
 
     Returns:
-        Decorator function
+        Decorator function (no-op if profiling disabled)
     """
+    if not _PROFILING_ENABLED:
+        # Return identity decorator when profiling is disabled for maximum performance
+        def no_op_decorator(func: Callable) -> Callable:
+            return func
+
+        return no_op_decorator
+
     return _global_monitor.time_operation(operation_name)
 
 
@@ -716,8 +736,16 @@ def profile_operation(operation_name: str, metadata: dict[str, Any] | None = Non
         metadata: Optional metadata about the operation
 
     Returns:
-        Context manager for profiling
+        Context manager for profiling (no-op if profiling disabled)
     """
+    if not _PROFILING_ENABLED:
+        # Return no-op context manager when profiling is disabled
+        @contextmanager
+        def no_op_context():
+            yield
+
+        return no_op_context()
+
     return _detailed_profiler.profile_operation(operation_name, metadata)
 
 

@@ -20,16 +20,16 @@
       # Test the performance monitoring system…)
   ⎿  Error: Traceback (most recent call last):
        File "<string>", line 3, in <module>
-       File "/home/feynman/projects/israel-stewart/israel_stewart/__init__.py", line 11, in 
+       File "/home/feynman/projects/israel-stewart/israel_stewart/__init__.py", line 11, in
      <module>
          from . import (
-       File "/home/feynman/projects/israel-stewart/israel_stewart/core/__init__.py", line 46, 
+       File "/home/feynman/projects/israel-stewart/israel_stewart/core/__init__.py", line 46,
      in <module>
          from .fields import (
-       File "/home/feynman/projects/israel-stewart/israel_stewart/core/fields.py", line 23, in 
+       File "/home/feynman/projects/israel-stewart/israel_stewart/core/fields.py", line 23, in
      <module>
          from .tensors import FourVector, StressEnergyTensor, TensorField, ViscousStressTensor
-       File "/home/feynman/projects/israel-stewart/israel_stewart/core/tensors.py", line 9, in 
+       File "/home/feynman/projects/israel-stewart/israel_stewart/core/tensors.py", line 9, in
      <module>
          from .derivatives import CovariantDerivative, ProjectionOperator
      … +3 lines (ctrl+o to see all)
@@ -44,7 +44,7 @@
 
 ● Bash(uv run python -c "
       # Direct test of performance module…)
-  ⎿  ✅ Performance monitoring imports work 
+  ⎿  ✅ Performance monitoring imports work
      ✅ Decorator works, result: 42
      ✅ Performance report works: 7 keys
      … +2 lines (ctrl+o to expand)
@@ -77,11 +77,11 @@
     loop that calls the correct time-stepper, like so:
 
       1     # Inside run_profiled_benchmark()
-      2 
+      2
       3     # ... (setup code) ...
-      4 
+      4
       5     n_steps = int(sim_time / dt_cfl) # Calculate number of steps
-      6 
+      6
       7     with profile_operation("complete_simulation", ...):
       8         for _ in range(n_steps):
       9             # Explicitly call the correct, high-quality solver
@@ -222,16 +222,16 @@
   "identical" vectors different
   2. Memory waste: The cache keeps growing with near-duplicate entries
   3. Performance degradation: No benefit from caching, only overhead
-                                                                                         
+
 ●User approved Claude's plan:
   ⎿ Plan: Remove Ineffective Dispersion Cache
 
     Problem Analysis:
     The dispersion cache in SoundWaveAnalysis (lines 132, 170-172, 195) has a fundamental
      flaw:
-    - It uses tuple(wave_vector) as cache keys where wave_vector is a numpy array of 
+    - It uses tuple(wave_vector) as cache keys where wave_vector is a numpy array of
     floats
-    - Floating-point rounding errors prevent cache hits for numerically identical wave 
+    - Floating-point rounding errors prevent cache hits for numerically identical wave
     vectors
     - Example: [1.0, 0.0, 0.0] vs [1.0000000000000002, 0.0, 0.0] create different keys
     - This leads to cache memory waste without performance benefits
@@ -268,66 +268,66 @@
     - israel_stewart/benchmarks/sound_waves.py: Lines 132, 169-172, 194-195
 
 ● Update(israel_stewart/benchmarks/sound_waves.py)
-  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 1 removal                   
-       129            self.relaxation = ISRelaxationEquations(grid, metric, 
+  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 1 removal
+       129            self.relaxation = ISRelaxationEquations(grid, metric,
              transport_coeffs)
-       130    
+       130
        131            # Analysis results cache
        132 -          self._dispersion_cache: dict[tuple[float, ...], WaveProperties] =
            -  {}
        132            self._stability_cache: dict[str, dict[str, Any]] = {}
-       133    
+       133
        134        def _default_background(self) -> ISFieldConfiguration:
 
 ● Update(israel_stewart/benchmarks/sound_waves.py)
-  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 5 removals             
+  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 5 removals
        165            """
        166            k_magnitude = np.linalg.norm(wave_vector)
-       167    
+       167
        168 -          # Check cache
        169 -          cache_key = tuple(wave_vector)
        170 -          if cache_key in self._dispersion_cache:
        171 -              return [self._dispersion_cache[cache_key]]
-       172 -  
+       172 -
        168            # Use robust root finding to solve det(M) = 0
        169            try:
        170                complex_roots = self._find_dispersion_roots(k_magnitude)
 
 ● Update(israel_stewart/benchmarks/sound_waves.py)
-  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 5 removals                
-       183                # Find physical modes (finite attenuation, reasonable 
+  ⎿  Updated israel_stewart/benchmarks/sound_waves.py with 5 removals
+       183                # Find physical modes (finite attenuation, reasonable
              frequency)
-       184                physical_modes = [mode for mode in wave_modes if 
+       184                physical_modes = [mode for mode in wave_modes if
              self._is_physical_mode(mode)]
-       185    
+       185
        186 -              if physical_modes:
-       187 -                  # Cache the most physical mode (usually the sound mode 
+       187 -                  # Cache the most physical mode (usually the sound mode
            - with smallest damping)
-       188 -                  best_mode = min(physical_modes, key=lambda m: 
+       188 -                  best_mode = min(physical_modes, key=lambda m:
            - abs(m.attenuation))
        189 -                  self._dispersion_cache[cache_key] = best_mode
-       190 -  
+       190 -
        186                return physical_modes
-       187    
+       187
        188            except Exception as e:
 
 ● Search(pattern: "cache_key", path: "israel_stewart/benchmarks/sound_waves.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Perfect! All cache_key references have been removed. Let me verify the changes are
   complete by checking if there are any remaining references to the dispersion cache:
 
 ● Search(pattern: "dispersion_cache", path: "israel_stewart/benchmarks/sound_waves.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Excellent! All references to the dispersion cache have been successfully removed. Let me
    run a quick test to make sure the code still works correctly:
 
 ● Bash(uv run python -c "
       from israel_stewart.benchmarks.sound_waves import SoundWaveAnalysis…)
-  ⎿  ✅ SoundWaveAnalysis works without cache 
+  ⎿  ✅ SoundWaveAnalysis works without cache
         Found 1 modes for k=[1,0,0]
         First mode: ω=0.592, γ=0.068
      ✅ Cache removal successful!
@@ -337,7 +337,7 @@
 
   Changes Made:
 
-  1. Removed cache initialization (line 132): Deleted self._dispersion_cache: 
+  1. Removed cache initialization (line 132): Deleted self._dispersion_cache:
   dict[tuple[float, ...], WaveProperties] = {}
   2. Removed cache lookup block (lines 169-172): Eliminated the cache check that was never
    hitting due to floating-point precision issues
@@ -397,7 +397,7 @@
 
 > High – israel_stewart/solvers/spectral.py:505-540
       memory_optimized_fft hands out the global FFT workspaces and then returns them. The
-    next call to get_workspace zeroes the same array, so every caller that keeps the 
+    next call to get_workspace zeroes the same array, so every caller that keeps the
   returned
     object sees its data wiped (and concurrent users trample each other).
 
@@ -422,21 +422,21 @@
 
 ● Search(pattern: "class.*FFT.*Manager", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "fft_manager"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "self\.fft_manager"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search more broadly for FFT manager in the spectral.py file:
 
 ● Search(pattern: "fft.*manager"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search for the actual memory_optimized_fft function mentioned in the user's
   issue:
@@ -456,26 +456,26 @@
 
 ● Search(pattern: "class.*Manager"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search for where the fft_manager is initialized:
 
 ● Search(pattern: ""fft_manager"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me look for where self.fft_manager is defined, by looking at the initialization of
   the class:
 
 ● Search(pattern: "def __init__"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me look at the entire structure of the file to find where fft_manager is defined:
 
 ● Search(pattern: "fft_manager"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The grep search isn't finding fft_manager which is strange since I can see it in the
   code. Let me examine lines 508 and 523 directly where I saw the references:
@@ -488,7 +488,7 @@
 
 ● Search(pattern: "def get_workspace|def get_real_fft_workspace"", path:
         "israel_stewart/solvers/spectral.py", output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search for these methods in other files in the solvers directory:
 
@@ -674,23 +674,23 @@
 
 ● Search(pattern: "adaptive_ifft"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "adaptive_fft\("", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "self\.adaptive_fft"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "fft_3d_optimized"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: ""fft_plan\(|rfft_plan\("", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "fft_plan|rfft_plan"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
@@ -727,19 +727,19 @@
 
 ● Search(pattern: "fft_3d_optimized"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "3d.*optimized|optimized.*3d"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "def.*fft.*3d|def.*3d.*fft"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "def.*optimized"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Answer: fft_3d_optimized does not exist.
 
@@ -767,14 +767,14 @@
   fft_3d_optimized() method.
 
 > clean all fft up
-                                                                                         
+
 ●User approved Claude's plan:
   ⎿ Plan: Clean Up All FFT Code
 
     Problem Analysis:
     The FFT system in spectral.py has accumulated redundant and unused code:
     - adaptive_fft() method exists but is never called
-    - memory_optimized_fft() method exists but is never called  
+    - memory_optimized_fft() method exists but is never called
     - Complex workspace management system that introduces bugs without benefits
     - Memory optimization infrastructure that's unused
 
@@ -785,7 +785,7 @@
       - Delete memory_optimized_fft() method entirely - never called
     2. Remove memory optimization infrastructure:
       - Remove get_fft_manager() import (line 17)
-      - Remove get_inplace_ops() import (line 18) 
+      - Remove get_inplace_ops() import (line 18)
       - Remove self.fft_manager = get_fft_manager() (line 100)
       - Remove self.inplace_ops = get_inplace_ops() (line 101)
       - Remove self._precompute_workspaces() call (line 104)
@@ -795,7 +795,7 @@
       - Remove unused _fft_cache if not actually used elsewhere
       - Remove use_real_fft flag if not used by actual FFT calls
     4. Verify direct FFT usage:
-      - Confirm all FFT operations use self.fft_plan(), self.rfft_plan(), 
+      - Confirm all FFT operations use self.fft_plan(), self.rfft_plan(),
     self.ifft_plan(), self.irfft_plan() directly
       - These are the only FFT methods actually called in the codebase
 
@@ -803,101 +803,101 @@
     - Eliminates data corruption bugs from shared workspace management
     - Removes 100+ lines of dead code (methods, initialization, workspace management)
     - Simplifies maintenance - fewer moving parts
-    - Faster initialization - no workspace precomputation 
+    - Faster initialization - no workspace precomputation
     - Clearer code - direct FFT calls without abstraction layers
     - No performance loss - the "optimized" methods weren't being used anyway
 
     Files to modify:
-    - israel_stewart/solvers/spectral.py: Remove unused FFT methods and memory 
+    - israel_stewart/solvers/spectral.py: Remove unused FFT methods and memory
     optimization infrastructure
 
     Code locations to remove:
     - Lines 17-18: Memory optimization imports
-    - Lines 100-101, 104: Memory optimization initialization  
+    - Lines 100-101, 104: Memory optimization initialization
     - Lines 106-127: _precompute_workspaces() method
     - Lines 474-492: adaptive_fft() method
     - Lines 494-532: memory_optimized_fft() method
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 59 removals                       
-       471    
+  ⎿  Updated israel_stewart/solvers/spectral.py with 59 removals
+       471
        472            return result
-       473    
+       473
        474 -      def adaptive_fft(self, field: np.ndarray) -> np.ndarray:
        475 -          """
        476 -          Adaptive FFT that chooses between real and complex transforms for
            -  optimal performance.
-       474    
-       475 -          Uses real FFT for real-valued fields (50% memory savings, 30% 
+       474
+       475 -          Uses real FFT for real-valued fields (50% memory savings, 30%
            - speed improvement)
        476 -          and complex FFT for complex-valued fields.
-       477 -  
+       477 -
        478 -          Args:
        479 -              field: Input field (real or complex)
-       480 -  
+       480 -
        481 -          Returns:
        482 -              FFT of field in appropriate format
        483 -          """
        484 -          if self.use_real_fft and np.isrealobj(field):
-       485 -              # Use real FFT for ~50% memory reduction and ~30% speed 
+       485 -              # Use real FFT for ~50% memory reduction and ~30% speed
            - improvement
        486 -              return self.rfft_plan(field)
        487 -          else:
-       488 -              # Use complex FFT for complex fields or when real FFT 
+       488 -              # Use complex FFT for complex fields or when real FFT
            - disabled
        489 -              return self.fft_plan(field)
-       490 -  
+       490 -
        491 -      def memory_optimized_fft(self, field: np.ndarray) -> np.ndarray:
        492 -          """
        493 -          Memory-optimized FFT using pre-allocated workspaces.
-       494 -  
+       494 -
        495 -          Args:
        496 -              field: Input field for FFT
-       497 -  
+       497 -
        498 -          Returns:
        499 -              FFT of field in k-space
        500 -          """
-       501 -          with profile_operation("memory_optimized_fft", {"input_shape": 
+       501 -          with profile_operation("memory_optimized_fft", {"input_shape":
            - field.shape}):
        502 -              # Get appropriate workspace
        503 -              if np.isrealobj(field) and self.use_real_fft:
        504 -                  # Real FFT with workspace
-       505 -                  real_workspace, complex_workspace = 
+       505 -                  real_workspace, complex_workspace =
            - self.fft_manager.get_real_fft_workspace(
        506 -                      field.shape
        507 -                  )
-       508 -  
+       508 -
        509 -                  # Copy input to workspace to avoid modifying original
        510 -                  self.inplace_ops.copy_with_slicing(real_workspace, field)
-       511 -  
+       511 -
        512 -                  # Perform FFT in-place
        513 -                  result = self.rfft_plan(real_workspace)
-       514 -  
+       514 -
        515 -                  # Copy result to output workspace
        516 -                  complex_workspace[:] = result
        517 -                  return complex_workspace
        518 -              else:
        519 -                  # Complex FFT with workspace
-       520 -                  workspace = self.fft_manager.get_workspace(field.shape, 
+       520 -                  workspace = self.fft_manager.get_workspace(field.shape,
            - np.complex128)
-       521 -  
+       521 -
        522 -                  # Copy input to workspace
-       523 -                  workspace.real = field.real if hasattr(field, "real") 
+       523 -                  workspace.real = field.real if hasattr(field, "real")
            - else field
        524 -                  if hasattr(field, "imag"):
        525 -                      workspace.imag = field.imag
-       526 -  
+       526 -
        527 -                  # Perform FFT in-place
        528 -                  result = self.fft_plan(workspace)
        529 -                  return result
-       530 -  
+       530 -
        475        def get_k_squared_for_field(self, field_k: np.ndarray) -> np.ndarray:
        476            """
        477            Get appropriate k_squared array for the given FFT field shape.
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 2 removals                   
-       14    
+  ⎿  Updated israel_stewart/solvers/spectral.py with 2 removals
+       14
        15    from ..core.memory_optimization import (
        16        get_array_pool,
        17 -      get_fft_manager,
@@ -907,52 +907,52 @@
        19    from ..core.performance import monitor_performance, profile_operation
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 5 removals          
-        95    
+  ⎿  Updated israel_stewart/solvers/spectral.py with 5 removals
+        95
         96            # Memory optimization components
         97            self.array_pool = get_array_pool()
         98 -          self.fft_manager = get_fft_manager()
         99 -          self.inplace_ops = get_inplace_ops()
-        98    
+        98
         99 -          # Pre-allocate common array shapes
        100 -          self._precompute_workspaces()
-       101 -  
+       101 -
         99        def _precompute_workspaces(self) -> None:
-       100            """Pre-allocate common workspace arrays for memory 
+       100            """Pre-allocate common workspace arrays for memory
              optimization."""
        101            # Common shapes used in spectral operations
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 22 removals                   
+  ⎿  Updated israel_stewart/solvers/spectral.py with 22 removals
         96            # Memory optimization components
         97            self.array_pool = get_array_pool()
-        98    
+        98
         99 -      def _precompute_workspaces(self) -> None:
-       100 -          """Pre-allocate common workspace arrays for memory 
+       100 -          """Pre-allocate common workspace arrays for memory
            - optimization."""
        101 -          # Common shapes used in spectral operations
        102 -          spatial_shape = (self.nx, self.ny, self.nz)
        103 -          field_shape = (self.nt, self.nx, self.ny, self.nz)
        104 -          tensor_shape = (*spatial_shape, 4, 4)
-        99    
+        99
        100 -          # Pre-allocate FFT workspaces
        101 -          common_shapes = [
        102 -              spatial_shape,  # 3D spatial fields
        103 -              field_shape,  # 4D spacetime fields
        104 -              tensor_shape,  # Stress tensors
        105 -          ]
-       106 -  
+       106 -
        107 -          # Initialize FFT workspace manager with common shapes
        108 -          self.fft_manager.precompute_fft_plans(common_shapes)
-       109 -  
+       109 -
        110 -          # Pre-allocate some workspace arrays
        111 -          for shape in common_shapes:
        112 -              # Real and complex workspaces
        113 -              self.fft_manager.get_workspace(shape, np.float64)
        114 -              self.fft_manager.get_workspace(shape, np.complex128)
-       115 -  
+       115 -
        100        @monitor_performance("wave_vectors")
-       101        def _compute_wave_vectors(self) -> tuple[np.ndarray, np.ndarray, 
+       101        def _compute_wave_vectors(self) -> tuple[np.ndarray, np.ndarray,
              np.ndarray]:
        102            """
 
@@ -961,11 +961,11 @@
 
 ● Search(pattern: "use_real_fft"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "_fft_cache"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me check what's still in the initialization area to see if there are any other
   unused components:
@@ -984,7 +984,7 @@
 
 ● Search(pattern: "fft_cache"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The _fft_cache is not used anywhere, so I can remove it. Let me also check what's on
   line 481 where use_real_fft is used:
@@ -996,22 +996,22 @@
   it. But I can remove the unused _fft_cache:
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 3 removals   
+  ⎿  Updated israel_stewart/solvers/spectral.py with 3 removals
        90            self.k_vectors = self._compute_wave_vectors()
        91            self.k_squared = self._compute_k_squared()
-       92    
+       92
        93 -          # Cache for frequently used arrays
        94 -          self._fft_cache: dict[Any, Any] = {}
-       95 -  
+       95 -
        93            # Memory optimization components
        94            self.array_pool = get_array_pool()
-       95    
+       95
 
 ● Now let me test the code to make sure it still works after the cleanup:
 
 ● Bash(uv run python -c "
       from israel_stewart.solvers.spectral import SpectralISolver…)
-  ⎿  ✅ SpectralISolver initialized successfully after FFT cleanup 
+  ⎿  ✅ SpectralISolver initialized successfully after FFT cleanup
      ✅ FFT round-trip test passed
         Error: 4.44e-16
      … +4 lines (ctrl+o to expand)
@@ -1021,26 +1021,26 @@
 
 ● Search(pattern: "import.*memory_optimization"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "array_pool"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● It looks like array_pool isn't used either. Let me check if it's actually used anywhere
   in the file:
 
 ● Search(pattern: "self\.array_pool"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The array_pool is also unused. Let me remove it and its import as well:
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 1 addition and 4 removals    
+  ⎿  Updated israel_stewart/solvers/spectral.py with 1 addition and 4 removals
        12    import numpy as np
        13    from scipy.optimize import newton_krylov
-       14    
+       14
        15 -  from ..core.memory_optimization import (
        16 -      get_array_pool,
        17 -      memory_optimized_context,
@@ -1048,43 +1048,43 @@
        15 +  from ..core.memory_optimization import memory_optimized_context
        16    from ..core.performance import monitor_performance, profile_operation
        17    from ..core.tensor_utils import optimized_einsum
-       18    
+       18
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 2 removals   
+  ⎿  Updated israel_stewart/solvers/spectral.py with 2 removals
        87            self.k_vectors = self._compute_wave_vectors()
        88            self.k_squared = self._compute_k_squared()
-       89    
+       89
        90 -          # Memory optimization components
        91 -          self.array_pool = get_array_pool()
-       90    
-       91    
+       90
+       91
        92        @monitor_performance("wave_vectors")
 
 ● Let me also check if memory_optimized_context is actually used anywhere:
 
 ● Search(pattern: "memory_optimized_context"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● It's not used either. Let me remove that import too:
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 1 removal                    
+  ⎿  Updated israel_stewart/solvers/spectral.py with 1 removal
        12    import numpy as np
        13    from scipy.optimize import newton_krylov
-       14    
+       14
        15 -  from ..core.memory_optimization import memory_optimized_context
        15    from ..core.performance import monitor_performance, profile_operation
        16    from ..core.tensor_utils import optimized_einsum
-       17    
+       17
 
 ● Now let me run a final test to make sure everything still works after the complete
   cleanup:
 
 ● Bash(uv run python -c "
       from israel_stewart.solvers.spectral import SpectralISolver…)
-  ⎿  ✅ Complete FFT cleanup successful! 
+  ⎿  ✅ Complete FFT cleanup successful!
         Real FFT error: 4.44e-16
         Complex FFT error: 4.52e-16
      … +4 lines (ctrl+o to expand)
@@ -1126,11 +1126,11 @@
 
 ● Search(pattern: "def ifft_k_to_field"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "ifft.*field"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search more broadly for methods that convert from k-space back to real space:
 
@@ -1147,17 +1147,17 @@
 
 ● Search(pattern: "adaptive_ifft"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me search for calls to adaptive_ifft:
 
 ● Search(pattern: "\.adaptive_ifft\("", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "self\.adaptive_ifft"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● So adaptive_ifft is also unused, just like adaptive_fft was. Let me look at the actual
   IFFT usage patterns in the codebase:
@@ -1174,26 +1174,26 @@
 
 ● Search(pattern: "rfft_plan\("", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "rfft_plan"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Interesting! The code doesn't actually use real FFT anywhere, even though it has the
   infrastructure for it. Let me check where fields are transformed to k-space:
 
 ● Search(pattern: "fft_plan\("", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "fft_plan"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "\.fft_plan"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me check the grep results I got earlier to see the actual FFT usage:
 
@@ -1233,40 +1233,40 @@
   performance improvement if needed.
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 21 removals                       
+  ⎿  Updated israel_stewart/solvers/spectral.py with 21 removals
        458            else:
        459                return self.k_squared
-       460    
-       461 -      def adaptive_ifft(self, field_k: np.ndarray, original_shape: tuple | 
+       460
+       461 -      def adaptive_ifft(self, field_k: np.ndarray, original_shape: tuple |
            - None = None) -> np.ndarray:
        462 -          """
-       463 -          Adaptive inverse FFT that handles both real and complex 
+       463 -          Adaptive inverse FFT that handles both real and complex
            - transforms.
-       461    
+       461
        462 -          Args:
        463 -              field_k: FFT coefficients
-       464 -              original_shape: Original real field shape (needed for real 
+       464 -              original_shape: Original real field shape (needed for real
            - IFFT)
-       465 -  
+       465 -
        466 -          Returns:
        467 -              Inverse FFT result
        468 -          """
        469 -          if self.use_real_fft and field_k.dtype == np.complex128:
-       470 -              # Check if this came from real FFT (reduced size in last 
+       470 -              # Check if this came from real FFT (reduced size in last
            - dimension)
        471 -              if original_shape is not None:
        472 -                  expected_rfft_shape = list(original_shape)
        473 -                  expected_rfft_shape[-1] = original_shape[-1] // 2 + 1
        474 -                  if field_k.shape == tuple(expected_rfft_shape):
-       475 -                      return self.irfft_plan(field_k, s=original_shape, 
+       475 -                      return self.irfft_plan(field_k, s=original_shape,
            - axes=(-3, -2, -1))
-       476 -  
+       476 -
        477 -          # Default to complex IFFT
        478 -          return self.ifft_plan(field_k).real
-       479 -  
+       479 -
        462        @monitor_performance("spectral_time_step")
        463        def advance_linear_terms(
-       464            self, fields: "ISFieldConfiguration", dt: float, method: str = 
+       464            self, fields: "ISFieldConfiguration", dt: float, method: str =
              "exponential"
 
 ● Now let me run a final test to make sure the removal of adaptive_ifft doesn't break
@@ -1274,7 +1274,7 @@
 
 ● Bash(uv run python -c "
       from israel_stewart.solvers.spectral import SpectralISolver…)
-  ⎿  ✅ Complete FFT cleanup successful!                             
+  ⎿  ✅ Complete FFT cleanup successful!
         FFT round-trip error: 3.33e-16
      ✅ Removed adaptive_ifft - FFT operations still work perfectly!
      … +3 lines (ctrl+o to expand)
@@ -1354,21 +1354,21 @@
 
 ● Search(pattern: "adaptive_fft"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "adaptive_fft"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "self\.adaptive_fft"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The reference isn't in the spectral.py file I just cleaned up. Let me search more
   broadly in the entire codebase:
 
 ● Search(pattern: "adaptive_fft"", path: "~/projects/israel-stewart", output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Let me check the exact error line from the warning. The warning said it was at line 949
   in spectral.py:
@@ -1380,11 +1380,11 @@
 
 ● Search(pattern: "def _compute_relaxation_sources"", path:
         "israel_stewart/solvers/spectral.py", output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "_compute_relaxation_sources"", path: "israel_stewart/solvers/spectral.py",
         output_mode: "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The method isn't found in this file, which means the warning is actually from a
   different line than 949 in the current file, or it's calling a method that doesn't
@@ -1392,7 +1392,7 @@
 
 ● Bash(uv run python -c "
       # Try to replicate the exact error by creating a simple test…)
-  ⎿  Solver created successfully                                             
+  ⎿  Solver created successfully
      adaptive_fft method does NOT exist
      AttributeError: 'SpectralISolver' object has no attribute 'adaptive_fft'
      … +3 lines (ctrl+o to expand)
@@ -1421,7 +1421,7 @@
 
 ● Search(pattern: "self\.spectral"", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● That's strange. Let me search the line 995 more carefully:
 
@@ -1434,11 +1434,11 @@
 
 ● Search(pattern: ""spectral.*="", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "spectral.*="", path: "israel_stewart/solvers/spectral.py", output_mode:
         "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● The issue is that there's a reference to self.spectral on line 995, but self.spectral is
    not defined anywhere in the class. This is likely the source of the error. Let me fix
@@ -1452,7 +1452,7 @@
 
 ● Search(pattern: "def.*divergence"", path: "israel_stewart/solvers/spectral.py", output_mode:
          "content")
-  ⎿  Found 0 lines 
+  ⎿  Found 0 lines
 
 ● Search(pattern: "def.*spatial.*derivative|def.*derivative.*spatial"", path:
         "israel_stewart/solvers/spectral.py", output_mode: "content")
@@ -1469,10 +1469,10 @@
    Let me fix the problematic line:
 
 ● Update(israel_stewart/solvers/spectral.py)
-  ⎿  Updated israel_stewart/solvers/spectral.py with 4 additions and 1 removal         
+  ⎿  Updated israel_stewart/solvers/spectral.py with 4 additions and 1 removal
         992                # Bulk pressure source: ∇·u term
         993                if hasattr(self.fields, "u_mu"):
-        994                    velocity = self.fields.u_mu[..., 1:4]  # Spatial 
+        994                    velocity = self.fields.u_mu[..., 1:4]  # Spatial
               components
         995 -                  div_u = self.spectral.spatial_divergence(velocity)
         995 +                  # Compute divergence: ∇·u = ∂_x u_x + ∂_y u_y + ∂_z u_z
@@ -1480,7 +1480,6 @@
         997 +                          self.spatial_derivative(velocity[..., 1], 1) +
         998 +                          self.spatial_derivative(velocity[..., 2], 2))
         999                    sources["dPi_dt_source"] = -self.fields.pressure * div_u
-       1000    
+       1000
        1001            # Shear stress sources: velocity gradients
   ⎿  Interrupted · What should Claude do instead?
-

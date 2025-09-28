@@ -29,7 +29,7 @@ class TestFiniteDifferenceBase:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2.0), (0.0, 2.0), (0.0, 2.0)],
-            grid_points=(10, 16, 16, 16)  # nt, nx, ny, nz
+            grid_points=(10, 16, 16, 16),  # nt, nx, ny, nz
         )
 
     @pytest.fixture
@@ -41,7 +41,7 @@ class TestFiniteDifferenceBase:
     def test_field_1d(self, simple_grid):
         """Create a 1D test field with known derivative."""
         nx = simple_grid.grid_points[1]  # spatial x-direction
-        x = np.linspace(0, 2*np.pi, nx)
+        x = np.linspace(0, 2 * np.pi, nx)
 
         # Create a sine wave: f(x) = sin(x), f'(x) = cos(x)
         field = np.sin(x)
@@ -53,9 +53,9 @@ class TestFiniteDifferenceBase:
     def test_field_2d(self, simple_grid):
         """Create a 2D test field with known derivatives."""
         nx, ny = simple_grid.grid_points[1:3]
-        x = np.linspace(0, 2*np.pi, nx)
-        y = np.linspace(0, 2*np.pi, ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
+        x = np.linspace(0, 2 * np.pi, nx)
+        y = np.linspace(0, 2 * np.pi, ny)
+        X, Y = np.meshgrid(x, y, indexing="ij")
 
         # Create a separable function: f(x,y) = sin(x)*cos(y)
         field = np.sin(X) * np.cos(Y)
@@ -153,7 +153,7 @@ class TestConservativeFiniteDifference(TestFiniteDifferenceBase):
             tensor_field, component_indices
         )
 
-        expected_shape = tensor_field.shape[:-len(component_indices)]
+        expected_shape = tensor_field.shape[: -len(component_indices)]
         assert christoffel_terms.shape == expected_shape
         assert np.allclose(christoffel_terms, 0.0)
 
@@ -171,7 +171,9 @@ class TestUpwindFiniteDifference(TestFiniteDifferenceBase):
 
         # Test both directions
         for direction in ["upwind", "downwind"]:
-            result = solver._compute_upwind_derivative(field, axis=1, spatial_dim=0, direction=direction)
+            result = solver._compute_upwind_derivative(
+                field, axis=1, spatial_dim=0, direction=direction
+            )
 
             assert result.shape == field.shape
             assert np.all(np.isfinite(result))
@@ -238,7 +240,7 @@ class TestWENOFiniteDifference(TestFiniteDifferenceBase):
         solver = WENOFiniteDifference(simple_grid, flat_metric, weno_order=5)
 
         # Create smooth and non-smooth test fields
-        x = np.linspace(0, 2*np.pi, 16)
+        x = np.linspace(0, 2 * np.pi, 16)
 
         # Smooth field: sin(x)
         smooth_field = np.sin(x)[np.newaxis, :, np.newaxis]
@@ -253,8 +255,12 @@ class TestWENOFiniteDifference(TestFiniteDifferenceBase):
         # Compute smoothness indicators for all stencils
         for stencil_idx in range(3):  # WENO5 has 3 stencils
             # Smooth field should have smaller smoothness indicators
-            beta_smooth = solver._compute_smoothness_indicator(extended_smooth, axis=1, stencil_index=stencil_idx)
-            beta_step = solver._compute_smoothness_indicator(extended_step, axis=1, stencil_index=stencil_idx)
+            beta_smooth = solver._compute_smoothness_indicator(
+                extended_smooth, axis=1, stencil_index=stencil_idx
+            )
+            beta_step = solver._compute_smoothness_indicator(
+                extended_step, axis=1, stencil_index=stencil_idx
+            )
 
             assert beta_smooth.shape == smooth_field.shape
             assert np.all(np.isfinite(beta_smooth))
@@ -271,8 +277,8 @@ class TestWENOFiniteDifference(TestFiniteDifferenceBase):
         field_shape = (16, 16, 16)
         smoothness_indicators = [
             np.ones(field_shape) * 0.1,  # Smooth stencil
-            np.ones(field_shape) * 1.0,   # Medium smoothness
-            np.ones(field_shape) * 10.0   # Non-smooth stencil
+            np.ones(field_shape) * 1.0,  # Medium smoothness
+            np.ones(field_shape) * 10.0,  # Non-smooth stencil
         ]
 
         optimal_weights = solver.weno_coeffs["optimal_weights"]
@@ -292,27 +298,21 @@ class TestFiniteDifferenceFactory:
 
     def test_create_conservative_solver(self, simple_grid, flat_metric):
         """Test factory creation of conservative solver."""
-        solver = create_finite_difference_solver(
-            "conservative", simple_grid, flat_metric, order=4
-        )
+        solver = create_finite_difference_solver("conservative", simple_grid, flat_metric, order=4)
 
         assert isinstance(solver, ConservativeFiniteDifference)
         assert solver.order == 4
 
     def test_create_upwind_solver(self, simple_grid, flat_metric):
         """Test factory creation of upwind solver."""
-        solver = create_finite_difference_solver(
-            "upwind", simple_grid, flat_metric, order=2
-        )
+        solver = create_finite_difference_solver("upwind", simple_grid, flat_metric, order=2)
 
         assert isinstance(solver, UpwindFiniteDifference)
         assert solver.order == 2
 
     def test_create_weno_solver(self, simple_grid, flat_metric):
         """Test factory creation of WENO solver."""
-        solver = create_finite_difference_solver(
-            "weno", simple_grid, flat_metric, weno_order=3
-        )
+        solver = create_finite_difference_solver("weno", simple_grid, flat_metric, weno_order=3)
 
         assert isinstance(solver, WENOFiniteDifference)
         assert solver.weno_order == 3
@@ -320,9 +320,7 @@ class TestFiniteDifferenceFactory:
     def test_invalid_solver_type(self, simple_grid, flat_metric):
         """Test factory error handling for invalid solver type."""
         with pytest.raises(ValueError, match="Unknown finite difference scheme"):
-            create_finite_difference_solver(
-                "invalid_type", simple_grid, flat_metric
-            )
+            create_finite_difference_solver("invalid_type", simple_grid, flat_metric)
 
 
 class TestFiniteDifferenceIntegration:
@@ -338,7 +336,7 @@ class TestFiniteDifferenceIntegration:
 
         divergence = solver.compute_divergence(tensor_field, component_indices)
 
-        expected_shape = tensor_field.shape[:-len(component_indices)]
+        expected_shape = tensor_field.shape[: -len(component_indices)]
         assert divergence.shape == expected_shape
         assert np.all(np.isfinite(divergence))
 
@@ -351,7 +349,7 @@ class TestFiniteDifferenceIntegration:
             ConservativeFiniteDifference(simple_grid, flat_metric, order=2),
             ConservativeFiniteDifference(simple_grid, flat_metric, order=4),
             UpwindFiniteDifference(simple_grid, flat_metric, order=1),
-            WENOFiniteDifference(simple_grid, flat_metric, weno_order=5)
+            WENOFiniteDifference(simple_grid, flat_metric, weno_order=5),
         ]
 
         # Prepare 3D field
@@ -359,11 +357,13 @@ class TestFiniteDifferenceIntegration:
 
         for solver in solvers:
             # Each solver should be able to compute derivatives
-            if hasattr(solver, '_compute_conservative_derivative'):
+            if hasattr(solver, "_compute_conservative_derivative"):
                 result = solver._compute_conservative_derivative(field_3d, axis=1, spatial_dim=0)
-            elif hasattr(solver, '_compute_upwind_derivative'):
-                result = solver._compute_upwind_derivative(field_3d, axis=1, spatial_dim=0, direction="upwind")
-            elif hasattr(solver, '_compute_weno_derivative'):
+            elif hasattr(solver, "_compute_upwind_derivative"):
+                result = solver._compute_upwind_derivative(
+                    field_3d, axis=1, spatial_dim=0, direction="upwind"
+                )
+            elif hasattr(solver, "_compute_weno_derivative"):
                 result = solver._compute_weno_derivative(field_3d, axis=1, spatial_dim=0)
 
             # Result should be well-defined

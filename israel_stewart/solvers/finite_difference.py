@@ -439,7 +439,7 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         shock_mask = gradient_magnitude > 0.5 * field_scale
 
         limiter_factor[smooth_mask] *= 0.1  # Low dissipation in smooth regions
-        limiter_factor[shock_mask] *= 2.0   # High dissipation at shocks
+        limiter_factor[shock_mask] *= 2.0  # High dissipation at shocks
 
         return flux * limiter_factor
 
@@ -541,7 +541,7 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         output_shape = tensor_field.shape[: -len(component_indices)]
 
         # Check if we're in flat spacetime (Minkowski)
-        if hasattr(self.metric, 'is_flat') and self.metric.is_flat():
+        if hasattr(self.metric, "is_flat") and self.metric.is_flat():
             # In Cartesian coordinates, all Christoffel symbols vanish
             return np.zeros(output_shape)
 
@@ -580,7 +580,7 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
                 f"Failed to compute Christoffel contributions: {e}. "
                 f"Using flat spacetime approximation (Γ = 0).",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             return np.zeros(output_shape)
 
@@ -591,10 +591,10 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         Returns:
             Christoffel symbols Γ^μ_{αβ} with shape (*spatial_grid, 4, 4, 4)
         """
-        if hasattr(self.metric, 'christoffel_symbols'):
+        if hasattr(self.metric, "christoffel_symbols"):
             # Use precomputed Christoffel symbols if available
             return self.metric.christoffel_symbols
-        elif hasattr(self.metric, 'compute_christoffel'):
+        elif hasattr(self.metric, "compute_christoffel"):
             # Compute Christoffel symbols using metric method
             return self.metric.compute_christoffel()
         else:
@@ -655,8 +655,10 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
 
                             # Christoffel symbol formula
                             for mu in range(4):
-                                christoffel[..., mu, alpha, beta] += 0.5 * g_inv[..., mu, nu] * (
-                                    dg_nu_beta_dalpha + dg_nu_alpha_dbeta - dg_alpha_beta_dnu
+                                christoffel[..., mu, alpha, beta] += (
+                                    0.5
+                                    * g_inv[..., mu, nu]
+                                    * (dg_nu_beta_dalpha + dg_nu_alpha_dbeta - dg_alpha_beta_dnu)
                                 )
 
             return christoffel
@@ -664,7 +666,8 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         except Exception as e:
             warnings.warn(
                 f"Numerical Christoffel computation failed: {e}. Using zeros.",
-                UserWarning, stacklevel=2
+                UserWarning,
+                stacklevel=2,
             )
             # Fallback: return zeros (flat spacetime)
             spatial_shape = tuple(self.grid.grid_points[1:])
@@ -690,15 +693,13 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
             offset = i - len(coeffs) // 2
             shifted_slice = [slice(None)] * metric_component.ndim
             shifted_slice[axis - 1] = slice(  # axis-1 since we removed time from metric_component
-                self.ghost_points + offset,
-                -self.ghost_points + offset if offset < 0 else None
+                self.ghost_points + offset, -self.ghost_points + offset if offset < 0 else None
             )
             if extended_field.ndim > len(shifted_slice):
                 # Handle case where extended_field has extra dimensions
                 shifted_slice = [slice(None)] * extended_field.ndim
                 shifted_slice[axis] = slice(
-                    self.ghost_points + offset,
-                    -self.ghost_points + offset if offset < 0 else None
+                    self.ghost_points + offset, -self.ghost_points + offset if offset < 0 else None
                 )
             derivative += coeff * extended_field[tuple(shifted_slice)]
 
@@ -710,7 +711,7 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         tensor_field: np.ndarray,
         christoffel_symbols: np.ndarray,
         mu_index: int,
-        nu_index: int
+        nu_index: int,
     ) -> np.ndarray:
         """
         Compute Christoffel contributions for rank-2 tensor T^{μν}.
@@ -725,23 +726,24 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
             for alpha in range(4):
                 # Only include spatial derivatives (α > 0)
                 if alpha > 0:
-                    result += (christoffel_symbols[..., mu_index, gamma, alpha] *
-                              tensor_field[..., gamma, nu_index])
+                    result += (
+                        christoffel_symbols[..., mu_index, gamma, alpha]
+                        * tensor_field[..., gamma, nu_index]
+                    )
 
         # Term 2: Γ^ν_{γα} T^{μγ} (sum over γ, α)
         for gamma in range(4):
             for alpha in range(4):
                 if alpha > 0:
-                    result += (christoffel_symbols[..., nu_index, gamma, alpha] *
-                              tensor_field[..., mu_index, gamma])
+                    result += (
+                        christoffel_symbols[..., nu_index, gamma, alpha]
+                        * tensor_field[..., mu_index, gamma]
+                    )
 
         return result
 
     def _compute_vector_christoffel_terms(
-        self,
-        vector_field: np.ndarray,
-        christoffel_symbols: np.ndarray,
-        mu_index: int
+        self, vector_field: np.ndarray, christoffel_symbols: np.ndarray, mu_index: int
     ) -> np.ndarray:
         """
         Compute Christoffel contributions for vector T^μ.
@@ -755,8 +757,9 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
             for alpha in range(4):
                 # Only include spatial derivatives (α > 0)
                 if alpha > 0:
-                    result += (christoffel_symbols[..., mu_index, gamma, alpha] *
-                              vector_field[..., gamma])
+                    result += (
+                        christoffel_symbols[..., mu_index, gamma, alpha] * vector_field[..., gamma]
+                    )
 
         return result
 
@@ -764,14 +767,14 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
         self,
         tensor_field: np.ndarray,
         christoffel_symbols: np.ndarray,
-        component_indices: tuple[int, ...]
+        component_indices: tuple[int, ...],
     ) -> np.ndarray:
         """
         General Christoffel contribution computation for arbitrary rank tensors.
 
         For tensor T^{μνρ...}, adds Christoffel terms for each upper index.
         """
-        result = np.zeros(tensor_field.shape[:-len(component_indices)])
+        result = np.zeros(tensor_field.shape[: -len(component_indices)])
 
         # For each tensor index, add the corresponding Christoffel contribution
         for idx_pos, mu_index in enumerate(component_indices):
@@ -787,8 +790,10 @@ class ConservativeFiniteDifference(FiniteDifferenceScheme):
                         tensor_indices[idx_pos] = gamma
                         tensor_slice = tuple([slice(None)] * len(result.shape) + tensor_indices)
 
-                        contribution += (christoffel_symbols[..., mu_index, gamma, alpha] *
-                                       tensor_field[tensor_slice])
+                        contribution += (
+                            christoffel_symbols[..., mu_index, gamma, alpha]
+                            * tensor_field[tensor_slice]
+                        )
 
             result += contribution
 
@@ -967,13 +972,14 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
         try:
             # Create dummy field configuration for speed calculation
             from ..core.fields import ISFieldConfiguration
+
             dummy_fields = ISFieldConfiguration(self.grid)
 
             # Extract velocity information if available from tensor field
             # This is a heuristic extraction for demonstration
-            if hasattr(dummy_fields, 'u_mu') and tensor_field.ndim >= 2:
+            if hasattr(dummy_fields, "u_mu") and tensor_field.ndim >= 2:
                 # Try to extract velocity from stress tensor structure
-                dummy_fields.u_mu = np.zeros((*tensor_field.shape[:-len(component_indices)], 4))
+                dummy_fields.u_mu = np.zeros((*tensor_field.shape[: -len(component_indices)], 4))
                 if tensor_field.shape[-1] >= 4:
                     # Use time component as rough velocity estimate
                     dummy_fields.u_mu[..., 0] = 1.0  # Time component
@@ -990,10 +996,7 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
                 f"lambda_plus_{i}": np.ones(dummy_shape) * 0.6  # Approximate sound speed
                 for i in range(3)
             }
-            speeds.update({
-                f"lambda_minus_{i}": np.ones(dummy_shape) * (-0.6)
-                for i in range(3)
-            })
+            speeds.update({f"lambda_minus_{i}": np.ones(dummy_shape) * (-0.6) for i in range(3)})
 
         # Loop over spatial dimensions
         for dim in range(3):  # 3 spatial dimensions
@@ -1019,7 +1022,9 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
 
         # Add Christoffel symbol contributions
         try:
-            christoffel_terms = self._compute_christoffel_contributions(tensor_field, component_indices)
+            christoffel_terms = self._compute_christoffel_contributions(
+                tensor_field, component_indices
+            )
             divergence += christoffel_terms
         except Exception as e:
             warnings.warn(f"Christoffel computation failed in upwind scheme: {e}", stacklevel=2)
@@ -1032,7 +1037,7 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
         axis: int,
         spatial_dim: int,
         speed_plus: np.ndarray,
-        speed_minus: np.ndarray
+        speed_minus: np.ndarray,
     ) -> np.ndarray:
         """
         Compute divergence using Godunov-type flux splitting.
@@ -1109,7 +1114,7 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
         flux_left: np.ndarray,
         flux_right: np.ndarray,
         speed_plus: np.ndarray,
-        speed_minus: np.ndarray
+        speed_minus: np.ndarray,
     ) -> np.ndarray:
         """
         Select upwind flux based on characteristic speeds using Godunov method.
@@ -1136,15 +1141,18 @@ class UpwindFiniteDifference(FiniteDifferenceScheme):
         flux = np.zeros_like(flux_left)
 
         # Apply upwind selection
-        flux[all_right] = flux_left[all_right]    # Use left flux when waves go right
-        flux[all_left] = flux_right[all_left]     # Use right flux when waves go left
+        flux[all_right] = flux_left[all_right]  # Use left flux when waves go right
+        flux[all_left] = flux_right[all_left]  # Use right flux when waves go left
 
         # For mixed case, use HLL-type average with entropy fix
         if np.any(mixed):
             # Lax-Friedrichs type flux for sonic points
             alpha = np.maximum(np.abs(speed_plus[mixed]), np.abs(speed_minus[mixed]))
-            flux[mixed] = 0.5 * (flux_left[mixed] + flux_right[mixed] -
-                               alpha * (flux_right[mixed] - flux_left[mixed]))
+            flux[mixed] = 0.5 * (
+                flux_left[mixed]
+                + flux_right[mixed]
+                - alpha * (flux_right[mixed] - flux_left[mixed])
+            )
 
         return flux
 
@@ -1281,9 +1289,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         return derivative
 
     def _compute_weno_weights(
-        self,
-        optimal_weights: np.ndarray,
-        smoothness_indicators: list[np.ndarray]
+        self, optimal_weights: np.ndarray, smoothness_indicators: list[np.ndarray]
     ) -> list[np.ndarray]:
         """
         Compute nonlinear WENO weights from smoothness indicators.
@@ -1316,7 +1322,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         axis: int,
         spatial_dim: int,
         stencil_index: int,
-        stencil_coeffs: np.ndarray
+        stencil_coeffs: np.ndarray,
     ) -> np.ndarray:
         """
         Compute derivative using specific WENO stencil.
@@ -1353,11 +1359,11 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
             # Apply WENO5 reconstruction coefficients for derivatives
             # These are different from interpolation coefficients
             if stencil_index == 0:  # S0 derivative coefficients
-                deriv_coeffs = np.array([-11.0/6.0, 3.0, -3.0/2.0, 1.0/3.0])[:stencil_size]
+                deriv_coeffs = np.array([-11.0 / 6.0, 3.0, -3.0 / 2.0, 1.0 / 3.0])[:stencil_size]
             elif stencil_index == 1:  # S1 derivative coefficients
-                deriv_coeffs = np.array([1.0/3.0, -1.0/2.0, 1.0, -1.0/6.0])[:stencil_size]
+                deriv_coeffs = np.array([1.0 / 3.0, -1.0 / 2.0, 1.0, -1.0 / 6.0])[:stencil_size]
             elif stencil_index == 2:  # S2 derivative coefficients
-                deriv_coeffs = np.array([1.0/6.0, -1.0, 1.0/2.0, 1.0/3.0])[:stencil_size]
+                deriv_coeffs = np.array([1.0 / 6.0, -1.0, 1.0 / 2.0, 1.0 / 3.0])[:stencil_size]
 
         elif self.weno_order == 3:
             # WENO3 stencil patterns
@@ -1377,7 +1383,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
             deriv_coeffs = stencil_coeffs
 
         # Apply stencil with proper coefficients
-        for j, (offset, coeff) in enumerate(zip(offsets, deriv_coeffs)):
+        for _j, (offset, coeff) in enumerate(zip(offsets, deriv_coeffs)):
             # Extract field values at stencil points
             field_slice = self._extract_field_slice(extended_field, axis, offset)
             stencil_result += coeff * field_slice
@@ -1423,11 +1429,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
             )
 
     def _compute_weno5_smoothness_indicator(
-        self,
-        extended_field: np.ndarray,
-        axis: int,
-        stencil_index: int,
-        result_shape: list[int]
+        self, extended_field: np.ndarray, axis: int, stencil_index: int, result_shape: list[int]
     ) -> np.ndarray:
         """
         Compute WENO5 smoothness indicator β_k.
@@ -1452,11 +1454,11 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
 
             # First derivative terms: (∂p/∂x)^2
             # p'(x) for quadratic interpolation through 3 points
-            d1_term = 13.0/12.0 * (u_im2 - 2*u_im1 + u_i)**2
+            d1_term = 13.0 / 12.0 * (u_im2 - 2 * u_im1 + u_i) ** 2
 
             # Second derivative terms: (∂²p/∂x²)^2
             # For quadratic p(x), second derivative is constant
-            d2_term = 1.0/4.0 * (u_im2 - 4*u_im1 + 3*u_i)**2
+            d2_term = 1.0 / 4.0 * (u_im2 - 4 * u_im1 + 3 * u_i) ** 2
 
             beta = d1_term + d2_term
 
@@ -1467,8 +1469,8 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
             u_ip1 = self._extract_field_slice(extended_field, axis, 1)
 
             # WENO5 S1 smoothness indicator
-            d1_term = 13.0/12.0 * (u_im1 - 2*u_i + u_ip1)**2
-            d2_term = 1.0/4.0 * (u_im1 - u_ip1)**2
+            d1_term = 13.0 / 12.0 * (u_im1 - 2 * u_i + u_ip1) ** 2
+            d2_term = 1.0 / 4.0 * (u_im1 - u_ip1) ** 2
 
             beta = d1_term + d2_term
 
@@ -1479,8 +1481,8 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
             u_ip2 = self._extract_field_slice(extended_field, axis, 2)
 
             # WENO5 S2 smoothness indicator
-            d1_term = 13.0/12.0 * (u_i - 2*u_ip1 + u_ip2)**2
-            d2_term = 1.0/4.0 * (3*u_i - 4*u_ip1 + u_ip2)**2
+            d1_term = 13.0 / 12.0 * (u_i - 2 * u_ip1 + u_ip2) ** 2
+            d2_term = 1.0 / 4.0 * (3 * u_i - 4 * u_ip1 + u_ip2) ** 2
 
             beta = d1_term + d2_term
 
@@ -1491,11 +1493,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         return beta + self.epsilon  # Add small constant to avoid division by zero
 
     def _compute_weno3_smoothness_indicator(
-        self,
-        extended_field: np.ndarray,
-        axis: int,
-        stencil_index: int,
-        result_shape: list[int]
+        self, extended_field: np.ndarray, axis: int, stencil_index: int, result_shape: list[int]
     ) -> np.ndarray:
         """
         Compute WENO3 smoothness indicator.
@@ -1505,12 +1503,12 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         if stencil_index == 0:  # Left stencil
             u_im1 = self._extract_field_slice(extended_field, axis, -1)
             u_i = self._extract_field_slice(extended_field, axis, 0)
-            beta = (u_i - u_im1)**2
+            beta = (u_i - u_im1) ** 2
 
         elif stencil_index == 1:  # Right stencil
             u_i = self._extract_field_slice(extended_field, axis, 0)
             u_ip1 = self._extract_field_slice(extended_field, axis, 1)
-            beta = (u_ip1 - u_i)**2
+            beta = (u_ip1 - u_i) ** 2
 
         else:
             beta = np.ones(result_shape) * 1e6
@@ -1518,11 +1516,7 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         return beta + self.epsilon
 
     def _compute_simple_smoothness_indicator(
-        self,
-        extended_field: np.ndarray,
-        axis: int,
-        stencil_index: int,
-        result_shape: list[int]
+        self, extended_field: np.ndarray, axis: int, stencil_index: int, result_shape: list[int]
     ) -> np.ndarray:
         """Fallback simple smoothness indicator based on local variation."""
         # Get local stencil points
@@ -1544,7 +1538,9 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
 
         return variation + self.epsilon
 
-    def _extract_field_slice(self, extended_field: np.ndarray, axis: int, offset: int) -> np.ndarray:
+    def _extract_field_slice(
+        self, extended_field: np.ndarray, axis: int, offset: int
+    ) -> np.ndarray:
         """
         Extract field values at specified offset from center.
 
@@ -1558,7 +1554,11 @@ class WENOFiniteDifference(FiniteDifferenceScheme):
         """
         # Calculate absolute index
         start_idx = self.ghost_points + offset
-        end_idx = -self.ghost_points + offset if offset < 0 else (-self.ghost_points + offset if offset > 0 else -self.ghost_points)
+        end_idx = (
+            -self.ghost_points + offset
+            if offset < 0
+            else (-self.ghost_points + offset if offset > 0 else -self.ghost_points)
+        )
 
         # Build slice tuple
         slice_tuple = [slice(None)] * extended_field.ndim

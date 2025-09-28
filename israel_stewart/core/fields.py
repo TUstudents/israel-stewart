@@ -1068,30 +1068,60 @@ class ISFieldConfiguration:
 
         return validation
 
-    def copy(self) -> "ISFieldConfiguration":
-        """Create deep copy of field configuration."""
+    def get_all_field_names(self) -> list[str]:
+        """Get list of all field array names for copying operations."""
+        return [
+            # Primary hydrodynamic variables
+            "rho",
+            "n",
+            "u_mu",
+            # Dissipative fluxes
+            "Pi",
+            "pi_munu",
+            "q_mu",
+            # Auxiliary fields
+            "rho_tilde",
+            "u_mu_tilde",
+            # Thermodynamic variables
+            "pressure",
+            "temperature",
+            # Transport coefficients
+            "eta",
+            "zeta",
+            "kappa",
+        ]
+
+    def copy(self, fields: list[str] | None = None) -> "ISFieldConfiguration":
+        """
+        Create deep copy of field configuration with selective copying.
+
+        Args:
+            fields: List of field names to copy. If None, copies all fields.
+                   Available fields: rho, n, u_mu, Pi, pi_munu, q_mu,
+                   rho_tilde, u_mu_tilde, pressure, temperature, eta, zeta, kappa
+
+        Returns:
+            New ISFieldConfiguration with copied fields
+        """
         new_config = ISFieldConfiguration(self.grid)
 
-        # Copy all field arrays
-        new_config.rho = self.rho.copy()
-        new_config.n = self.n.copy()
-        new_config.u_mu = self.u_mu.copy()
-        new_config.Pi = self.Pi.copy()
-        new_config.pi_munu = self.pi_munu.copy()
-        new_config.q_mu = self.q_mu.copy()
+        # Determine which fields to copy
+        if fields is None:
+            fields_to_copy = self.get_all_field_names()
+        else:
+            # Validate field names
+            valid_fields = set(self.get_all_field_names())
+            invalid_fields = set(fields) - valid_fields
+            if invalid_fields:
+                raise ValueError(f"Invalid field names: {invalid_fields}")
+            fields_to_copy = fields
 
-        # Copy auxiliary fields
-        new_config.rho_tilde = self.rho_tilde.copy()
-        new_config.u_mu_tilde = self.u_mu_tilde.copy()
+        # Copy only requested fields
+        for field_name in fields_to_copy:
+            field_data = getattr(self, field_name)
+            setattr(new_config, field_name, field_data.copy())
 
-        # Copy thermodynamic variables
-        new_config.pressure = self.pressure.copy()
-        new_config.temperature = self.temperature.copy()
-        new_config.eta = self.eta.copy()
-        new_config.zeta = self.zeta.copy()
-        new_config.kappa = self.kappa.copy()
-
-        # Copy validation state
+        # Always copy validation state
         new_config._constraints_enforced = self._constraints_enforced
         new_config._thermodynamic_consistent = self._thermodynamic_consistent
 

@@ -206,9 +206,9 @@ class CovariantDerivative:
         # result shape: (...)
         christoffel_term = optimized_einsum("iil,...l->...", christoffel, components)
 
-        # 3. Return the sum as a scalar field
-        result: np.ndarray = partial_deriv_trace + christoffel_term
-        return result
+        # 3. Return the sum as a scalar field (in-place addition to save memory)
+        partial_deriv_trace += christoffel_term
+        return partial_deriv_trace
 
     def material_derivative(
         self,
@@ -1110,12 +1110,10 @@ class ProjectionOperator:
                 "i,j,ij->", u_cov.components, u_cov.components, tensor.components
             )
         else:
-            scalar = 0
-            for mu in range(4):
-                for nu in range(4):
-                    scalar += (
-                        u_cov.components[mu] * u_cov.components[nu] * tensor.components[mu, nu]
-                    )
+            # Vectorized computation: scalar = u_μ u_ν T^μν
+            scalar = optimized_einsum(
+                "m,n,mn->", u_cov.components, u_cov.components, tensor.components
+            )
 
         return scalar
 
@@ -1145,15 +1143,13 @@ class ProjectionOperator:
                 tensor_mixed.components,
             )
         else:
-            vector = sp.zeros(4, 1)
-            for mu in range(4):
-                for nu in range(4):
-                    for alpha in range(4):
-                        vector[mu] -= (
-                            delta.components[mu, nu]
-                            * u_cov.components[alpha]
-                            * tensor_mixed.components[alpha, nu]
-                        )
+            # Vectorized computation: v^μ = -Δ^μν u_α T^α_ν
+            # This is equivalent to: v^μ = -Δ^μν (u_α T^α_ν)
+            # First contract u_α T^α_ν to get a vector, then contract with delta
+            contracted_vector = optimized_einsum(
+                "a,av->v", u_cov.components, tensor_mixed.components
+            )
+            vector = -optimized_einsum("mn,n->m", delta.components, contracted_vector)
 
         return FourVector(vector, False, self.metric)
 

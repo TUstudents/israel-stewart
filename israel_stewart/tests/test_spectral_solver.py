@@ -26,6 +26,7 @@ class TestSpectralISolver:
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 32, 32, 32),  # 32^3 spatial grid for FFT efficiency
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         fields = ISFieldConfiguration(grid)
@@ -259,16 +260,32 @@ class TestSpectralISolver:
         # Apply dealiasing
         dealiased_k = solver._apply_dealiasing(field_k)
 
-        # Check that high-frequency modes are zeroed
-        # 2/3 rule should zero modes beyond 2*n/3
+        # Check that high-frequency modes are zeroed based on actual frequency values
+        # The 2/3 rule zeros modes where |k| > (2/3) * k_max in any direction
         nx, ny, nz = 32, 32, 32
-        kx_max = int(nx * 2 // 3)
-        ky_max = int(ny * 2 // 3)
-        kz_max = int(nz * 2 // 3)
 
-        assert np.allclose(dealiased_k[kx_max:, :, :], 0)
-        assert np.allclose(dealiased_k[:, ky_max:, :], 0)
-        assert np.allclose(dealiased_k[:, :, kz_max:], 0)
+        # Get actual frequency values
+        kx_vals = np.fft.fftfreq(nx, solver.dx) * 2 * np.pi
+        ky_vals = np.fft.fftfreq(ny, solver.dy) * 2 * np.pi
+        kz_vals = np.fft.fftfreq(nz, solver.dz) * 2 * np.pi
+
+        # Calculate 2/3 cutoffs
+        kx_cutoff = (2.0 / 3.0) * np.pi / solver.dx
+        ky_cutoff = (2.0 / 3.0) * np.pi / solver.dy
+        kz_cutoff = (2.0 / 3.0) * np.pi / solver.dz
+
+        # Find indices that should be zeroed
+        kx_zero_indices = np.where(np.abs(kx_vals) > kx_cutoff)[0]
+        ky_zero_indices = np.where(np.abs(ky_vals) > ky_cutoff)[0]
+        kz_zero_indices = np.where(np.abs(kz_vals) > kz_cutoff)[0]
+
+        # Check that high-frequency modes are actually zeroed
+        if len(kx_zero_indices) > 0:
+            assert np.allclose(dealiased_k[kx_zero_indices, :, :], 0)
+        if len(ky_zero_indices) > 0:
+            assert np.allclose(dealiased_k[:, ky_zero_indices, :], 0)
+        if len(kz_zero_indices) > 0:
+            assert np.allclose(dealiased_k[:, :, kz_zero_indices], 0)
 
     def test_cache_functionality(self, setup_spectral_solver: tuple) -> None:
         """Test FFT result caching."""
@@ -1477,6 +1494,7 @@ class TestSpectralLaplacianPhysics:
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
             grid_points=(10, 32, 32, 32),  # Use 32³ for clean FFT
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         fields = ISFieldConfiguration(grid)

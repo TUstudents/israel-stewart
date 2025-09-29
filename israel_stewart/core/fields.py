@@ -582,13 +582,7 @@ class HydrodynamicState:
         }
 
     def __str__(self) -> str:
-        return (
-            f"HydrodynamicState(\n"
-            f"  {self.thermodynamic}\n"
-            f"  {self.velocity}\n"
-            f"  {self.transport}\n"
-            f")"
-        )
+        return f"HydrodynamicState(\n  {self.thermodynamic}\n  {self.velocity}\n  {self.transport}\n)"
 
     def __repr__(self) -> str:
         return (

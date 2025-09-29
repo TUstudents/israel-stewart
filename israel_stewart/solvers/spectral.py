@@ -69,6 +69,15 @@ class SpectralISolver:
                 stacklevel=2,
             )
 
+        # Check if spatial_ranges attribute exists for proper grid setup validation
+        if not hasattr(grid, "spatial_ranges"):
+            warnings.warn(
+                "Using potentially incorrect grid spacing fallback. Grid is missing spatial_ranges attribute. "
+                "This may lead to incorrect FFT frequency computations for spectral methods.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Use grid spacing directly (now correct for periodic boundaries)
         self.dx, self.dy, self.dz = grid.spatial_spacing
 

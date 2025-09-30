@@ -59,37 +59,11 @@ The package follows a modular physics-based architecture:
 - `uv sync --extra jupyter` - Install with Jupyter support
 - `uv sync --extra all` - Install all optional dependencies
 
-**Development Scripts (Recommended)**:
-- `./scripts/format.sh` - Comprehensive code formatting with multi-pass execution
-- `./scripts/format.sh --all-files` - Format entire codebase
-- `./scripts/test.sh` - Run test suite (excludes slow tests by default)
-- `./scripts/test.sh --coverage` - Run tests with coverage reporting
-- `./scripts/build.sh` - Build packages with full validation
-- `./scripts/build.sh --clean` - Clean build from scratch
+**Scripts**: `./scripts/format.sh` (or `--all-files`), `./scripts/test.sh` (or `--coverage`), `./scripts/build.sh` (or `--clean`)
 
-**Direct Commands (Alternative)**:
-- `uv run ruff check` - Run linting
-- `uv run ruff format` - Format code
-- `uv run mypy israel_stewart` - Type checking
-- `uv run pytest` - Run tests
-- `uv run pytest -m "not slow"` - Skip slow tests
-- `uv run pytest --cov` - Run tests with coverage
+**Direct**: `uv run pytest`, `uv run ruff check`, `uv run ruff format`, `uv run mypy israel_stewart`
 
-**Pre-commit Hooks**:
-- `uv run pre-commit install` - Install git hooks (one-time setup)
-- `uv run pre-commit run --all-files` - Run all hooks manually
-
-**Development Environment**:
-- `uv run jupyter lab` - Start JupyterLab
-- `uv run python -m israel_stewart` - Run package
-
-**Logging Configuration**:
-The package includes structured logging with automatic initialization. Configure via environment variables:
-- `export ISRAEL_STEWART_LOG_LEVEL=DEBUG` - Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `export ISRAEL_STEWART_LOG_FORMAT=structured` - Use structured logging (console, json, structured)
-- `export ISRAEL_STEWART_LOG_PERFORMANCE=true` - Enable performance tracking logs
-- `export ISRAEL_STEWART_LOG_MEMORY=true` - Enable memory usage logging
-- `export ISRAEL_STEWART_LOG_FILE=/path/to/logfile.log` - Optional file logging with rotation
+**Logging**: Set `ISRAEL_STEWART_LOG_LEVEL`, `ISRAEL_STEWART_LOG_FORMAT`, `ISRAEL_STEWART_LOG_PERFORMANCE`, `ISRAEL_STEWART_LOG_MEMORY`, `ISRAEL_STEWART_LOG_FILE`
 
 **Testing Complete Israel-Stewart System**:
 ```python
@@ -140,99 +114,61 @@ print(f"Recommended timestep: {stability['recommended_dt']}")
 
 ## Development Notes
 
-- Requires Python 3.12+
-- Uses ruff for linting and formatting (replaces black/flake8/isort)
-- Licensed under CC-BY-NC-SA-4.0 (non-commercial research use)
-- **Greek Letters in Documentation**: When writing physics equations in docstrings, always use proper UTF-8 Greek letters (π, μ, ν, λ, ξ, ρ, σ, τ, θ, ω, Π, Λ, Σ, Ω, ∇) instead of ASCII approximations (pi, mu, nu, lambda, xi, rho, sigma, tau, theta, omega, Pi, Lambda, Sigma, Omega, nabla). This ensures mathematical clarity and professional appearance in documentation.
-- Core tensor framework is fully implemented with modular architecture
-- Physics equations modules (`equations/`) are placeholder files ready for implementation
-- Solver modules (`solvers/`) are placeholder files ready for implementation
-- The physics follows the Israel-Stewart second-order viscous hydrodynamics formalism
-- Tensor operations should respect general covariance and work in curved spacetime
-- Numerical methods should handle the stiff relaxation timescales in the IS equations
-- The RG analysis module implements field-theoretic renormalization group techniques for hydrodynamic fluctuations
-- **Logging System**: Production-ready structured logging replaces debug prints and excessive warnings. Use `from israel_stewart.utils import get_logger` for module logging, and specialized loggers for performance/physics validation.
+- Python 3.12+, ruff (linting/formatting), CC-BY-NC-SA-4.0 license
+- **Greek letters in docs**: Use UTF-8 (π, μ, ν, θ, ∇) not ASCII
+- **Logging**: `from israel_stewart.utils import get_logger`
+- Israel-Stewart second-order viscous hydrodynamics, general covariance in curved spacetime
 
-## Development Workflow
+### Critical: Spectral Solver Boundary Conditions
 
-**Quick Start**:
-1. `uv sync --extra dev` - Install all development dependencies
-2. `uv run pre-commit install` - Set up git hooks (one-time)
-3. `./scripts/format.sh --all-files` - Format entire codebase
-4. `./scripts/test.sh --coverage` - Run comprehensive tests
+**ALWAYS use `boundary_conditions="periodic"` for spectral methods:**
 
-**Daily Development**:
-1. Make changes to code
-2. `./scripts/format.sh` - Auto-fix formatting and linting
-3. `./scripts/test.sh` - Run relevant tests
-4. `git commit` - Pre-commit hooks run automatically
-5. For releases: `./scripts/build.sh --clean`
+```python
+# CORRECT:
+grid = SpacetimeGrid(
+    coordinate_system="cartesian",
+    spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
+    grid_points=(8, 16, 16, 16),
+    boundary_conditions="periodic",  # Required for FFT-based methods!
+)
 
-**CI/CD Integration**:
-All scripts support `--quiet` flag for automated environments and have proper exit codes for pipeline integration.
+# WRONG (defaults to "dirichlet", causes 6% error in derivatives):
+grid = SpacetimeGrid(..., grid_points=(8, 16, 16, 16))  # Missing boundary_conditions
+```
 
-## Module Dependencies
+**Why**: FFT assumes periodicity. Dirichlet: `dx = L/(N-1)`, Periodic: `dx = L/N`. Wrong spacing shifts wavenumbers by `(N-1)/N`, causing systematic derivative errors. See `EXPANSION_SCALAR_BUG_FIX.md`.
 
-The typical flow is: `core` → `equations` → `solvers` → `benchmarks`, with `stochastic`, `rg_analysis`, and `linearization` as specialized analysis tools that depend on the base physics implementation.
+### Testing Guidelines
+
+**When tests fail, investigate the root cause instead of weakening assertions!**
+
+- Use exact validation for spectral methods (error < 1e-10), not weak correlations
+- Create diagnostic scripts for complex bugs (see `debug_expansion_scalar.py`, `debug_fft_simple.py`)
+- Verify boundary conditions in all spectral solver tests
+- Check error patterns - specific ratios like 15/16 reveal underlying issues
+
+## Workflow
+
+**Setup**: `uv sync --extra dev` → `uv run pre-commit install` → `./scripts/format.sh --all-files` → `./scripts/test.sh --coverage`
+
+**Daily**: Edit code → `./scripts/format.sh` → `./scripts/test.sh` → `git commit`
+
+**CI/CD**: Scripts support `--quiet` flag, proper exit codes
+
+**Module flow**: `core` → `equations` → `solvers` → `benchmarks` (+ `stochastic`, `rg_analysis`, `linearization`)
 
 ## Current Implementation Status
 
-**Completed Core Modules:**
-- ✅ **Tensor Framework**: Fully modularized tensor algebra system
-  - `tensor_base.py`: TensorField class with automatic index management
-  - `four_vectors.py`: FourVector with Lorentz boosts and relativistic operations
-  - `stress_tensors.py`: StressEnergyTensor and ViscousStressTensor classes
-  - `derivatives.py`: CovariantDerivative and ProjectionOperator for 3+1 decomposition
-  - `transformations.py`: Lorentz and coordinate transformations
-  - `tensor_utils.py`: Validation, type guards, and optimization utilities
-  - `performance.py`: Performance monitoring with operation timing and recommendations
-- ✅ **Metrics & Christoffel Symbols**: Complete curved spacetime support
-  - `MinkowskiMetric`: Flat spacetime with both signature conventions
-  - `GeneralMetric`: Arbitrary curved spacetimes with symbolic/numerical support
-  - `MilneMetric`: Boost-invariant coordinates for relativistic heavy-ion collisions
-  - `BJorkenMetric`: Specialized Bjorken flow implementation
-  - `FLRWMetric`: Cosmological Friedmann-Lemaître-Robertson-Walker metric
-  - `SchwarzschildMetric`: Black hole spacetime metric
-  - **Numerical Christoffel computation**: Finite difference derivatives on arbitrary grids
-  - **Symbolic Christoffel computation**: Automatic symbolic differentiation
-  - **Arbitrary rank tensor contractions**: Support for tensors of any rank
-  - **Grid integration**: Direct integration with SpacetimeGrid coordinate systems
-- ✅ **Fields**: Thermodynamic state, velocity fields, and transport coefficients
-- ✅ **Constants**: Physical constants in natural units with validation functions
+**Completed Core:**
+- ✅ **Tensor Framework**: TensorField (automatic index management), FourVector (Lorentz boosts), StressEnergyTensor, ViscousStressTensor, CovariantDerivative, ProjectionOperator (3+1 decomposition), transformations, performance monitoring
+- ✅ **Metrics**: Minkowski, Milne, Bjorken, FLRW, Schwarzschild; Christoffel symbols (numerical + symbolic); arbitrary rank tensor contractions
+- ✅ **Fields & Constants**: Thermodynamic state, velocity fields, transport coefficients, natural units
 
-**Completed Physics Modules:**
-- ✅ **Conservation Laws** (`equations/conservation.py`): Complete energy-momentum conservation ∇_μ T^μν = 0
-  - Full Israel-Stewart stress-energy tensor construction
-  - Covariant divergence computation with Christoffel symbols
-  - Particle number conservation ∇_μ N^μ = 0
-  - Evolution equation extraction from conservation laws
-  - Comprehensive validation with 31 test cases
-- ✅ **Relaxation Equations** (`equations/relaxation.py`): Complete Israel-Stewart second-order viscous evolution
-  - **Full relaxation dynamics**: Bulk pressure Π, shear tensor π^μν, heat flux q^μ evolution
-  - **All second-order coupling terms**: λ_ππ, λ_πΠ, λ_πq, ξ₁, ξ₂ nonlinear coefficients
-  - **Multiple numerical methods**: Explicit, implicit, and exponential integrators
-  - **Stability analysis**: Automatic stiffness detection and timestep recommendations
-  - **Symbolic equation framework**: SymPy-based exact derivative computation
-  - **Performance optimization**: Efficient tensor contractions with monitoring
-  - **Enhanced transport coefficients**: Complete second-order coefficient framework
-  - **Comprehensive validation**: 30+ test cases covering all physics and numerical methods
+**Completed Physics:**
+- ✅ **Conservation Laws**: ∇_μ T^μν = 0 (31 tests)
+- ✅ **Relaxation Equations**: IS second-order (Π, π^μν, q^μ), all couplings (λ_ππ, λ_πΠ, λ_πq, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (30+ tests)
+- ✅ **Spectral Solver**: FFT-based, 72% coverage, 58/59 tests
 
-**Next Implementation Priority:**
-1. **Transport Coefficients** (`equations/coefficients.py`): Extended temperature and density-dependent viscosities
-2. **Numerical Solvers** (`solvers/`): Specialized time integration schemes for stiff IS equations
-3. **Advanced Field Dynamics** (`equations/constraints.py`): Thermodynamic consistency enforcement
+**Next**: Transport coefficients (T/ρ-dependent viscosities), Benchmarks (Bjorken, sound waves)
 
-**Key Features Implemented:**
-- Automatic covariant/contravariant index tracking
-- Metric signature handling (mostly-plus vs mostly-minus conventions)
-- Einstein summation with opt_einsum optimization
-- 3+1 fluid decomposition with projection operators
-- **Complete Christoffel symbol framework**: Numerical and symbolic computation
-- **Curved spacetime support**: Full general relativistic Israel-Stewart hydrodynamics
-- **Arbitrary coordinate systems**: Minkowski, Milne, FLRW, Schwarzschild metrics
-- **Robust covariant derivatives**: Support for tensors of arbitrary rank
-- Performance monitoring for computational bottlenecks
-- Comprehensive validation with physics error checking (90+ total test cases)
-- **Complete Israel-Stewart implementation**: Production-ready second-order viscous hydrodynamics
-- **Advanced numerical methods**: Implicit solvers, exponential integrators, stability analysis
-- **Full second-order physics**: All coupling terms, nonlinear relaxation, thermodynamic constraints
+**Key Features**: Automatic index tracking, Einstein summation (opt_einsum), metric signatures, 3+1 decomposition, Christoffel symbols, covariant derivatives (arbitrary rank), curved spacetime, 90+ tests

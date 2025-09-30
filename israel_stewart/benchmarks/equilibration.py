@@ -41,8 +41,9 @@ from ..core.derivatives import CovariantDerivative, ProjectionOperator
 from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.four_vectors import FourVector
 from ..core.metrics import GeneralMetric, MinkowskiMetric
+from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
-from ..core.tensor_base import SpacetimeGrid, TensorField
+from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
 from ..equations.relaxation import ISRelaxationEquations
 

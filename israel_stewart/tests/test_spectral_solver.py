@@ -843,7 +843,12 @@ class TestSpectralValidation:
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 32, 32, 32),
+            grid_points=(
+                10,
+                16,
+                16,
+                16,
+            ),  # Reduced from 32³ for speed (still sufficient resolution)
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -855,7 +860,7 @@ class TestSpectralValidation:
         k = 1.0  # Wave number
         omega = c_s * k  # Dispersion: ω = c_s·k
 
-        x = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+        x = np.linspace(0, 2 * np.pi, 16, endpoint=False)
         X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
         # Initial wave (t=0) - small amplitude for linear regime

@@ -210,26 +210,28 @@ class ConservationLaws:
         """
         Get coordinate arrays for numerical derivatives.
 
+        CRITICAL: Must use grid's coordinate arrays to respect boundary_conditions.
+        SpacetimeGrid creates coordinates with proper spacing:
+        - periodic: dx = L/N (excludes endpoint)
+        - dirichlet/neumann: dx = L/(N-1) (includes endpoint)
+
         Returns:
             List of coordinate arrays [t, x, y, z]
         """
         grid = self.fields.grid
 
-        # For SpacetimeGrid, use the coordinates attribute
+        # Always use grid's coordinate arrays (respects boundary_conditions)
         if hasattr(grid, "coordinates") and isinstance(grid.coordinates, dict):
             # Extract coordinate arrays in order [t, x, y, z]
             coord_names = grid.coordinate_names
             return [grid.coordinates[name] for name in coord_names]
         else:
-            # Construct coordinate arrays from grid ranges
-            t_coords = np.linspace(grid.time_range[0], grid.time_range[1], grid.grid_points[0])
-
-            coord_arrays = [t_coords]
-            for i, (x_min, x_max) in enumerate(grid.spatial_ranges):
-                x_coords = np.linspace(x_min, x_max, grid.grid_points[i + 1])
-                coord_arrays.append(x_coords)
-
-            return coord_arrays
+            # Fallback should never be reached for SpacetimeGrid
+            # If it is, something is wrong with grid initialization
+            raise ValueError(
+                "Grid must have 'coordinates' attribute (SpacetimeGrid required). "
+                "Cannot reconstruct coordinates safely without knowing boundary_conditions."
+            )
 
     def _partial_derivative(self, field: np.ndarray, direction: int, coords: list) -> np.ndarray:
         """

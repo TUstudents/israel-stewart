@@ -868,8 +868,9 @@ class TestSpectralValidation:
         fields.rho[:] = rho_0 + amplitude * np.sin(k * X - omega * T)
         fields.pressure[:] = fields.rho / 3.0  # Conformal EOS
 
-        # Velocity field: δu^x = (c_s/ρ₀)·A·cos(k·x - ω·t)
-        u_x = (c_s / rho_0) * amplitude * np.cos(k * X - omega * T)
+        # Velocity field: δu^x = (c_s/ρ₀)·A·sin(k·x - ω·t)
+        # NOTE: Velocity and density must be IN PHASE for longitudinal sound wave
+        u_x = (c_s / rho_0) * amplitude * np.sin(k * X - omega * T)
         fields.u_mu[..., 1] = u_x
         fields.u_mu[..., 2] = 0.0
         fields.u_mu[..., 3] = 0.0
@@ -887,6 +888,21 @@ class TestSpectralValidation:
 
         # Store initial solution for comparison
         rho_initial = fields.rho.copy()
+
+        # Verify analytical solution satisfies conservation laws BEFORE refinement
+        if hydro.conservation is not None:
+            div_T_initial = hydro.conservation.divergence_T()
+            initial_violation = np.max(np.abs(div_T_initial))
+
+            # Analytical solution should satisfy ∂_μ T^μν ≈ 0 within discretization error
+            # For spectral methods with N points, error scales as e^(-cN) for smooth functions
+            discretization_tolerance = 1e-3 * rho_0 / grid.dt
+
+            assert initial_violation < discretization_tolerance, (
+                f"Analytical solution violates conservation: max|∂_μ T^μν| = {initial_violation:.6e}\n"
+                f"Expected: < {discretization_tolerance:.6e}\n"
+                f"This indicates the analytical solution is not a valid physical state."
+            )
 
         # Refine solution by enforcing conservation laws
         # (One step should be sufficient since we started with exact solution)
@@ -935,9 +951,9 @@ class TestSpectralValidation:
             error = np.max(np.abs(rho_actual - rho_expected[:, 0, 0]))
             relative_error = error / amplitude
 
-            assert relative_error < 0.2, (
+            assert relative_error < 0.05, (
                 f"Wave structure error at t={t:.3f}: {relative_error:.4f}\n"
-                f"Expected: < 20% for 4D spacetime refinement\n"
+                f"Expected: < 5% for spectral method with correct physics\n"
                 f"Max absolute error: {error:.6e}"
             )
 

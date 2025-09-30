@@ -563,15 +563,130 @@ class TestSpectralISHydrodynamics:
         assert np.all(np.isfinite(fields.pi_munu))
 
     def test_conservation_integration(self, setup_hydro_solver: tuple) -> None:
-        """Test integration with conservation laws."""
+        """Test stress-energy tensor physics with exact requirements.
+
+        Validates fundamental tensor properties:
+        1. Symmetry: T^μν = T^νμ (exact to machine precision)
+        2. Energy condition: T^00 ≥ 0 (physical requirement)
+        3. Trace structure: matches Israel-Stewart formalism
+
+        Tolerances:
+        - Symmetry: relative error < 1e-10 (machine precision)
+        - Energy: T^00 ≥ -1e-10 (numerical noise only)
+
+        If test fails: fix tensor construction, don't weaken tolerance!
+        """
         hydro_solver, fields = setup_hydro_solver
 
-        if hydro_solver.conservation is not None:
-            # Test stress-energy tensor computation
-            T_munu = hydro_solver.conservation.stress_energy_tensor()
+        if hydro_solver.conservation is None:
+            pytest.skip("Conservation module not available")
 
-            assert T_munu.shape == (*fields.rho.shape, 4, 4)
-            assert np.all(np.isfinite(T_munu))
+        # Compute stress-energy tensor
+        T_munu = hydro_solver.conservation.stress_energy_tensor()
+
+        # Basic validation
+        expected_shape = (*fields.rho.shape, 4, 4)
+        assert (
+            T_munu.shape == expected_shape
+        ), f"Wrong tensor shape: got {T_munu.shape}, expected {expected_shape}"
+        assert np.all(np.isfinite(T_munu)), (
+            f"Tensor contains NaN/Inf: "
+            f"NaN count: {np.sum(np.isnan(T_munu))}, "
+            f"Inf count: {np.sum(np.isinf(T_munu))}"
+        )
+
+        # PHYSICS TEST 1: Symmetry T^μν = T^νμ (EXACT requirement)
+        # This is a fundamental property - ANY violation indicates a bug
+        symmetry_violations = []
+
+        for mu in range(4):
+            for nu in range(mu + 1, 4):
+                T_mu_nu = T_munu[..., mu, nu]
+                T_nu_mu = T_munu[..., nu, mu]
+
+                diff = T_mu_nu - T_nu_mu
+                max_diff = np.max(np.abs(diff))
+                max_val = np.max(np.abs(T_mu_nu))
+
+                if max_val > 1e-14:
+                    # Relative error for non-zero components
+                    rel_error = max_diff / max_val
+                    if rel_error >= 1e-10:
+                        symmetry_violations.append(
+                            f"T^{mu}{nu} != T^{nu}{mu}: "
+                            f"max_diff={max_diff:.2e}, rel_error={rel_error:.2e}"
+                        )
+                else:
+                    # Absolute error for near-zero components
+                    if max_diff >= 1e-10:
+                        symmetry_violations.append(
+                            f"T^{mu}{nu} != T^{nu}{mu}: max_diff={max_diff:.2e}"
+                        )
+
+        assert len(symmetry_violations) == 0, (
+            "Stress-energy tensor NOT SYMMETRIC!\n"
+            "Violations found:\n" + "\n".join(symmetry_violations) + "\n"
+            "This indicates index transposition or construction bug.\n"
+            "FIX THE TENSOR CONSTRUCTION - do not weaken this tolerance!"
+        )
+
+        # PHYSICS TEST 2: Weak energy condition T^00 ≥ 0
+        # Negative energy density is unphysical
+        T00 = T_munu[..., 0, 0]
+        min_T00 = np.min(T00)
+
+        assert min_T00 >= -1e-10, (
+            f"NEGATIVE ENERGY DENSITY: min(T^00) = {min_T00:.3e}\n"
+            f"This violates the weak energy condition!\n"
+            f"Location of violation: {np.unravel_index(np.argmin(T00), T00.shape)}\n"
+            f"Check signs in stress-energy tensor construction.\n"
+            f"Numerical noise tolerance: -1e-10, but got {min_T00:.3e}"
+        )
+
+        # PHYSICS TEST 3: Trace structure (Israel-Stewart)
+        # For Israel-Stewart: T^μ_μ = ρ - 3P - 3Π (in Minkowski signature -+++)
+        # Metric-contracted trace: T^μ_μ = g_μν T^μν = -T^00 + T^11 + T^22 + T^33
+        trace = -T_munu[..., 0, 0] + T_munu[..., 1, 1] + T_munu[..., 2, 2] + T_munu[..., 3, 3]
+
+        assert np.all(np.isfinite(trace)), (
+            f"Trace contains NaN/Inf: "
+            f"NaN: {np.sum(np.isnan(trace))}, Inf: {np.sum(np.isinf(trace))}"
+        )
+
+        # Use latest time slice for trace check
+        trace_final = trace[-1]
+        rho_final = fields.rho[-1]
+        pressure_final = fields.pressure[-1]
+        Pi_final = fields.Pi[-1]
+
+        # Expected trace in Israel-Stewart formalism with metric contraction
+        # In rest frame: T^00 = ρ + π^00, T^ii = P + Π + π^ii (from projector Δ^μν)
+        # Trace: T^μ_μ = g_μν T^μν = -T^00 + T^11 + T^22 + T^33
+        #              = -ρ + 3(P + Π) + (-π^00 + π^11 + π^22 + π^33)
+        #              = -ρ + 3(P + Π) + π^μ_μ
+        # NOTE: Shear should be traceless (π^μ_μ = 0) but test fixture doesn't enforce this
+        pi_trace = (
+            -fields.pi_munu[-1, :, :, :, 0, 0]
+            + fields.pi_munu[-1, :, :, :, 1, 1]
+            + fields.pi_munu[-1, :, :, :, 2, 2]
+            + fields.pi_munu[-1, :, :, :, 3, 3]
+        )
+        expected_trace = -rho_final + 3.0 * (pressure_final + Pi_final) + pi_trace
+
+        # Check trace matches expectation
+        trace_diff = np.max(np.abs(trace_final - expected_trace))
+        expected_scale = np.max(np.abs(expected_trace))
+
+        if expected_scale > 1e-14:
+            trace_rel_error = trace_diff / expected_scale
+            assert trace_rel_error < 0.1, (
+                f"Trace structure incorrect: relative error = {trace_rel_error:.3f}\n"
+                f"Max absolute difference: {trace_diff:.3e}\n"
+                f"Expected scale: {expected_scale:.3e}\n"
+                f"Expected: T^μ_μ = ρ - 3(P + Π)\n"
+                f"This indicates wrong sign or metric signature issue.\n"
+                f"Check Israel-Stewart tensor construction!"
+            )
 
     def test_field_copying(self, setup_hydro_solver: tuple) -> None:
         """Test field state copying functionality."""
@@ -711,7 +826,19 @@ class TestSpectralValidation:
         assert np.max(fields.pressure) < 100 * initial_pressure, "Pressure should not explode"
 
     def test_sound_wave_propagation(self) -> None:
-        """Test linear sound wave propagation in spectral method."""
+        """Test linear sound wave propagation with exact physics validation.
+
+        Validates:
+        - Wave propagates at sound speed c_s = √(∂P/∂ρ) = √(1/3) for conformal EOS
+        - Dispersion relation: ω = c_s·k (linear acoustics)
+        - Wave structure preserved (spectral methods should have minimal dissipation)
+
+        Physics tolerances:
+        - Propagation error: < 5% (spectral methods are high-order accurate)
+        - Correlation: > 0.95 (minimal numerical dissipation expected)
+
+        If test fails: investigate time integration or conservation implementation!
+        """
         grid = SpacetimeGrid(
             coordinate_system="cartesian",
             time_range=(0.0, 1.0),
@@ -722,29 +849,86 @@ class TestSpectralValidation:
 
         fields = ISFieldConfiguration(grid)
 
-        # Set up sound wave perturbation
+        # Sound wave physics: ρ(x,t) = ρ₀ + A·sin(k·x - ω·t)
+        # Conformal EOS: P = ρ/3 → c_s² = ∂P/∂ρ = 1/3
+        c_s = np.sqrt(1.0 / 3.0)  # ≈ 0.5774 (exact)
+        k = 1.0  # Wave number
+        omega = c_s * k  # Dispersion: ω = c_s·k
+
         x = np.linspace(0, 2 * np.pi, 32, endpoint=False)
         X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
 
-        # Small density perturbation
+        # Initial wave (t=0) - small amplitude for linear regime
         amplitude = 0.01
-        fields.rho = 1.0 + amplitude * np.sin(X)
-        fields.pressure = 0.33 + amplitude * 0.33 * np.sin(X)
-        fields.u_mu[..., 0] = 1.0
+        rho_0 = 1.0
+        # NOTE: Must use .copy() since broadcast_to() creates readonly view
+        rho_wave = rho_0 + amplitude * np.sin(k * X)
+        fields.rho[:] = np.broadcast_to(rho_wave, (*grid.shape,)).copy()
+        fields.pressure[:] = fields.rho / 3.0  # Conformal EOS
 
-        solver = SpectralISolver(grid, fields)
+        # Sound wave requires velocity perturbation: δu^x = (c_s/ρ₀) * k * amplitude * cos(k*x)
+        # This ensures proper coupling between density and velocity oscillations
+        fields.u_mu[..., 0] = 1.0  # Timelike component
+        u_x_perturbation = (c_s / rho_0) * amplitude * np.cos(k * X)
+        fields.u_mu[:, :, :, :, 1] = u_x_perturbation  # Spatial x-component
 
-        # Test that perturbation preserves structure
-        grad_rho = solver.spatial_gradient(fields.rho)
+        # CRITICAL: Zero viscosity for clean wave propagation
+        # If test fails with viscosity, that's a separate issue
+        coeffs = TransportCoefficients(
+            shear_viscosity=0.0,
+            bulk_viscosity=0.0,
+        )
 
-        # Gradient should be well-behaved
-        assert np.all(np.isfinite(grad_rho[0]))
-        assert np.all(np.isfinite(grad_rho[1]))
-        assert np.all(np.isfinite(grad_rho[2]))
+        hydro = SpectralISHydrodynamics(grid, fields, coeffs)
 
-        # x-gradient should dominate for sin(x) perturbation
-        assert np.max(np.abs(grad_rho[0])) > np.max(np.abs(grad_rho[1]))
-        assert np.max(np.abs(grad_rho[0])) > np.max(np.abs(grad_rho[2]))
+        # Time evolution
+        dt = 0.05  # CFL-stable timestep
+        n_steps = 10
+        total_time = dt * n_steps
+
+        for step in range(n_steps):
+            hydro.time_step(dt)
+            # Sanity check at each step
+            assert np.all(np.isfinite(fields.rho)), f"Density became non-finite at step {step}"
+
+        # Physics validation: wave should propagate distance Δx = c_s * t
+        expected_shift = c_s * total_time
+
+        # Extract latest time slice
+        rho_final = fields.rho[-1, :, :, :]
+        expected_rho = rho_0 + amplitude * np.sin(k * (X - expected_shift))
+
+        # Test 1: Propagation accuracy (spectral methods are high-order)
+        rho_error = np.max(np.abs(rho_final - expected_rho))
+        relative_error = rho_error / amplitude
+
+        assert relative_error < 0.05, (
+            f"Sound wave propagation error too large: {relative_error:.4f}.\n"
+            f"Expected: < 5% for spectral method.\n"
+            f"Wave should propagate at c_s = {c_s:.6f}.\n"
+            f"Distance expected: {expected_shift:.6f}.\n"
+            f"If this fails: check time integration or conservation laws!"
+        )
+
+        # Test 2: Wave structure preservation (minimal dissipation)
+        correlation = np.corrcoef(rho_final.flatten(), expected_rho.flatten())[0, 1]
+
+        assert correlation > 0.95, (
+            f"Wave structure not preserved: correlation = {correlation:.4f}.\n"
+            f"Expected: > 0.95 (spectral methods have low dissipation).\n"
+            f"If this fails: check numerical dissipation or stability!"
+        )
+
+        # Test 3: Energy magnitude check (shouldn't explode or vanish)
+        final_amplitude = np.max(rho_final) - np.min(rho_final)
+        amplitude_ratio = final_amplitude / (2 * amplitude)
+
+        assert 0.5 < amplitude_ratio < 2.0, (
+            f"Wave amplitude changed drastically: ratio = {amplitude_ratio:.4f}.\n"
+            f"Initial amplitude: {amplitude:.4f}, Final: {final_amplitude:.4f}.\n"
+            f"Expected: ratio between 0.5 and 2.0.\n"
+            f"If this fails: check energy conservation!"
+        )
 
 
 class TestSpectralSolverFixes:
@@ -1696,18 +1880,24 @@ class TestARS22IMEXRK:
 
         # Very stiff: short relaxation time
         original_bulk_time = coeffs.bulk_relaxation_time
+        original_bulk_visc = coeffs.bulk_viscosity
         coeffs.bulk_relaxation_time = 0.01
-        coeffs.bulk_viscosity = 0.1
+        coeffs.bulk_viscosity = 0.0  # Disable diffusion for analytical solution validity
 
         # Large timestep relative to relaxation time (stiff!)
         dt = 0.1  # dt >> τ_Π
         gamma_dt = (1.0 - 1.0 / np.sqrt(2)) * dt
 
-        # Create RHS for implicit solve
+        # Create RHS for implicit solve (complete field dictionary required)
+        # For implicit equation: Π_new = RHS + γ·dt·(-Π_new/τ_Π)
+        # Solution: Π_new = RHS / (1 + γ·dt/τ_Π)
+        # Use RHS = Π_initial to test proper relaxation behavior
         rhs_dict = {
-            "Pi": -Pi_initial / coeffs.bulk_relaxation_time * gamma_dt,
+            "rho": fields.rho.copy(),  # Required for complete field configuration
+            "Pi": Pi_initial.copy(),  # RHS from explicit stage
             "pi_munu": np.zeros_like(fields.pi_munu),
             "q_mu": np.zeros_like(fields.u_mu),
+            "u_mu": fields.u_mu.copy(),  # Required for complete field configuration
         }
 
         try:
@@ -1719,39 +1909,48 @@ class TestARS22IMEXRK:
             assert np.all(np.isfinite(solution_dict["Pi"])), "Solution is finite"
 
             # Check residual is small
-            # Residual: y - y0 - gamma_dt * f(y)
+            # Correct residual: F(Y) = Y - RHS - γ·dt·G(Y) = 0
+            # where G(Y) = stiff_terms (relaxation + diffusion)
             y = solution_dict["Pi"]
-            y0 = Pi_initial
-            f_y = -y / coeffs.bulk_relaxation_time
-            residual = y - y0 - gamma_dt * f_y
+
+            # Compute stiff terms G(Y) for the solution
+            y_config = hydro_solver._config_from_dict(solution_dict)
+            G_y_dict = hydro_solver._compute_stiff_terms(y_config)
+
+            # Residual = Y - RHS - γ·dt·G(Y)
+            residual = y - rhs_dict["Pi"] - gamma_dt * G_y_dict["Pi"]
 
             residual_norm = np.linalg.norm(residual.flatten())
-            y0_norm = np.linalg.norm(y0.flatten())
+            rhs_norm = np.linalg.norm(rhs_dict["Pi"].flatten())
 
-            if y0_norm > 1e-14:
-                relative_residual = residual_norm / y0_norm
-
+            if rhs_norm > 1e-14:
+                relative_residual = residual_norm / rhs_norm
                 assert (
                     relative_residual < 1e-6
                 ), f"Newton-Krylov did not converge: residual={relative_residual:.2e}"
+            else:
+                # RHS is near zero, check absolute residual
+                assert (
+                    residual_norm < 1e-10
+                ), f"Newton-Krylov absolute residual too large: {residual_norm:.2e}"
 
-            # Solution should be close to exact: Pi(t+dt) = Pi(0) * exp(-dt/τ_Π)
-            expected_Pi = Pi_initial * np.exp(-dt / coeffs.bulk_relaxation_time)
+            # Check analytical solution for implicit stage equation
+            # Π_new = RHS + γ·dt·(-Π_new/τ_Π)
+            # Analytical: Π_new = RHS / (1 + γ·dt/τ_Π)
+            tau_Pi = coeffs.bulk_relaxation_time
+            expected_Pi = Pi_initial / (1.0 + gamma_dt / tau_Pi)
             error = np.max(np.abs(solution_dict["Pi"] - expected_Pi)) / np.max(np.abs(expected_Pi))
 
-            # Allow larger error since this is a nonlinear solve
-            assert error < 0.2, (
+            # Newton-Krylov should get close to analytical solution
+            assert error < 0.01, (
                 f"Newton-Krylov solution error: {error:.3f}. "
                 f"Expected: {np.mean(expected_Pi):.3e}, Got: {np.mean(solution_dict['Pi']):.3e}"
             )
 
-        except AttributeError as e:
-            pytest.skip(f"Newton-Krylov test skipped (method not accessible): {e}")
-        except Exception as e:
-            pytest.skip(f"Newton-Krylov test failed (expected for private method): {e}")
         finally:
-            # Restore original value
+            # Restore original values
             coeffs.bulk_relaxation_time = original_bulk_time
+            coeffs.bulk_viscosity = original_bulk_visc
 
 
 class TestSpectralLaplacianPhysics:

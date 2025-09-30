@@ -1397,8 +1397,14 @@ class SpectralISHydrodynamics:
             self._rk2_conservation_step(evolution_rhs, dt)
 
         except Exception as e:
+            # Log the actual error to help debug
+            import sys
+            import traceback
+
+            error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            print(f"CONSERVATION ERROR: {error_msg}", file=sys.stderr)
             physics_logger.log_physics_fallback(
-                "conservation_evolution", str(e), "fallback_conservation_advance"
+                "conservation_evolution", error_msg, "fallback_conservation_advance"
             )
             self._fallback_conservation_advance(dt)
 
@@ -1410,7 +1416,10 @@ class SpectralISHydrodynamics:
         """
         # Stage 1: Compute k1 = f(t, y)
         k1_rho = evolution_rhs.get("drho_dt", np.zeros_like(self.fields.rho))
-        k1_momentum = evolution_rhs.get("du_dt", np.zeros_like(self.fields.u_mu))
+        # Conservation returns dmom_dt (3-momentum), need to handle spatial components only
+        k1_momentum_3d = evolution_rhs.get("dmom_dt", np.zeros_like(self.fields.u_mu[..., 1:4]))
+        k1_momentum = np.zeros_like(self.fields.u_mu)
+        k1_momentum[..., 1:4] = k1_momentum_3d  # Only spatial components evolve
 
         # Store initial state
         rho_0 = self.fields.rho.copy()
@@ -1427,15 +1436,17 @@ class SpectralISHydrodynamics:
             else:
                 evolution_rhs_2 = {}
             k2_rho = evolution_rhs_2.get("drho_dt", k1_rho)
-            k2_momentum = evolution_rhs_2.get("du_dt", k1_momentum)
+            k2_momentum_3d = evolution_rhs_2.get("dmom_dt", k1_momentum[..., 1:4])
+            k2_momentum = np.zeros_like(self.fields.u_mu)
+            k2_momentum[..., 1:4] = k2_momentum_3d
         except Exception:
             # Fallback to k1 if second evaluation fails
             k2_rho = k1_rho
             k2_momentum = k1_momentum
 
         # Final update: y_n+1 = y_0 + dt * k2
-        self.fields.rho = rho_0 + dt * k2_rho
-        self.fields.u_mu = u_mu_0 + dt * k2_momentum
+        self.fields.rho[:] = rho_0 + dt * k2_rho
+        self.fields.u_mu[:] = u_mu_0 + dt * k2_momentum
 
         # Update derived quantities
         self._update_derived_fields()
@@ -1586,8 +1597,10 @@ class SpectralISHydrodynamics:
         """
         Create ISFieldConfiguration object from field dictionary.
 
+        Handles partial field dictionaries by filling missing fields from solver's current state.
+
         Args:
-            field_dict: Dictionary containing field arrays
+            field_dict: Dictionary containing field arrays (may be incomplete)
 
         Returns:
             New ISFieldConfiguration with specified field values
@@ -1595,7 +1608,29 @@ class SpectralISHydrodynamics:
         from ..core.fields import ISFieldConfiguration
 
         new_fields = ISFieldConfiguration(self.grid)
-        self._restore_fields(field_dict, target_fields=new_fields)
+
+        # Copy provided fields from dictionary
+        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+            if key in field_dict:
+                try:
+                    setattr(new_fields, key, field_dict[key].copy())
+                except (ValueError, AttributeError):
+                    # Field may be read-only or wrong shape
+                    pass
+            elif hasattr(self.fields, key):
+                # Use current solver state for missing fields
+                try:
+                    current_field = getattr(self.fields, key)
+                    setattr(new_fields, key, current_field.copy())
+                except (ValueError, AttributeError):
+                    # Field may not exist or be incompatible
+                    pass
+
+        # Ensure pressure is set if rho is available (conformal EOS as fallback)
+        if hasattr(new_fields, "rho") and np.any(new_fields.rho > 0):
+            if not hasattr(new_fields, "pressure") or np.all(new_fields.pressure == 0):
+                new_fields.pressure = new_fields.rho / 3.0
+
         return new_fields
 
     def _solve_implicit_stage(
@@ -1692,23 +1727,47 @@ class SpectralISHydrodynamics:
                 for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
             }
 
-        # Bulk viscous diffusion: ∇²Π term
-        if hasattr(self.coeffs, "bulk_viscosity") and self.coeffs.bulk_viscosity:
-            Pi_laplacian = self._compute_laplacian(fields.Pi)
-            stiff_terms["Pi"] = self.coeffs.bulk_viscosity * Pi_laplacian
+        # Bulk viscous diffusion: ∇²Π term (only if viscosity > 0)
+        if (
+            hasattr(self.coeffs, "bulk_viscosity")
+            and self.coeffs.bulk_viscosity
+            and self.coeffs.bulk_viscosity > 0
+        ):
+            try:
+                Pi_laplacian = self._compute_laplacian(fields.Pi)
+                stiff_terms["Pi"] = self.coeffs.bulk_viscosity * Pi_laplacian
+            except (ValueError, AttributeError) as e:
+                # Laplacian computation failed - skip diffusion term
+                warnings.warn(
+                    f"Bulk diffusion term skipped due to Laplacian error: {e}",
+                    stacklevel=2,
+                )
+                stiff_terms["Pi"] = np.zeros_like(fields.Pi)
         else:
             stiff_terms["Pi"] = np.zeros_like(fields.Pi)
 
-        # Shear viscous diffusion: ∇²π^μν terms
-        if hasattr(self.coeffs, "shear_viscosity") and self.coeffs.shear_viscosity:
-            pi_laplacian = np.zeros_like(fields.pi_munu)
-            for mu in range(4):
-                for nu in range(4):
-                    if fields.pi_munu.shape[-2:] == (4, 4):
-                        pi_laplacian[..., mu, nu] = self._compute_laplacian(
-                            fields.pi_munu[..., mu, nu]
-                        )
-            stiff_terms["pi_munu"] = self.coeffs.shear_viscosity * pi_laplacian
+        # Shear viscous diffusion: ∇²π^μν terms (only if viscosity > 0)
+        if (
+            hasattr(self.coeffs, "shear_viscosity")
+            and self.coeffs.shear_viscosity
+            and self.coeffs.shear_viscosity > 0
+        ):
+            try:
+                pi_laplacian = np.zeros_like(fields.pi_munu)
+                if fields.pi_munu.shape[-2:] == (4, 4):
+                    for mu in range(4):
+                        for nu in range(4):
+                            pi_laplacian[..., mu, nu] = self._compute_laplacian(
+                                fields.pi_munu[..., mu, nu]
+                            )
+                stiff_terms["pi_munu"] = self.coeffs.shear_viscosity * pi_laplacian
+            except (ValueError, AttributeError) as e:
+                # Laplacian computation failed - skip diffusion term
+                warnings.warn(
+                    f"Shear diffusion term skipped due to Laplacian error: {e}",
+                    stacklevel=2,
+                )
+                stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
         else:
             stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
 

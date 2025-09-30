@@ -582,7 +582,9 @@ class HydrodynamicState:
         }
 
     def __str__(self) -> str:
-        return f"HydrodynamicState(\n  {self.thermodynamic}\n  {self.velocity}\n  {self.transport}\n)"
+        return (
+            f"HydrodynamicState(\n  {self.thermodynamic}\n  {self.velocity}\n  {self.transport}\n)"
+        )
 
     def __repr__(self) -> str:
         return (
@@ -1084,6 +1086,26 @@ class ISFieldConfiguration:
             "zeta",
             "kappa",
         ]
+
+    def normalize_four_velocity(self) -> None:
+        """
+        Enforce four-velocity normalization: g_μν u^μ u^ν = -1.
+
+        For Minkowski metric with signature (-+++) and spatial velocity u⃗:
+            u^0 = √(1 + |u⃗|²)
+
+        This is called after time evolution to correct for accumulated numerical
+        errors and ensure the four-velocity remains on the hyperboloid.
+
+        For small velocities |u⃗| << 1, this reduces to u^0 ≈ 1 + |u⃗|²/2.
+        """
+        u_spatial = self.u_mu[..., 1:4]
+        u_squared = np.sum(u_spatial**2, axis=-1)
+
+        # Compute normalized u^0 from normalization condition
+        # g_μν u^μ u^ν = -(u^0)² + |u⃗|² = -1
+        # Therefore: u^0 = √(1 + |u⃗|²)
+        self.u_mu[..., 0] = np.sqrt(1.0 + u_squared)
 
     def copy(self, fields: list[str] | None = None) -> "ISFieldConfiguration":
         """

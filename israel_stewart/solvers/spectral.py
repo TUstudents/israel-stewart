@@ -1408,18 +1408,59 @@ class SpectralISHydrodynamics:
             )
             self._fallback_conservation_advance(dt)
 
+    def _convert_momentum_to_velocity_derivative(
+        self,
+        dmom_dt: np.ndarray,
+        drho_dt: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert momentum density derivative to velocity derivative.
+
+        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
+        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+
+        This is CRITICAL for sound wave propagation and any flow where both
+        density and velocity change. Without this conversion, waves propagate
+        at incorrect speeds.
+
+        Args:
+            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
+            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
+
+        Returns:
+            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
+        """
+        rho = self.fields.rho
+        u_spatial = self.fields.u_mu[..., 1:4]
+
+        # Avoid division by zero (use small epsilon where rho is tiny)
+        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
+
+        # Expand drho_dt to broadcast with spatial velocity
+        drho_dt_expanded = drho_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+
+        # du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+        du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
+
+        return du_dt
+
     def _rk2_conservation_step(self, evolution_rhs: dict[str, np.ndarray], dt: float) -> None:
         """
         Second-order Runge-Kutta time integration for conservation laws.
 
-        Replaces first-order Euler for improved accuracy and stability.
+        CRITICAL: Conservation equations provide d(ρu^i)/dt (momentum density),
+        but we evolve u^i (velocity). Must convert using:
+            du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
         """
         # Stage 1: Compute k1 = f(t, y)
         k1_rho = evolution_rhs.get("drho_dt", np.zeros_like(self.fields.rho))
-        # Conservation returns dmom_dt (3-momentum), need to handle spatial components only
-        k1_momentum_3d = evolution_rhs.get("dmom_dt", np.zeros_like(self.fields.u_mu[..., 1:4]))
-        k1_momentum = np.zeros_like(self.fields.u_mu)
-        k1_momentum[..., 1:4] = k1_momentum_3d  # Only spatial components evolve
+
+        # Convert momentum density derivative to velocity derivative
+        dmom_dt = evolution_rhs.get("dmom_dt", np.zeros_like(self.fields.u_mu[..., 1:4]))
+        du_dt = self._convert_momentum_to_velocity_derivative(dmom_dt, k1_rho)
+
+        k1_velocity = np.zeros_like(self.fields.u_mu)
+        k1_velocity[..., 1:4] = du_dt  # Only spatial components evolve
 
         # Store initial state
         rho_0 = self.fields.rho.copy()
@@ -1427,7 +1468,7 @@ class SpectralISHydrodynamics:
 
         # Intermediate step: y_1 = y_0 + (dt/2) * k1
         self.fields.rho[:] = rho_0 + (dt / 2) * k1_rho
-        self.fields.u_mu[:] = u_mu_0 + (dt / 2) * k1_momentum
+        self.fields.u_mu[:] = u_mu_0 + (dt / 2) * k1_velocity
 
         # Stage 2: Compute k2 = f(t + dt/2, y_1)
         try:
@@ -1436,19 +1477,23 @@ class SpectralISHydrodynamics:
             else:
                 evolution_rhs_2 = {}
             k2_rho = evolution_rhs_2.get("drho_dt", k1_rho)
-            k2_momentum_3d = evolution_rhs_2.get("dmom_dt", k1_momentum[..., 1:4])
-            k2_momentum = np.zeros_like(self.fields.u_mu)
-            k2_momentum[..., 1:4] = k2_momentum_3d
+
+            # Convert momentum to velocity for stage 2
+            dmom_dt_2 = evolution_rhs_2.get("dmom_dt", dmom_dt)
+            du_dt_2 = self._convert_momentum_to_velocity_derivative(dmom_dt_2, k2_rho)
+
+            k2_velocity = np.zeros_like(self.fields.u_mu)
+            k2_velocity[..., 1:4] = du_dt_2
         except Exception:
             # Fallback to k1 if second evaluation fails
             k2_rho = k1_rho
-            k2_momentum = k1_momentum
+            k2_velocity = k1_velocity
 
         # Final update: y_n+1 = y_0 + dt * k2
         self.fields.rho[:] = rho_0 + dt * k2_rho
-        self.fields.u_mu[:] = u_mu_0 + dt * k2_momentum
+        self.fields.u_mu[:] = u_mu_0 + dt * k2_velocity
 
-        # Update derived quantities
+        # Update derived quantities (includes normalization)
         self._update_derived_fields()
 
     def _fallback_conservation_advance(self, dt: float) -> None:

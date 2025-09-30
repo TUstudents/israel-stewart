@@ -871,11 +871,14 @@ class TestSpectralValidation:
         fields.rho[:] = np.broadcast_to(rho_wave, (*grid.shape,)).copy()
         fields.pressure[:] = fields.rho / 3.0  # Conformal EOS
 
-        # Sound wave requires velocity perturbation: δu^x = (c_s/ρ₀) * k * amplitude * cos(k*x)
+        # Sound wave requires velocity perturbation: δu^x = (c_s/ρ₀) * amplitude * cos(k*x)
         # This ensures proper coupling between density and velocity oscillations
-        fields.u_mu[..., 0] = 1.0  # Timelike component
         u_x_perturbation = (c_s / rho_0) * amplitude * np.cos(k * X)
         fields.u_mu[:, :, :, :, 1] = u_x_perturbation  # Spatial x-component
+
+        # Properly normalize four-velocity: u^0 = √(1 + |u⃗|²)
+        # This ensures g_μν u^μ u^ν = -1 (normalization condition)
+        fields.u_mu[..., 0] = np.sqrt(1.0 + u_x_perturbation**2)
 
         # CRITICAL: Zero viscosity for clean wave propagation
         # If test fails with viscosity, that's a separate issue

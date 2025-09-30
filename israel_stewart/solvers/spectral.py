@@ -1026,6 +1026,39 @@ class SpectralISHydrodynamics:
 
     Integrates spectral methods with conservation laws and relaxation equations
     for efficient relativistic hydrodynamics simulations.
+
+    **ARCHITECTURE: 4D Spacetime Solver**
+
+    This solver operates on the FULL 4D spacetime domain simultaneously:
+
+    - **Fields shape**: (nt, nx, ny, nz) - all dimensions are spacetime coordinates
+    - **time_step()**: Refines entire 4D grid by enforcing ∂_μ T^μν = 0
+    - **NOT a 3D+time evolution solver**: Does not perform sequential time stepping
+
+    **Proper Usage Pattern:**
+
+    1. Initialize entire 4D spacetime grid with approximate/analytical solution:
+       ```python
+       T, X, Y, Z = grid.meshgrid(indexing="ij")
+       fields.rho[:] = initial_solution(T, X, Y, Z)  # All time slices
+       ```
+
+    2. Call time_step() to refine the solution across spacetime:
+       ```python
+       hydro.time_step(dt)  # Refines all time slices simultaneously
+       ```
+
+    3. Verify conservation laws satisfied across the domain:
+       ```python
+       div_T = hydro.conservation.divergence_T()
+       assert np.allclose(div_T, 0, atol=tolerance)
+       ```
+
+    **Why 4D?**
+
+    Conservation equations ∂_μ T^μν = 0 involve derivatives in ALL spacetime directions
+    (μ = 0,1,2,3). The solver enforces these constraints over the entire spacetime
+    domain, treating time as just another coordinate for differentiation.
     """
 
     def __init__(

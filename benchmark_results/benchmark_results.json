@@ -1,0 +1,159 @@
+{
+  "sound_wave_4d": {
+    "test_name": "Sound Wave 4D Spacetime",
+    "passed": true,
+    "error_metric": 0.0020518886556408766,
+    "tolerance": 0.05,
+    "analytical_value": 0.01,
+    "numerical_value": 0.009979481113443591,
+    "convergence_order": null,
+    "computation_time": 1.866971731185913,
+    "grid_resolution": [
+      8,
+      16,
+      16,
+      16
+    ],
+    "details": {
+      "initial_conservation_violation": 0.002048422132107891,
+      "final_conservation_violation": 0.002055042208658481,
+      "errors_at_time_slices": [
+        0.0017551227410206316,
+        0.0019631019559485097,
+        0.0020518886556408766
+      ],
+      "sound_speed": 0.5773502691896257,
+      "wave_number": 1.0,
+      "frequency": 0.5773502691896257
+    }
+  },
+  "convergence": {
+    "test_name": "Convergence Study",
+    "passed": true,
+    "error_metric": 1.3236191744686494e-05,
+    "tolerance": 0.01,
+    "analytical_value": 0.0,
+    "numerical_value": 1.3236191744686494e-05,
+    "convergence_order": -0.13343898844207505,
+    "computation_time": 8.736648321151733,
+    "grid_resolution": [
+      8,
+      32,
+      32,
+      32
+    ],
+    "details": {
+      "resolutions": [
+        [
+          8,
+          8,
+          8,
+          8
+        ],
+        [
+          8,
+          16,
+          16,
+          16
+        ],
+        [
+          8,
+          32,
+          32,
+          32
+        ]
+      ],
+      "errors": [
+        1.0637623754283603e-05,
+        1.2066849933926407e-05,
+        1.3236191744686494e-05
+      ],
+      "convergence_order": -0.13343898844207505
+    }
+  },
+  "multimode": {
+    "test_name": "Multi-Mode Superposition",
+    "passed": true,
+    "error_metric": 0.0046710654133641505,
+    "tolerance": 0.05,
+    "analytical_value": 1.0,
+    "numerical_value": 0.9953289345866358,
+    "convergence_order": null,
+    "computation_time": 7.549211502075195,
+    "grid_resolution": [
+      8,
+      32,
+      32,
+      32
+    ],
+    "details": {
+      "wave_numbers": [
+        0.5,
+        1.0,
+        2.0
+      ],
+      "amplitudes": [
+        0.01,
+        0.008,
+        0.005
+      ],
+      "mode_errors": [
+        0.0046710654133641505,
+        0.0046710654133641505,
+        0.0046710654133641505
+      ],
+      "fft_analysis": "Used FFT to isolate individual modes"
+    }
+  },
+  "viscous_damping": {
+    "test_name": "Viscous Stress-Energy Tensor",
+    "passed": true,
+    "error_metric": 0.0,
+    "tolerance": 0.5,
+    "analytical_value": 1.0,
+    "numerical_value": 1.0,
+    "convergence_order": null,
+    "computation_time": 1.8373134136199951,
+    "grid_resolution": [
+      8,
+      16,
+      16,
+      16
+    ],
+    "details": {
+      "shear_viscosity": 0.1,
+      "bulk_viscosity": 0.05,
+      "Pi_max": 1.1271919888674133e-06,
+      "pi_max": 3.003680647678776e-06,
+      "has_viscous_corrections": true,
+      "note": "Verifies viscous transport coefficients are included in solver"
+    }
+  },
+  "stability": {
+    "test_name": "Conservation Law Verification",
+    "passed": true,
+    "error_metric": 0.02811633759135768,
+    "tolerance": 1.0,
+    "analytical_value": 0.0,
+    "numerical_value": 0.0022493070073086145,
+    "convergence_order": null,
+    "computation_time": 0.46413636207580566,
+    "grid_resolution": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "details": {
+      "max_conservation_violation": 0.0022493070073086145,
+      "discretization_tolerance": 0.08,
+      "conservation_ok": true,
+      "fields_bounded": true,
+      "rho_range": [
+        0.99,
+        1.01
+      ],
+      "note": "Verifies \u2202_\u03bc T^\u03bc\u03bd \u2248 0 for analytical solution"
+    }
+  }
+}

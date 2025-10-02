@@ -2027,7 +2027,7 @@ class SpectralISHydrodynamics:
         self,
         t_final: float,
         output_callback: Callable | None = None,
-        save_trajectory: Optional[dict[str, Any]] = None,
+        save_trajectory: dict[str, Any] | None = None,
     ) -> None:
         """
         Evolve hydrodynamics from t=0 to t_final using adaptive time stepping.
@@ -2045,11 +2045,7 @@ class SpectralISHydrodynamics:
             ```python
             hydro.evolve(
                 t_final=10.0,
-                save_trajectory={
-                    'filename': 'output.h5',
-                    'interval': 0.5,
-                    'diagnostics': True
-                }
+                save_trajectory={"filename": "output.h5", "interval": 0.5, "diagnostics": True},
             )
             ```
         """

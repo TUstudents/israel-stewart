@@ -9,8 +9,8 @@ Demonstrates:
 4. Analyzing wave propagation
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.spacetime_grid import SpacetimeGrid
@@ -202,7 +202,15 @@ def main():
         snapshot = reader.get_snapshot(i)
         rho_xt[i, :] = snapshot["rho"][:, ny // 2, nz // 2]
 
-    im = ax.pcolormesh(x, times, rho_xt, shading="auto", cmap="RdBu_r", vmin=rho_0 - amplitude, vmax=rho_0 + amplitude)
+    im = ax.pcolormesh(
+        x,
+        times,
+        rho_xt,
+        shading="auto",
+        cmap="RdBu_r",
+        vmin=rho_0 - amplitude,
+        vmax=rho_0 + amplitude,
+    )
     ax.set_xlabel("x")
     ax.set_ylabel("Time")
     ax.set_title("Spacetime Diagram: ρ(x, t)")

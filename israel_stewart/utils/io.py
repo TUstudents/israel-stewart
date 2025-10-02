@@ -42,9 +42,9 @@ class TrajectoryWriter:
     def __init__(
         self,
         filename: str | Path,
-        grid: "SpacetimeGrid",
-        coeffs: Optional["TransportCoefficients"] = None,
-        max_snapshots: Optional[int] = None,
+        grid: SpacetimeGrid,
+        coeffs: TransportCoefficients | None = None,
+        max_snapshots: int | None = None,
         compression: str = "gzip",
         compression_opts: int = 4,
     ):
@@ -132,23 +132,25 @@ class TrajectoryWriter:
         if hasattr(self.grid, "metric") and self.grid.metric is not None:
             metric_group = grid_group.create_group("metric")
             metric_group.attrs["metric_type"] = type(self.grid.metric).__name__
-            metric_group.attrs["signature"] = getattr(
-                self.grid.metric, "signature", "mostly_plus"
-            )
+            metric_group.attrs["signature"] = getattr(self.grid.metric, "signature", "mostly_plus")
 
         # Transport coefficients
         if self.coeffs is not None:
             coeffs_group = meta.create_group("transport_coefficients")
             coeffs_group.attrs["shear_viscosity"] = float(self.coeffs.shear_viscosity)
             coeffs_group.attrs["bulk_viscosity"] = float(self.coeffs.bulk_viscosity)
-            if hasattr(self.coeffs, "shear_relaxation_time") and self.coeffs.shear_relaxation_time is not None:
+            if (
+                hasattr(self.coeffs, "shear_relaxation_time")
+                and self.coeffs.shear_relaxation_time is not None
+            ):
                 coeffs_group.attrs["shear_relaxation_time"] = float(
                     self.coeffs.shear_relaxation_time
                 )
-            if hasattr(self.coeffs, "bulk_relaxation_time") and self.coeffs.bulk_relaxation_time is not None:
-                coeffs_group.attrs["bulk_relaxation_time"] = float(
-                    self.coeffs.bulk_relaxation_time
-                )
+            if (
+                hasattr(self.coeffs, "bulk_relaxation_time")
+                and self.coeffs.bulk_relaxation_time is not None
+            ):
+                coeffs_group.attrs["bulk_relaxation_time"] = float(self.coeffs.bulk_relaxation_time)
 
         # Snapshots group - will contain time series datasets
         self.snapshots_group = self.h5file.create_group("snapshots")
@@ -260,7 +262,7 @@ class TrajectoryWriter:
             )
 
     def write_snapshot(
-        self, t: float, fields: "ISFieldConfiguration", diagnostics: Optional[dict] = None
+        self, t: float, fields: ISFieldConfiguration, diagnostics: dict | None = None
     ) -> None:
         """
         Write a snapshot at time t.
@@ -272,8 +274,7 @@ class TrajectoryWriter:
         """
         if self._snapshot_count >= (self.max_snapshots or float("inf")):
             warnings.warn(
-                f"Maximum snapshots ({self.max_snapshots}) reached. "
-                "Snapshot not written.",
+                f"Maximum snapshots ({self.max_snapshots}) reached. " "Snapshot not written.",
                 stacklevel=2,
             )
             return
@@ -289,9 +290,7 @@ class TrajectoryWriter:
 
         for field_name in ["u_mu", "q_mu"]:
             if field_name in self.snapshots_group:
-                self.snapshots_group[field_name].resize(
-                    (new_size, *fields.rho.shape[-3:], 4)
-                )
+                self.snapshots_group[field_name].resize((new_size, *fields.rho.shape[-3:], 4))
 
         self.snapshots_group["pi_munu"].resize((new_size, *fields.rho.shape[-3:], 4, 4))
 
@@ -345,7 +344,7 @@ class TrajectoryWriter:
         if hasattr(self, "h5file") and self.h5file:
             self.h5file.flush()
             self.h5file.close()
-            print(f" Trajectory saved: {self.filename} ({self._snapshot_count} snapshots)")
+            print(f"Trajectory saved: {self.filename} ({self._snapshot_count} snapshots)")
 
     def __enter__(self):
         """Context manager support."""
@@ -407,9 +406,7 @@ class TrajectoryReader:
 
         # Check if coefficients exist
         if "transport_coefficients" in self.h5file["metadata"]:
-            self.coeffs_attrs = dict(
-                self.h5file["metadata/transport_coefficients"].attrs
-            )
+            self.coeffs_attrs = dict(self.h5file["metadata/transport_coefficients"].attrs)
         else:
             self.coeffs_attrs = {}
 
@@ -435,9 +432,7 @@ class TrajectoryReader:
             Dictionary with all fields at this snapshot
         """
         if not 0 <= index < self.get_n_snapshots():
-            raise IndexError(
-                f"Snapshot index {index} out of range [0, {self.get_n_snapshots()})"
-            )
+            raise IndexError(f"Snapshot index {index} out of range [0, {self.get_n_snapshots()})")
 
         snapshot = {"time": self.snapshots["times"][index]}
 
@@ -479,7 +474,7 @@ class TrajectoryReader:
         return self.get_snapshot(idx)
 
     def get_field_timeseries(
-        self, field_name: str, spatial_point: Optional[tuple[int, int, int]] = None
+        self, field_name: str, spatial_point: tuple[int, int, int] | None = None
     ) -> np.ndarray:
         """
         Get time series of a field at a spatial point or whole field.

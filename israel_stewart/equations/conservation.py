@@ -189,12 +189,12 @@ class ConservationLaws:
             for i in range(1, 4):  # i = 1, 2, 3 (spatial divergence)
                 T_ij = T[..., i, j]  # T^ij component
                 spatial_deriv = self._partial_derivative(T_ij, i, coords)
-                dmom_dt[..., j-1] -= spatial_deriv
+                dmom_dt[..., j - 1] -= spatial_deriv
 
         # Add Christoffel symbol corrections if metric is not Minkowski
         # (Only for spatial terms)
         try:
-            if hasattr(self.covariant_derivative, 'christoffel_symbols'):
+            if hasattr(self.covariant_derivative, "christoffel_symbols"):
                 christoffel = self.covariant_derivative.christoffel_symbols
 
                 # Energy: connection terms for spatial divergence only
@@ -207,8 +207,8 @@ class ConservationLaws:
                 for j in range(1, 4):
                     for i in range(1, 4):
                         for lam in range(4):
-                            dmom_dt[..., j-1] -= christoffel[i, i, lam] * T[..., lam, j]
-                            dmom_dt[..., j-1] -= christoffel[j, i, lam] * T[..., i, lam]
+                            dmom_dt[..., j - 1] -= christoffel[i, i, lam] * T[..., lam, j]
+                            dmom_dt[..., j - 1] -= christoffel[j, i, lam] * T[..., i, lam]
         except (TypeError, AttributeError):
             # Skip Christoffel corrections for Minkowski metric
             pass

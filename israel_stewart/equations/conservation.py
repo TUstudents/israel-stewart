@@ -157,18 +157,61 @@ class ConservationLaws:
         - ∂_t ρ = -∂_i T^0i  (energy conservation, ν=0)
         - ∂_t (ρu^j) = -∂_i T^ij  (momentum conservation, ν=1,2,3)
 
+        For 3+1D time evolution, we compute ONLY spatial divergence, not full 4D divergence.
+        The conservation equation ∂_0 T^0ν + ∂_i T^iν = 0 rearranges to:
+        ∂_t T^0ν = -∂_i T^iν (spatial divergence determines time evolution)
+
         Returns:
             Dictionary with evolution equations:
             - 'drho_dt': Energy density time derivative
             - 'dmom_dt': Momentum density time derivatives (3-vector)
         """
-        div_T = self.divergence_T()
+        T = self.stress_energy_tensor()
+        grid_shape = self.fields.grid.shape
 
-        # Energy conservation: ∂_t ρ = -∇·T^0i = -div_T[0]
-        drho_dt = -div_T[..., 0]
+        # Get coordinate arrays for spatial derivatives only
+        coords = self._get_coordinate_arrays()
+        spatial_coords = coords[1:]  # [x, y, z] coordinates, excluding time
 
-        # Momentum conservation: ∂_t (ρu^j) = -∇·T^ij = -div_T[j] for j=1,2,3
-        dmom_dt = -div_T[..., 1:4]
+        # For 3+1D evolution: ∂_t T^0ν = -∂_i T^iν (only spatial divergence)
+        drho_dt = np.zeros(grid_shape)
+        dmom_dt = np.zeros((*grid_shape, 3))
+
+        # Energy conservation: ∂_t ρ = ∂_t T^00 = -∂_i T^i0
+        # Sum over spatial indices i=1,2,3
+        for i in range(1, 4):  # i = 1, 2, 3 (spatial indices)
+            T_i0 = T[..., i, 0]  # T^i0 component
+            spatial_deriv = self._partial_derivative(T_i0, i, coords)
+            drho_dt -= spatial_deriv
+
+        # Momentum conservation: ∂_t(ρu^j) = ∂_t T^0j = -∂_i T^ij
+        for j in range(1, 4):  # j = 1, 2, 3 (momentum components)
+            for i in range(1, 4):  # i = 1, 2, 3 (spatial divergence)
+                T_ij = T[..., i, j]  # T^ij component
+                spatial_deriv = self._partial_derivative(T_ij, i, coords)
+                dmom_dt[..., j-1] -= spatial_deriv
+
+        # Add Christoffel symbol corrections if metric is not Minkowski
+        # (Only for spatial terms)
+        try:
+            if hasattr(self.covariant_derivative, 'christoffel_symbols'):
+                christoffel = self.covariant_derivative.christoffel_symbols
+
+                # Energy: connection terms for spatial divergence only
+                for i in range(1, 4):
+                    for lam in range(4):
+                        drho_dt -= christoffel[i, i, lam] * T[..., lam, 0]
+                        drho_dt -= christoffel[0, i, lam] * T[..., i, lam]
+
+                # Momentum: connection terms for spatial divergence only
+                for j in range(1, 4):
+                    for i in range(1, 4):
+                        for lam in range(4):
+                            dmom_dt[..., j-1] -= christoffel[i, i, lam] * T[..., lam, j]
+                            dmom_dt[..., j-1] -= christoffel[j, i, lam] * T[..., i, lam]
+        except (TypeError, AttributeError):
+            # Skip Christoffel corrections for Minkowski metric
+            pass
 
         return {"drho_dt": drho_dt, "dmom_dt": dmom_dt}
 

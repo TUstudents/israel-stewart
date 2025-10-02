@@ -1027,38 +1027,44 @@ class SpectralISHydrodynamics:
     Integrates spectral methods with conservation laws and relaxation equations
     for efficient relativistic hydrodynamics simulations.
 
-    **ARCHITECTURE: 4D Spacetime Solver**
+    **ARCHITECTURE: 3+1D Time Evolution Solver**
 
-    This solver operates on the FULL 4D spacetime domain simultaneously:
+    This is a traditional time-marching solver that evolves 3D spatial fields forward in time:
 
-    - **Fields shape**: (nt, nx, ny, nz) - all dimensions are spacetime coordinates
-    - **time_step()**: Refines entire 4D grid by enforcing ∂_μ T^μν = 0
-    - **NOT a 3D+time evolution solver**: Does not perform sequential time stepping
+    - **Fields shape**: (nt, nx, ny, nz) where nt is for storing snapshots/history
+    - **time_step(dt)**: Advances the current state forward by timestep dt using RK2/IMEX
+    - **Spatial derivatives**: Computed on the current (latest) 3D slice using FFT
+    - **Time integration**: Standard explicit/IMEX Runge-Kutta methods for stiff ODEs
 
-    **Proper Usage Pattern:**
+    **Usage Pattern:**
 
-    1. Initialize entire 4D spacetime grid with approximate/analytical solution:
+    1. Initialize fields at t=0 (typically stored in last time slice):
        ```python
-       T, X, Y, Z = grid.meshgrid(indexing="ij")
-       fields.rho[:] = initial_solution(T, X, Y, Z)  # All time slices
+       x, y, z = grid.spatial_coordinates()
+       X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+       fields.rho[-1, :, :, :] = initial_density(X, Y, Z)  # Current state
+       fields.u_mu[-1, :, :, :, :] = initial_velocity(X, Y, Z)
        ```
 
-    2. Call time_step() to refine the solution across spacetime:
+    2. Evolve forward in time using adaptive time stepping:
        ```python
-       hydro.time_step(dt)  # Refines all time slices simultaneously
+       hydro.evolve(t_final=10.0)  # Advances from t=0 to t=10
        ```
 
-    3. Verify conservation laws satisfied across the domain:
+    3. Or manually step through time with custom output:
        ```python
-       div_T = hydro.conservation.divergence_T()
-       assert np.allclose(div_T, 0, atol=tolerance)
+       for step in range(n_steps):
+           dt = hydro.adaptive_time_step()
+           hydro.time_step(dt)
+           # Access current state in fields.*[-1, :, :, :]
        ```
 
-    **Why 4D?**
+    **Time Integration Methods:**
 
-    Conservation equations ∂_μ T^μν = 0 involve derivatives in ALL spacetime directions
-    (μ = 0,1,2,3). The solver enforces these constraints over the entire spacetime
-    domain, treating time as just another coordinate for differentiation.
+    - **split_step**: Operator splitting (spectral diffusion + real-space advection)
+    - **spectral_imex**: IMEX Runge-Kutta (implicit diffusion + explicit advection)
+
+    Both methods are suitable for stiff Israel-Stewart relaxation equations.
     """
 
     def __init__(
@@ -2017,44 +2023,97 @@ class SpectralISHydrodynamics:
         return float(min(cfl_dt, self.max_dt))
 
     @monitor_performance("spectral_simulation")
-    def evolve(self, t_final: float, output_callback: Callable | None = None) -> None:
+    def evolve(
+        self,
+        t_final: float,
+        output_callback: Callable | None = None,
+        save_trajectory: Optional[dict[str, Any]] = None,
+    ) -> None:
         """
         Evolve hydrodynamics from t=0 to t_final using adaptive time stepping.
 
         Args:
             t_final: Final simulation time
-            output_callback: Optional callback for data output
+            output_callback: Optional callback for data output (called every step)
+            save_trajectory: Optional dict to enable HDF5 trajectory saving:
+                - 'filename': HDF5 file path (required)
+                - 'interval': Time interval between snapshots (default: 0.1)
+                - 'save_initial': Save initial state (default: True)
+                - 'diagnostics': Enable diagnostic calculation (default: False)
+
+        Example:
+            ```python
+            hydro.evolve(
+                t_final=10.0,
+                save_trajectory={
+                    'filename': 'output.h5',
+                    'interval': 0.5,
+                    'diagnostics': True
+                }
+            )
+            ```
         """
+        # Initialize trajectory writer if requested
+        trajectory_writer = None
+        if save_trajectory is not None:
+            from ..utils.io import TrajectoryWriter
+
+            filename = save_trajectory.get("filename")
+            if filename is None:
+                raise ValueError("save_trajectory must include 'filename' key")
+
+            trajectory_writer = TrajectoryWriter(filename, self.grid, self.coeffs)
+
+            # Write initial state if requested
+            if save_trajectory.get("save_initial", True):
+                trajectory_writer.write_snapshot(0.0, self.fields)
+
         t = 0.0
         step = 0
+        last_snapshot_time = 0.0
+        snapshot_interval = save_trajectory.get("interval", 0.1) if save_trajectory else None
 
-        while t < t_final:
-            # Adaptive time step
-            dt = self.adaptive_time_step()
-            dt = min(dt, t_final - t)  # Don't overshoot
+        try:
+            while t < t_final:
+                # Adaptive time step
+                dt = self.adaptive_time_step()
+                dt = min(dt, t_final - t)  # Don't overshoot
 
-            # Advance one time step
-            self.time_step(dt)
+                # Advance one time step
+                self.time_step(dt)
 
-            t += dt
-            step += 1
+                t += dt
+                step += 1
 
-            # Output callback
-            if output_callback is not None:
-                output_callback(t, step, self.fields)
+                # Save trajectory snapshot if needed
+                if trajectory_writer is not None and snapshot_interval is not None:
+                    if t - last_snapshot_time >= snapshot_interval:
+                        trajectory_writer.write_snapshot(t, self.fields)
+                        last_snapshot_time = t
 
-            # Progress reporting
-            if step % 100 == 0:
-                logger = get_logger("spectral.evolution")
-                logger.info(
-                    f"Evolution progress: Step {step}",
-                    extra={
-                        "step": step,
-                        "time": t,
-                        "timestep": dt,
-                        "progress_info": f"step_{step}_of_evolution",
-                    },
-                )
+                # Output callback
+                if output_callback is not None:
+                    output_callback(t, step, self.fields)
+
+                # Progress reporting
+                if step % 100 == 0:
+                    logger = get_logger("spectral.evolution")
+                    logger.info(
+                        f"Evolution progress: Step {step}",
+                        extra={
+                            "step": step,
+                            "time": t,
+                            "timestep": dt,
+                            "progress_info": f"step_{step}_of_evolution",
+                        },
+                    )
+        finally:
+            # Always close trajectory writer to ensure data is saved
+            if trajectory_writer is not None:
+                # Write final snapshot if not already written
+                if snapshot_interval is None or t - last_snapshot_time > 1e-10:
+                    trajectory_writer.write_snapshot(t, self.fields)
+                trajectory_writer.close()
 
     def __str__(self) -> str:
         return f"SpectralISHydrodynamics(grid={self.spectral.nx}x{self.spectral.ny}x{self.spectral.nz})"

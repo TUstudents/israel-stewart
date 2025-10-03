@@ -41,6 +41,7 @@ from ..core.derivatives import CovariantDerivative, ProjectionOperator
 from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.four_vectors import FourVector
 from ..core.metrics import GeneralMetric, MinkowskiMetric
+from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
 from ..core.tensor_base import TensorField
@@ -960,26 +961,30 @@ class NumericalSoundWaveBenchmark:
     def __init__(
         self,
         domain_size: float = 2 * np.pi,
-        grid_points: tuple[int, int, int, int] = (64, 64, 16, 16),
+        grid_points: tuple[int, int, int] = (64, 64, 16),
         transport_coeffs: TransportCoefficients | None = None,
         metric: GeneralMetric | None = None,
     ):
         """
-        Initialize numerical sound wave benchmark.
+        Initialize numerical sound wave benchmark with pure 3D spatial grid.
 
         Args:
             domain_size: Spatial domain size (periodic)
-            grid_points: Grid resolution (Nt, Nx, Ny, Nz)
+            grid_points: Spatial grid resolution (Nx, Ny, Nz)
             transport_coeffs: Transport coefficients for viscosity
             metric: Spacetime metric (defaults to Minkowski)
         """
         self.domain_size = domain_size
         self.grid_points = grid_points
 
-        # Create periodic grid for spectral simulation
-        time_range = (0.0, 10.0)  # Will be adjusted based on wave properties
+        # Create pure 3D spatial grid for spectral simulation
         spatial_ranges = [(0.0, domain_size)] * 3
-        self.grid = create_periodic_grid("cartesian", time_range, spatial_ranges, grid_points)
+        self.grid = SpaceGrid(
+            coordinate_system="cartesian",
+            spatial_ranges=spatial_ranges,
+            grid_points=grid_points,  # (nx, ny, nz)
+            boundary_conditions="periodic",  # Required for FFT
+        )
 
         # Physics setup
         self.metric = metric or MinkowskiMetric()
@@ -988,7 +993,7 @@ class NumericalSoundWaveBenchmark:
         # Initialize analytical analysis for comparison
         self.analytical = SoundWaveAnalysis(self.grid, self.metric, self.transport_coeffs)
 
-        # Initialize spectral solver
+        # Initialize fields and spectral solver
         self.fields = ISFieldConfiguration(self.grid)
         self.solver = SpectralISHydrodynamics(self.grid, self.fields, self.transport_coeffs)
 
@@ -1011,7 +1016,7 @@ class NumericalSoundWaveBenchmark:
         background_pressure: float = 1.0 / 3.0,
     ) -> None:
         """
-        Setup sinusoidal perturbation initial conditions.
+        Setup sinusoidal perturbation initial conditions (pure 3D).
 
         Args:
             wave_number: Wave number k for the perturbation
@@ -1019,41 +1024,28 @@ class NumericalSoundWaveBenchmark:
             background_density: Background energy density ρ₀
             background_pressure: Background pressure P₀
         """
-        # Get spatial coordinates
-        x = self.grid.coordinates["x"]
-        y = self.grid.coordinates["y"]
-        z = self.grid.coordinates["z"]
-
-        # Create meshgrid for full 3D
-        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+        # Get spatial coordinates and create meshgrid
+        X, Y, Z = self.grid.meshgrid()
 
         # Sound wave perturbation along x-direction
         # δρ = A * sin(k*x), δuₓ = A' * sin(k*x)
+        delta_rho = amplitude * np.sin(wave_number * X)
+        delta_ux = amplitude * 0.5 * np.sin(wave_number * X)
 
-        # Background state
-        self.fields.rho.fill(background_density)
-        self.fields.pressure.fill(background_pressure)
+        # Initialize pure 3D fields (no time loop!)
+        self.fields.rho[:] = background_density + delta_rho
+        self.fields.pressure[:] = (background_density + delta_rho) / 3.0  # P = ρ/3
 
         # Velocity: u^μ = (γ, γvˣ, 0, 0) where γ ≈ 1 for small velocities
-        self.fields.u_mu.fill(0.0)
+        self.fields.u_mu[:] = 0.0
         self.fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
-
-        # Add perturbation
-        delta_rho = amplitude * np.sin(wave_number * X)
-        delta_ux = amplitude * 0.5 * np.sin(wave_number * X)  # Velocity perturbation
-
-        # Apply perturbations
-        for t_idx in range(self.grid_points[0]):
-            self.fields.rho[t_idx, ...] = background_density + delta_rho
-            self.fields.u_mu[t_idx, ..., 1] = delta_ux
-
-        # Update pressure with equation of state (P = ρ/3 for radiation)
-        self.fields.pressure[:] = self.fields.rho / 3.0
+        self.fields.u_mu[..., 1] = delta_ux  # u^x = δuₓ
 
         # Zero dissipative fluxes initially
-        self.fields.Pi.fill(0.0)
-        self.fields.pi_munu.fill(0.0)
-        self.fields.q_mu.fill(0.0)
+        self.fields.Pi[:] = 0.0
+        self.fields.pi_munu[:] = 0.0
+        if hasattr(self.fields, "q_mu"):
+            self.fields.q_mu[:] = 0.0
 
     def run_simulation(
         self,
@@ -1072,7 +1064,7 @@ class NumericalSoundWaveBenchmark:
             dt_factor: Timestep factor (fraction of CFL limit)
 
         Returns:
-            Numerical wave simulation results
+            Numerical wave simulation results with frequency and damping
         """
         # Setup initial conditions
         self.setup_initial_conditions(wave_number)
@@ -1093,49 +1085,45 @@ class NumericalSoundWaveBenchmark:
             period = 2 * np.pi / analytical_freq
             simulation_time = max(simulation_time, n_periods * period)
 
-        # Determine timestep
+        # Determine timestep (CFL condition)
         dx = self.grid.spatial_spacing[0]
         sound_speed = analytical_mode.sound_speed
         dt_cfl = dt_factor * dx / max(sound_speed, 0.1)
 
-        # Time evolution
-        n_steps = int(simulation_time / dt_cfl)
-        time_points = np.linspace(0, simulation_time, n_steps)
+        # Monitor point for time series (center of domain)
+        monitor_idx = tuple(n // 2 for n in self.grid_points)
 
-        # Storage for time series analysis
+        # Storage for time series
+        time_points = []
         rho_time_series = []
         ux_time_series = []
 
-        # Monitor point for frequency analysis (middle of domain)
-        monitor_idx = (
-            self.grid_points[1] // 2,
-            self.grid_points[2] // 2,
-            self.grid_points[3] // 2,
-        )
-
-        # Time evolution loop
-        current_time = 0.0
-        for _step in range(n_steps):
-            # Record time series at monitor point
-            rho_monitor = self.fields.rho[0, monitor_idx[0], monitor_idx[1], monitor_idx[2]]
-            ux_monitor = self.fields.u_mu[0, monitor_idx[0], monitor_idx[1], monitor_idx[2], 1]
-
+        # Callback to record time series during evolution
+        def record_time_series(t: float, fields: ISFieldConfiguration) -> None:
+            time_points.append(t)
+            # Extract at monitor point (pure 3D indexing)
+            rho_monitor = fields.rho[monitor_idx]
+            ux_monitor = fields.u_mu[monitor_idx + (1,)]  # u^x component
             rho_time_series.append(rho_monitor)
             ux_time_series.append(ux_monitor)
 
-            # Evolve fields one timestep
-            try:
-                # Explicitly select the correct, high-quality IMEX solver
-                self.solver.time_step(dt_cfl, method="spectral_imex")
-                # self.solver.time_step(dt_cfl)
-                current_time += dt_cfl
-            except Exception as e:
-                warnings.warn(f"Simulation failed at t={current_time}: {e}", stacklevel=2)
-                break
+        # Evolve using spectral solver with callback
+        try:
+            self.solver.evolve(
+                t_final=simulation_time,
+                dt=dt_cfl,
+                method="spectral_imex",
+                callback=record_time_series,
+            )
+        except Exception as e:
+            warnings.warn(f"Simulation failed: {e}", stacklevel=2)
+            # Return empty result
+            return self._create_failed_result(wave_number, analytical_freq, analytical_damping)
 
         # Analyze time series for frequency and damping
-        time_array = np.array(time_points[: len(rho_time_series)])
+        time_array = np.array(time_points)
         rho_array = np.array(rho_time_series)
+        ux_array = np.array(ux_time_series)
 
         measured_freq, measured_damping = self._extract_frequency_damping(time_array, rho_array)
 
@@ -1146,7 +1134,7 @@ class NumericalSoundWaveBenchmark:
         # Check convergence
         convergence_achieved = (
             freq_error < 0.1  # 10% frequency error
-            and damping_error < 0.2  # 20% damping error (more tolerance for damping)
+            and damping_error < 0.2  # 20% damping error
         )
 
         return NumericalWaveResults(
@@ -1158,13 +1146,31 @@ class NumericalSoundWaveBenchmark:
             frequency_error=freq_error,
             damping_error=damping_error,
             simulation_time=simulation_time,
-            grid_resolution=self.grid_points[1],
+            grid_resolution=self.grid_points[0],
             convergence_achieved=convergence_achieved,
             time_series_data={
                 "time": time_array,
                 "density": rho_array,
-                "velocity": np.array(ux_time_series),
+                "velocity": ux_array,
             },
+        )
+
+    def _create_failed_result(
+        self, wave_number: float, analytical_freq: float, analytical_damping: float
+    ) -> NumericalWaveResults:
+        """Create result object for failed simulation."""
+        return NumericalWaveResults(
+            wave_number=wave_number,
+            measured_frequency=0.0,
+            measured_damping_rate=0.0,
+            analytical_frequency=analytical_freq,
+            analytical_damping_rate=analytical_damping,
+            frequency_error=np.inf,
+            damping_error=np.inf,
+            simulation_time=0.0,
+            grid_resolution=self.grid_points[0],
+            convergence_achieved=False,
+            time_series_data={},
         )
 
     def _extract_frequency_damping(
@@ -1679,7 +1685,7 @@ class NumericalSoundWaveBenchmark:
 
 def create_numerical_benchmark(
     domain_size: float = 2 * np.pi,
-    grid_points: tuple[int, int, int, int] = (64, 64, 16, 16),
+    grid_points: tuple[int, int, int] = (64, 64, 16),
     transport_coeffs: TransportCoefficients | None = None,
     metric: GeneralMetric | None = None,
     **kwargs,
@@ -1689,13 +1695,13 @@ def create_numerical_benchmark(
 
     Args:
         domain_size: Spatial domain size (periodic)
-        grid_points: Grid resolution (Nt, Nx, Ny, Nz)
+        grid_points: Spatial grid resolution (Nx, Ny, Nz)
         transport_coeffs: Transport coefficients for viscosity
         metric: Spacetime metric (defaults to Minkowski)
         **kwargs: Additional arguments passed to NumericalSoundWaveBenchmark
 
     Returns:
-        Configured numerical benchmark instance
+        Configured numerical benchmark instance with SpaceGrid
 
     Examples:
         >>> # Create benchmark with default parameters

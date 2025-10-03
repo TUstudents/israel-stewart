@@ -2002,6 +2002,7 @@ class SpectralISHydrodynamics:
         t_final: float,
         output_callback: Callable | None = None,
         save_trajectory: dict[str, Any] | None = None,
+        snapshot_config: dict[str, Any] | None = None,
     ) -> None:
         """
         Evolve hydrodynamics from t=0 to t_final using adaptive time stepping.
@@ -2009,23 +2010,56 @@ class SpectralISHydrodynamics:
         Args:
             t_final: Final simulation time
             output_callback: Optional callback for data output (called every step)
-            save_trajectory: Optional dict to enable HDF5 trajectory saving:
+            save_trajectory: [DEPRECATED] Use snapshot_config instead. Optional dict for HDF5 saving
+            snapshot_config: Optional dict to enable streaming snapshot saving:
                 - 'filename': HDF5 file path (required)
                 - 'interval': Time interval between snapshots (default: 0.1)
+                - 'buffer_size': Snapshots to buffer before flush (default: 10)
                 - 'save_initial': Save initial state (default: True)
-                - 'diagnostics': Enable diagnostic calculation (default: False)
 
         Example:
             ```python
+            # New streaming architecture (recommended)
             hydro.evolve(
                 t_final=10.0,
-                save_trajectory={"filename": "output.h5", "interval": 0.5, "diagnostics": True},
+                snapshot_config={
+                    "filename": "output.h5",
+                    "interval": 0.1,
+                    "buffer_size": 20,
+                    "save_initial": True,
+                },
             )
+
+            # Old method (still works for backward compatibility)
+            hydro.evolve(t_final=10.0, save_trajectory={"filename": "output.h5", "interval": 0.5})
             ```
         """
-        # Initialize trajectory writer if requested
+        # Handle new streaming architecture vs old trajectory writer
+        stream = None
         trajectory_writer = None
-        if save_trajectory is not None:
+
+        if snapshot_config is not None:
+            # New streaming architecture (Phase 5)
+            from ..utils.streaming import SnapshotStream
+
+            filename = snapshot_config.get("filename")
+            if filename is None:
+                raise ValueError("snapshot_config must include 'filename' key")
+
+            stream = SnapshotStream(
+                filename=filename,
+                grid=self.grid,
+                coeffs=self.coeffs,
+                interval=snapshot_config.get("interval", 0.1),
+                buffer_size=snapshot_config.get("buffer_size", 10),
+            )
+
+            # Save initial state if requested
+            if snapshot_config.get("save_initial", True):
+                stream.save(0.0, self.fields)
+
+        elif save_trajectory is not None:
+            # Old trajectory writer (backward compatibility)
             from ..utils.io import TrajectoryWriter
 
             filename = save_trajectory.get("filename")
@@ -2055,8 +2089,13 @@ class SpectralISHydrodynamics:
                 t += dt
                 step += 1
 
-                # Save trajectory snapshot if needed
-                if trajectory_writer is not None and snapshot_interval is not None:
+                # Handle snapshots (new streaming or old trajectory writer)
+                if stream is not None:
+                    # New streaming architecture with buffering
+                    if stream.should_save(t):
+                        stream.save(t, self.fields)
+                elif trajectory_writer is not None and snapshot_interval is not None:
+                    # Old trajectory writer (backward compatibility)
                     if t - last_snapshot_time >= snapshot_interval:
                         trajectory_writer.write_snapshot(t, self.fields)
                         last_snapshot_time = t
@@ -2078,9 +2117,13 @@ class SpectralISHydrodynamics:
                         },
                     )
         finally:
-            # Always close trajectory writer to ensure data is saved
-            if trajectory_writer is not None:
-                # Write final snapshot if not already written
+            # Close snapshot stream or trajectory writer
+            if stream is not None:
+                # New streaming: flush and close
+                stream.flush()
+                stream.close()
+            elif trajectory_writer is not None:
+                # Old trajectory writer: write final and close
                 if snapshot_interval is None or t - last_snapshot_time > 1e-10:
                     trajectory_writer.write_snapshot(t, self.fields)
                 trajectory_writer.close()

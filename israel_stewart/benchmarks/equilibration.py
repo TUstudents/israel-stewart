@@ -41,11 +41,13 @@ from ..core.derivatives import CovariantDerivative, ProjectionOperator
 from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.four_vectors import FourVector
 from ..core.metrics import GeneralMetric, MinkowskiMetric
+from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
 from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
 from ..equations.relaxation import ISRelaxationEquations
+from ..solvers.spectral import SpectralISHydrodynamics
 
 
 @dataclass
@@ -88,16 +90,16 @@ class EquilibrationAnalysis:
 
     def __init__(
         self,
-        grid: SpacetimeGrid,
+        grid: SpaceGrid | SpacetimeGrid,
         metric: GeneralMetric,
         transport_coeffs: TransportCoefficients,
         equation_of_state: str = "ideal",
     ):
         """
-        Initialize equilibration analysis.
+        Initialize equilibration analysis with pure 3D spatial grid.
 
         Args:
-            grid: Spacetime grid for numerical analysis
+            grid: SpaceGrid for numerical analysis (SpacetimeGrid also supported for compatibility)
             metric: Spacetime metric
             transport_coeffs: Transport coefficients
             equation_of_state: Equation of state type
@@ -107,10 +109,6 @@ class EquilibrationAnalysis:
         self.transport_coeffs = transport_coeffs
         self.eos = equation_of_state
 
-        # Initialize physics modules
-        self.conservation = ConservationLaws(grid, metric)
-        self.relaxation = ISRelaxationEquations(grid, metric, transport_coeffs)
-
         # Analysis results cache
         self._equilibration_cache: dict[str, EquilibrationProperties] = {}
 
@@ -118,17 +116,17 @@ class EquilibrationAnalysis:
         self,
         initial_fields: ISFieldConfiguration,
         final_time: float = 10.0,
-        timestep: float = 0.01,
-        method: str = "implicit",
+        timestep: float | None = None,
+        method: str = "spectral_imex",
     ) -> EquilibrationProperties:
         """
         Analyze complete relaxation process to thermal equilibrium.
 
         Args:
-            initial_fields: Initial non-equilibrium state
+            initial_fields: Initial non-equilibrium state (pure 3D)
             final_time: Final simulation time
-            timestep: Integration timestep
-            method: Integration method ("explicit", "implicit", "adaptive")
+            timestep: Integration timestep (adaptive if None)
+            method: Integration method ('spectral_imex', 'rk4', etc.)
 
         Returns:
             Equilibration properties and evolution data
@@ -139,42 +137,35 @@ class EquilibrationAnalysis:
         # Store initial thermodynamic quantities
         initial_state = self._extract_thermodynamic_state(initial_fields)
 
-        # Time evolution
+        # Create solver with copy of initial fields
+        fields = self._copy_fields(initial_fields)
+        solver = SpectralISHydrodynamics(self.grid, fields, self.transport_coeffs)
+
+        # Storage for time evolution
         time_points = []
         temperature_data = []
         entropy_data = []
         bulk_pressure_data = []
         shear_stress_data = []
 
-        fields = self._copy_fields(initial_fields)
-        current_time = 0.0
-
-        # Store initial data
-        time_points.append(current_time)
-        temp = self._compute_temperature(fields)
-        entropy = self._compute_entropy_density(fields)
-        temperature_data.append(temp)
-        entropy_data.append(entropy)
-        bulk_pressure_data.append(np.mean(np.abs(fields.Pi.data)))
-        shear_stress_data.append(self._compute_shear_stress_magnitude(fields))
-
-        # Integration loop
-        while current_time < final_time:
-            dt = min(timestep, final_time - current_time)
-
-            # Evolve system
-            self.relaxation.evolve_relaxation(fields, dt, method=method)
-
-            current_time += dt
-            time_points.append(current_time)
-
-            # Record thermodynamic quantities
-            temp = self._compute_temperature(fields)
-            entropy = self._compute_entropy_density(fields)
-            temperature_data.append(temp)
-            entropy_data.append(entropy)
-            bulk_pressure_data.append(np.mean(np.abs(fields.Pi.data)))
+        # Callback to record thermodynamic quantities during evolution
+        def record_thermodynamics(t: float, fields: ISFieldConfiguration) -> None:
+            time_points.append(t)
+            temperature_data.append(self._compute_temperature(fields))
+            entropy_data.append(self._compute_entropy_density(fields))
+            bulk_pressure_data.append(float(np.mean(np.abs(fields.Pi))))
             shear_stress_data.append(self._compute_shear_stress_magnitude(fields))
+
+        # Record initial state
+        record_thermodynamics(0.0, fields)
+
+        # Evolve to equilibrium using spectral solver
+        solver.evolve(
+            t_final=final_time,
+            dt=timestep,
+            method=method,
+            callback=record_thermodynamics,
+        )
 
         # Convert to arrays
         time_array = np.array(time_points)
@@ -216,48 +207,51 @@ class EquilibrationAnalysis:
         )
 
     def _validate_initial_state(self, fields: ISFieldConfiguration) -> None:
-        """Validate that initial state is physically reasonable."""
+        """Validate that initial state is physically reasonable (pure 3D)."""
         # Check energy density positivity
-        if np.any(fields.rho.data <= 0):
+        if np.any(fields.rho <= 0):
             raise ValueError("Energy density must be positive")
 
         # Check pressure positivity
-        if np.any(fields.pressure.data <= 0):
+        if np.any(fields.pressure <= 0):
             raise ValueError("Pressure must be positive")
 
-        # Check four-velocity normalization
-        u_squared = np.sum(fields.four_velocity.data**2, axis=-1)
-        if not np.allclose(u_squared[..., 0] - u_squared[..., 1:].sum(axis=-1), 1.0, rtol=1e-3):
+        # Check four-velocity normalization (u^μ u_μ = 1)
+        # For Minkowski: u^0 u^0 - u^i u^i = 1
+        u0_sq = fields.u_mu[..., 0] ** 2
+        ui_sq = np.sum(fields.u_mu[..., 1:] ** 2, axis=-1)
+        if not np.allclose(u0_sq - ui_sq, 1.0, rtol=1e-3):
             warnings.warn("Four-velocity not properly normalized", stacklevel=2)
 
     def _copy_fields(self, fields: ISFieldConfiguration) -> ISFieldConfiguration:
-        """Create a deep copy of field configuration."""
+        """Create a deep copy of field configuration (pure 3D)."""
         new_fields = ISFieldConfiguration(self.grid)
 
-        # Copy all field data
-        new_fields.rho.data[:] = fields.rho.data[:]
-        new_fields.pressure.data[:] = fields.pressure.data[:]
-        new_fields.four_velocity.data[:] = fields.four_velocity.data[:]
-        new_fields.Pi.data[:] = fields.Pi.data[:]
-        new_fields.pi_munu.data[:] = fields.pi_munu.data[:]
-        new_fields.q_mu.data[:] = fields.q_mu.data[:]
+        # Copy all field data (pure 3D arrays)
+        new_fields.rho[:] = fields.rho[:]
+        new_fields.pressure[:] = fields.pressure[:]
+        new_fields.u_mu[:] = fields.u_mu[:]
+        new_fields.Pi[:] = fields.Pi[:]
+        new_fields.pi_munu[:] = fields.pi_munu[:]
+        if hasattr(fields, "q_mu"):
+            new_fields.q_mu[:] = fields.q_mu[:]
 
         return new_fields
 
     def _extract_thermodynamic_state(self, fields: ISFieldConfiguration) -> dict[str, float]:
         """Extract key thermodynamic quantities from field configuration."""
         return {
-            "energy_density": np.mean(fields.rho.data),
-            "pressure": np.mean(fields.pressure.data),
+            "energy_density": float(np.mean(fields.rho)),
+            "pressure": float(np.mean(fields.pressure)),
             "temperature": self._compute_temperature(fields),
             "entropy_density": self._compute_entropy_density(fields),
-            "bulk_pressure": np.mean(fields.Pi.data),
+            "bulk_pressure": float(np.mean(fields.Pi)),
             "shear_stress": self._compute_shear_stress_magnitude(fields),
         }
 
     def _compute_temperature(self, fields: ISFieldConfiguration) -> float:
         """Compute temperature from energy density (ideal gas)."""
-        rho = np.mean(fields.rho.data)
+        rho = float(np.mean(fields.rho))
 
         if self.eos == "ideal":
             # Ideal gas: rho = a*T^4 where a = (pi^2/90)*g_eff
@@ -266,10 +260,10 @@ class EquilibrationAnalysis:
             T = (rho / a) ** (1.0 / 4.0)
         else:
             # Fallback: use pressure relation P = rho/3
-            p = np.mean(fields.pressure.data)
+            p = float(np.mean(fields.pressure))
             T = (3 * p / rho) ** (1.0 / 4.0) if rho > 0 else 0.0
 
-        return T
+        return float(T)
 
     def _compute_entropy_density(self, fields: ISFieldConfiguration) -> float:
         """Compute entropy density."""
@@ -281,18 +275,17 @@ class EquilibrationAnalysis:
             s = (2 * np.pi**2 / 45.0) * g_eff * T**3
         else:
             # Fallback estimate
-            rho = np.mean(fields.rho.data)
-            p = np.mean(fields.pressure.data)
+            rho = float(np.mean(fields.rho))
+            p = float(np.mean(fields.pressure))
             s = (rho + p) / T if T > 0 else 0.0
 
-        return s
+        return float(s)
 
     def _compute_shear_stress_magnitude(self, fields: ISFieldConfiguration) -> float:
-        """Compute magnitude of shear stress tensor."""
-        pi_data = fields.pi_munu.data
-        # Compute pi^{mu nu} pi_{mu nu}
-        magnitude_squared = np.sum(pi_data**2, axis=(-2, -1))
-        return np.sqrt(np.mean(magnitude_squared))
+        """Compute magnitude of shear stress tensor (pure 3D)."""
+        # Compute Frobenius norm: sqrt(π^{μν} π_{μν})
+        magnitude_squared = np.sum(fields.pi_munu**2, axis=(-2, -1))
+        return float(np.sqrt(np.mean(magnitude_squared)))
 
     def _extract_relaxation_times(
         self,

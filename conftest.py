@@ -1,5 +1,7 @@
 """
 Pytest configuration with hard memory limits to prevent system crashes.
+
+Also provides common fixtures for SpaceGrid-based testing (Phase 6).
 """
 
 import os
@@ -7,8 +9,12 @@ import signal
 import threading
 import time
 
+import numpy as np
 import psutil
 import pytest
+
+from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
+from israel_stewart.core.spacegrid import SpaceGrid
 
 
 class MemoryMonitor:
@@ -108,3 +114,82 @@ def memory_check_per_test():
 
     if memory_increase > 500:  # Warning if test increased memory by 500MB+
         print(f"\nWARNING: Test increased memory by {memory_increase:.0f} MB")
+
+
+# ============================================================================
+# Phase 6: SpaceGrid Test Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def small_grid_3d():
+    """Small 3D spatial grid for fast tests (8³)."""
+    return SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 1.0)] * 3,
+        grid_points=(8, 8, 8),
+        boundary_conditions="periodic",
+    )
+
+
+@pytest.fixture
+def medium_grid_3d():
+    """Medium 3D spatial grid for standard tests (16³)."""
+    return SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 1.0)] * 3,
+        grid_points=(16, 16, 16),
+        boundary_conditions="periodic",
+    )
+
+
+@pytest.fixture
+def periodic_grid_3d():
+    """3D grid with periodic boundaries for wave tests (32³)."""
+    return SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 2 * np.pi)] * 3,
+        grid_points=(32, 32, 32),
+        boundary_conditions="periodic",
+    )
+
+
+@pytest.fixture
+def test_fields_3d(small_grid_3d):
+    """3D field configuration with simple initialization."""
+    fields = ISFieldConfiguration(small_grid_3d)
+
+    # Initialize with uniform state
+    fields.rho[:] = 1.0
+    fields.pressure[:] = 1.0 / 3.0
+    fields.u_mu[..., 0] = 1.0  # Rest frame
+
+    return fields
+
+
+@pytest.fixture
+def test_fields_wave(periodic_grid_3d):
+    """3D field configuration with sound wave perturbation."""
+    fields = ISFieldConfiguration(periodic_grid_3d)
+
+    # Sound wave initial condition
+    X, Y, Z = periodic_grid_3d.meshgrid()
+    k = 1.0
+    amplitude = 0.01
+
+    fields.rho[:] = 1.0 + amplitude * np.sin(k * X)
+    fields.pressure[:] = fields.rho / 3.0
+    fields.u_mu[..., 0] = 1.0
+
+    return fields
+
+
+@pytest.fixture
+def test_coeffs():
+    """Standard transport coefficients for testing."""
+    return TransportCoefficients(
+        shear_viscosity=0.1,
+        bulk_viscosity=0.05,
+        shear_relaxation_time=0.5,
+        bulk_relaxation_time=0.3,
+    )

@@ -174,9 +174,11 @@ def run_numerical_simulation(
     )
 
     # Run simulation
+    # Note: n_periods=0 means use simulation_time directly without override
     results = benchmark.run_simulation(
         wave_number=wave_number,
         simulation_time=simulation_time,
+        n_periods=0,  # Use simulation_time directly, don't extend to N periods
     )
 
     elapsed = time.time() - start_time

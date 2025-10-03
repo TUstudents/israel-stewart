@@ -30,7 +30,7 @@ from israel_stewart.benchmarks.bjorken_flow import (
 )
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
+from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.solvers.spectral import SpectralISHydrodynamics
 
 
@@ -48,18 +48,17 @@ class TestBjorkenFlowValidation:
         return self._create_bjorken_setup_3d()
 
     def _create_bjorken_setup_1d(self):
-        """Create 1D Bjorken flow setup."""
-        # Use Cartesian coordinates to avoid Milne coordinate complications
-        grid = SpacetimeGrid(
+        """Create 1D Bjorken flow setup with pure 3D spatial grid."""
+        # Use Cartesian coordinates with pure 3D spatial grid
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 2.0),
             spatial_ranges=[
                 (0.0, 2 * np.pi),
                 (0.0, 2 * np.pi),
                 (0.0, 2 * np.pi),
-            ],  # Proper 3D for spectral
-            grid_points=(20, 16, 16, 16),  # Reasonable resolution
-            boundary_conditions="periodic",
+            ],
+            grid_points=(16, 16, 16),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         # Realistic heavy-ion collision transport coefficients
@@ -80,14 +79,13 @@ class TestBjorkenFlowValidation:
         return grid, transport_coeffs, metric, fields
 
     def _create_bjorken_setup_3d(self):
-        """Create 3D Bjorken flow setup for full validation."""
-        # Full 3+1D setup
-        grid = SpacetimeGrid(
+        """Create 3D Bjorken flow setup for full validation with pure 3D spatial grid."""
+        # Pure 3D spatial grid
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 3.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(30, 24, 24, 24),
-            boundary_conditions="periodic",
+            grid_points=(24, 24, 24),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         # Full transport coefficient set

@@ -35,7 +35,7 @@ from israel_stewart.benchmarks.equilibration import (
 )
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.metrics import MinkowskiMetric
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
+from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.solvers.spectral import SpectralISHydrodynamics
 
 
@@ -53,14 +53,13 @@ class TestEquilibrationValidation:
         return self._create_comprehensive_setup()
 
     def _create_minimal_setup(self):
-        """Create minimal setup for equilibration tests."""
-        # Small grid for fast testing
-        grid = SpacetimeGrid(
+        """Create minimal setup for equilibration tests with pure 3D spatial grid."""
+        # Small pure 3D grid for fast testing
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 5.0),
             spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-            grid_points=(25, 16, 16, 16),
-            boundary_conditions="periodic",
+            grid_points=(16, 16, 16),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         # Transport coefficients for Israel-Stewart
@@ -80,14 +79,13 @@ class TestEquilibrationValidation:
         return grid, transport_coeffs, metric, fields
 
     def _create_comprehensive_setup(self):
-        """Create comprehensive setup for detailed validation."""
-        # Larger grid for accuracy testing
-        grid = SpacetimeGrid(
+        """Create comprehensive setup for detailed validation with pure 3D spatial grid."""
+        # Larger pure 3D grid for accuracy testing
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 8.0),
             spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-            grid_points=(40, 32, 32, 32),
-            boundary_conditions="periodic",
+            grid_points=(32, 32, 32),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",  # Required for spectral methods
         )
 
         # Realistic transport coefficients

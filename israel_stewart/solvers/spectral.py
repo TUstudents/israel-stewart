@@ -24,6 +24,7 @@ from ..utils.logging_config import get_logger, performance_logger, physics_logge
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
+    from ..core.spacegrid import SpaceGrid
     from ..core.spacetime_grid import SpacetimeGrid
     from ..equations.conservation import ConservationLaws
     from ..equations.relaxation import ISRelaxationEquations
@@ -31,15 +32,21 @@ if TYPE_CHECKING:
 
 class SpectralISolver:
     """
-    Fourier spectral method for Israel-Stewart equations.
+    Fourier spectral method for Israel-Stewart equations with pure 3D spatial fields.
 
     Provides high-performance spectral differentiation and linear operator
     application for relativistic hydrodynamics with periodic boundaries.
+
+    **ARCHITECTURE: Pure 3D Spatial Solver**
+
+    All fields are pure 3D spatial arrays (nx, ny, nz). Time is treated as an
+    evolution parameter, not a grid dimension. This provides dramatic memory
+    reduction and cleaner architecture.
     """
 
     def __init__(
         self,
-        grid: "SpacetimeGrid",
+        grid: "SpaceGrid",
         fields: "ISFieldConfiguration",
         coeffs: Optional["TransportCoefficients"] = None,
     ):
@@ -47,17 +54,16 @@ class SpectralISolver:
         Initialize spectral solver.
 
         Args:
-            grid: SpacetimeGrid defining computational domain
-            fields: ISFieldConfiguration with hydrodynamic variables
+            grid: SpaceGrid defining 3D spatial computational domain
+            fields: ISFieldConfiguration with pure 3D hydrodynamic variables
             coeffs: Transport coefficients for viscous terms
         """
         self.grid = grid
         self.fields = fields
         self.coeffs = coeffs
 
-        # Extract grid dimensions and spacing
-        self.nt, self.nx, self.ny, self.nz = grid.grid_points
-        self.dt = grid.dt
+        # Extract 3D grid dimensions and spacing
+        self.nx, self.ny, self.nz = grid.shape
 
         # Validate grid has periodic boundary conditions for spectral methods
         if hasattr(grid, "boundary_conditions") and grid.boundary_conditions != "periodic":
@@ -108,16 +114,16 @@ class SpectralISolver:
 
     def _precompute_workspaces(self) -> None:
         """Pre-allocate common workspace arrays for memory optimization."""
-        # Common shapes used in spectral operations
+        # Common shapes used in spectral operations (all pure 3D)
         spatial_shape = (self.nx, self.ny, self.nz)
-        field_shape = (self.nt, self.nx, self.ny, self.nz)
         tensor_shape = (*spatial_shape, 4, 4)
+        vector_shape = (*spatial_shape, 4)
 
         # Pre-allocate FFT workspaces
         common_shapes = [
-            spatial_shape,  # 3D spatial fields
-            field_shape,  # 4D spacetime fields
-            tensor_shape,  # Stress tensors
+            spatial_shape,  # 3D spatial scalar fields
+            vector_shape,  # 3D spatial vector fields
+            tensor_shape,  # 3D spatial tensor fields
         ]
 
         # Initialize FFT workspace manager with common shapes
@@ -238,14 +244,12 @@ class SpectralISolver:
         if direction not in [0, 1, 2]:
             raise ValueError(f"Direction must be 0, 1, or 2 (x, y, z), got {direction}")
 
-        # Handle both 3D spatial fields and 4D spacetime fields
-        if field.ndim == 3:
-            spatial_field = field
-        elif field.ndim == 4 and field.shape[0] == self.nt:
-            # Take latest time slice for spatial derivative
-            spatial_field = field[-1, :, :, :]
-        else:
-            raise ValueError(f"Field shape {field.shape} not compatible with grid")
+        # Validate pure 3D spatial field
+        if field.ndim != 3:
+            raise ValueError(
+                f"Field must be pure 3D spatial array (nx, ny, nz), got shape {field.shape}"
+            )
+        spatial_field = field
 
         # Check cache first
         cache_key = (id(field), direction) if use_cache else None
@@ -285,14 +289,12 @@ class SpectralISolver:
         This is the core optimization that enables efficient gradient computation by
         creating a stacked array for vectorized operations.
         """
-        # Handle both 3D spatial fields and 4D spacetime fields
-        if field.ndim == 3:
-            spatial_field = field
-        elif field.ndim == 4 and field.shape[0] == self.nt:
-            # Take latest time slice for spatial derivative
-            spatial_field = field[-1, :, :, :]
-        else:
-            raise ValueError(f"Field shape {field.shape} not compatible with grid")
+        # Validate pure 3D spatial field
+        if field.ndim != 3:
+            raise ValueError(
+                f"Field must be pure 3D spatial array (nx, ny, nz), got shape {field.shape}"
+            )
+        spatial_field = field
 
         # Single forward FFT for all derivatives
         field_k = self.adaptive_fft(spatial_field)
@@ -341,14 +343,12 @@ class SpectralISolver:
         Returns:
             Tuple of (∂_x f, ∂_y f, ∂_z f)
         """
-        # Handle both 3D spatial fields and 4D spacetime fields
-        if field.ndim == 3:
-            spatial_field = field
-        elif field.ndim == 4 and field.shape[0] == self.nt:
-            # Take latest time slice for spatial derivative
-            spatial_field = field[-1, :, :, :]
-        else:
-            raise ValueError(f"Field shape {field.shape} not compatible with grid")
+        # Validate pure 3D spatial field
+        if field.ndim != 3:
+            raise ValueError(
+                f"Field must be pure 3D spatial array (nx, ny, nz), got shape {field.shape}"
+            )
+        spatial_field = field
 
         # Single forward FFT for all three derivatives
         field_k = self.adaptive_fft(spatial_field)
@@ -390,14 +390,12 @@ class SpectralISolver:
         if vector_field.shape[-1] != 3:
             raise ValueError("Vector field must have 3 components")
 
-        # Handle both 3D spatial fields and 4D spacetime fields
-        if vector_field.ndim == 4:
-            spatial_vector = vector_field
-        elif vector_field.ndim == 5 and vector_field.shape[0] == self.nt:
-            # Take latest time slice for spatial divergence
-            spatial_vector = vector_field[-1, :, :, :, :]
-        else:
-            spatial_vector = vector_field
+        # Validate pure 3D spatial vector field
+        if vector_field.ndim != 4 or vector_field.shape[-1] != 3:
+            raise ValueError(
+                f"Vector field must have shape (nx, ny, nz, 3), got {vector_field.shape}"
+            )
+        spatial_vector = vector_field
 
         # Extract components
         vx = spatial_vector[..., 0]
@@ -1022,28 +1020,27 @@ class SpectralISolver:
 
 class SpectralISHydrodynamics:
     """
-    Complete spectral hydrodynamics solver for Israel-Stewart equations.
+    Complete spectral hydrodynamics solver for Israel-Stewart equations with pure 3D fields.
 
     Integrates spectral methods with conservation laws and relaxation equations
     for efficient relativistic hydrodynamics simulations.
 
-    **ARCHITECTURE: 3+1D Time Evolution Solver**
+    **ARCHITECTURE: Pure 3D Spatial Evolution**
 
-    This is a traditional time-marching solver that evolves 3D spatial fields forward in time:
+    This solver evolves pure 3D spatial fields forward in time:
 
-    - **Fields shape**: (nt, nx, ny, nz) where nt is for storing snapshots/history
+    - **Fields shape**: (nx, ny, nz) - pure 3D spatial arrays
     - **time_step(dt)**: Advances the current state forward by timestep dt using RK2/IMEX
-    - **Spatial derivatives**: Computed on the current (latest) 3D slice using FFT
+    - **Spatial derivatives**: Computed directly on 3D fields using FFT
     - **Time integration**: Standard explicit/IMEX Runge-Kutta methods for stiff ODEs
 
     **Usage Pattern:**
 
-    1. Initialize fields at t=0 (typically stored in last time slice):
+    1. Initialize pure 3D fields at t=0:
        ```python
-       x, y, z = grid.spatial_coordinates()
-       X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
-       fields.rho[-1, :, :, :] = initial_density(X, Y, Z)  # Current state
-       fields.u_mu[-1, :, :, :, :] = initial_velocity(X, Y, Z)
+       X, Y, Z = grid.meshgrid()
+       fields.rho[:] = initial_density(X, Y, Z)  # Direct 3D access
+       fields.u_mu[..., :] = initial_velocity(X, Y, Z)
        ```
 
     2. Evolve forward in time using adaptive time stepping:
@@ -1056,7 +1053,7 @@ class SpectralISHydrodynamics:
        for step in range(n_steps):
            dt = hydro.adaptive_time_step()
            hydro.time_step(dt)
-           # Access current state in fields.*[-1, :, :, :]
+           # Access current state directly in fields.*
        ```
 
     **Time Integration Methods:**
@@ -1069,7 +1066,7 @@ class SpectralISHydrodynamics:
 
     def __init__(
         self,
-        grid: "SpacetimeGrid",
+        grid: "SpaceGrid",
         fields: "ISFieldConfiguration",
         coeffs: Optional["TransportCoefficients"] = None,
     ):
@@ -1077,8 +1074,8 @@ class SpectralISHydrodynamics:
         Initialize integrated spectral hydrodynamics solver.
 
         Args:
-            grid: SpacetimeGrid defining computational domain
-            fields: ISFieldConfiguration with all hydrodynamic variables
+            grid: SpaceGrid defining 3D spatial computational domain
+            fields: ISFieldConfiguration with pure 3D hydrodynamic variables
             coeffs: Transport coefficients for viscous terms
         """
         self.grid = grid
@@ -1873,34 +1870,24 @@ class SpectralISHydrodynamics:
 
     def _compute_laplacian(self, field: np.ndarray) -> np.ndarray:
         """
-        Compute Laplacian ∇²field using spectral methods.
+        Compute Laplacian ∇²field using spectral methods on pure 3D fields.
 
         For field in Fourier space: ℱ[∇²f] = -k²·ℱ[f]
 
         This is critical for Israel-Stewart physics: viscous terms like ζ∇²Π and η∇²π^μν
         are essential for proper dissipative behavior.
+
+        Args:
+            field: Pure 3D spatial field (nx, ny, nz)
+
+        Returns:
+            Laplacian of field (nx, ny, nz)
         """
         try:
-            # Handle different field dimensionalities
-            original_shape = field.shape
-
-            if field.ndim == 4:
-                # Spacetime field (nt, nx, ny, nz) - use latest time slice for spatial Laplacian
-                expected_nt = self.spectral.nt if hasattr(self, "spectral") else self.nt
-                if field.shape[0] == expected_nt:
-                    spatial_field = field[-1, :, :, :]  # Latest time slice
-                    compute_4d = True
-                else:
-                    raise ValueError(
-                        f"4D field shape {field.shape} incompatible with grid time dimension {expected_nt}"
-                    )
-            elif field.ndim == 3:
-                # Pure spatial field (nx, ny, nz)
-                spatial_field = field
-                compute_4d = False
-            else:
+            # Validate pure 3D spatial field
+            if field.ndim != 3:
                 raise ValueError(
-                    f"Field must be 3D (spatial) or 4D (spacetime), got shape {field.shape}"
+                    f"Field must be pure 3D spatial array (nx, ny, nz), got shape {field.shape}"
                 )
 
             # Validate spatial dimensions
@@ -1911,32 +1898,19 @@ class SpectralISHydrodynamics:
                 expected_spatial = (self.nx, self.ny, self.nz)
                 spectral_solver = self
 
-            if spatial_field.shape != expected_spatial:
-                raise ValueError(
-                    f"Spatial field shape {spatial_field.shape} != grid shape {expected_spatial}"
-                )
+            if field.shape != expected_spatial:
+                raise ValueError(f"Field shape {field.shape} != grid shape {expected_spatial}")
 
             # Transform to Fourier space using existing FFT plans
-            field_k = spectral_solver.fft_plan(spatial_field)
-
-            # Compute k² for Laplacian operator using existing k_vectors
-            kx, ky, kz = spectral_solver.k_vectors
-            k_squared = kx**2 + ky**2 + kz**2
+            field_k = spectral_solver.fft_plan(field)
 
             # Apply Laplacian operator: ℱ[∇²f] = -k²·ℱ[f]
-            laplacian_k = -k_squared * field_k
+            laplacian_k = -spectral_solver.k_squared * field_k
 
             # Transform back to real space
-            laplacian_spatial = spectral_solver.ifft_plan(laplacian_k).real
+            laplacian = spectral_solver.ifft_plan(laplacian_k).real
 
-            # Reconstruct output with proper shape
-            if compute_4d:
-                # Create output with same shape as input, but only update latest time slice
-                laplacian = np.zeros_like(field)
-                laplacian[-1, :, :, :] = laplacian_spatial
-                return laplacian
-            else:
-                return laplacian_spatial
+            return laplacian
 
         except Exception as e:
             warnings.warn(

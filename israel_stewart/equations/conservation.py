@@ -254,25 +254,27 @@ class ConservationLaws:
         Get coordinate arrays for numerical derivatives.
 
         CRITICAL: Must use grid's coordinate arrays to respect boundary_conditions.
-        SpacetimeGrid creates coordinates with proper spacing:
+        Both SpaceGrid and SpacetimeGrid create coordinates with proper spacing:
         - periodic: dx = L/N (excludes endpoint)
         - dirichlet/neumann: dx = L/(N-1) (includes endpoint)
 
         Returns:
-            List of coordinate arrays [t, x, y, z]
+            List of coordinate arrays
+            - SpaceGrid: [x, y, z] (3D spatial)
+            - SpacetimeGrid: [t, x, y, z] (4D spacetime)
         """
         grid = self.fields.grid
 
         # Always use grid's coordinate arrays (respects boundary_conditions)
         if hasattr(grid, "coordinates") and isinstance(grid.coordinates, dict):
-            # Extract coordinate arrays in order [t, x, y, z]
+            # Extract coordinate arrays using grid's coordinate names
             coord_names = grid.coordinate_names
             return [grid.coordinates[name] for name in coord_names]
         else:
-            # Fallback should never be reached for SpacetimeGrid
+            # Fallback should never be reached for properly initialized grids
             # If it is, something is wrong with grid initialization
             raise ValueError(
-                "Grid must have 'coordinates' attribute (SpacetimeGrid required). "
+                "Grid must have 'coordinates' attribute (SpaceGrid or SpacetimeGrid required). "
                 "Cannot reconstruct coordinates safely without knowing boundary_conditions."
             )
 
@@ -282,7 +284,9 @@ class ConservationLaws:
 
         Args:
             field: Field to differentiate with shape (*grid.shape,)
-            direction: Direction index (0=time, 1,2,3=spatial)
+            direction: Direction index
+                - SpaceGrid (3D): 0,1,2 = x,y,z
+                - SpacetimeGrid (4D): 0=time, 1,2,3=spatial
             coords: Coordinate arrays
 
         Returns:

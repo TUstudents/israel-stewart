@@ -15,6 +15,7 @@ from scipy.optimize import newton_krylov
 
 from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.metrics import MetricBase
+from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 
 
@@ -30,7 +31,7 @@ class ISRelaxationEquations:
 
     def __init__(
         self,
-        grid: SpacetimeGrid,
+        grid: SpaceGrid | SpacetimeGrid,
         metric: MetricBase,
         coefficients: TransportCoefficients,
     ):
@@ -38,7 +39,7 @@ class ISRelaxationEquations:
         Initialize Israel-Stewart relaxation equations.
 
         Args:
-            grid: Spacetime discretization grid
+            grid: Spatial grid (SpaceGrid for pure 3D or SpacetimeGrid for 4D)
             metric: Background spacetime metric
             coefficients: Transport coefficients with second-order terms
         """

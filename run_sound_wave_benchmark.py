@@ -27,7 +27,6 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from israel_stewart.benchmarks.sound_waves import (
-    AnalyticalSoundWaveBenchmark,
     LinearStabilityAnalysis,
     NumericalSoundWaveBenchmark,
     SoundWaveAnalysis,
@@ -43,14 +42,14 @@ logger = get_logger(__name__)
 
 def create_benchmark(
     resolution: str = "standard",
-) -> tuple[NumericalSoundWaveBenchmark, SoundWaveAnalysis]:
+) -> NumericalSoundWaveBenchmark:
     """Create sound wave benchmark with specified resolution.
 
     Args:
         resolution: One of "low", "standard", "high"
 
     Returns:
-        Tuple of (NumericalSoundWaveBenchmark, SoundWaveAnalysis)
+        NumericalSoundWaveBenchmark instance
     """
     resolution_configs = {
         "low": {"grid_points": (32, 32, 16)},
@@ -65,14 +64,6 @@ def create_benchmark(
 
     config = resolution_configs[resolution]
 
-    # Create grid
-    grid = SpaceGrid(
-        coordinate_system="cartesian",
-        spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-        grid_points=config["grid_points"],
-        boundary_conditions="periodic",
-    )
-
     # Transport coefficients
     transport_coeffs = TransportCoefficients(
         shear_viscosity=0.08,
@@ -86,25 +77,18 @@ def create_benchmark(
         xi_2=0.1,
     )
 
-    # Create numerical benchmark
+    # Create numerical benchmark (it creates its own grid internally)
     numerical_benchmark = NumericalSoundWaveBenchmark(
-        grid=grid,
-        transport_coefficients=transport_coeffs,
-    )
-
-    # Create analytical analysis
-    metric = MinkowskiMetric()
-    analytical_benchmark = SoundWaveAnalysis(
-        grid=grid,
-        metric=metric,
-        transport_coefficients=transport_coeffs,
+        domain_size=2 * np.pi,
+        grid_points=config["grid_points"],
+        transport_coeffs=transport_coeffs,
     )
 
     logger.info(
         f"Created sound wave benchmark with {resolution} resolution: {config['grid_points']}"
     )
 
-    return numerical_benchmark, analytical_benchmark
+    return numerical_benchmark
 
 
 def run_dispersion_analysis(
@@ -162,7 +146,7 @@ def run_dispersion_analysis(
 
 
 def run_numerical_simulation(
-    numerical: NumericalSoundWaveBenchmark,
+    benchmark: NumericalSoundWaveBenchmark,
     wave_number: float = 1.0,
     amplitude: float = 0.01,
     simulation_time: float = 10.0,
@@ -170,7 +154,7 @@ def run_numerical_simulation(
     """Run numerical sound wave propagation simulation.
 
     Args:
-        numerical: NumericalSoundWaveBenchmark instance
+        benchmark: NumericalSoundWaveBenchmark instance
         wave_number: Wave number k
         amplitude: Initial amplitude
         simulation_time: Total simulation time
@@ -183,17 +167,16 @@ def run_numerical_simulation(
     start_time = time.time()
 
     # Set up initial conditions
-    numerical.setup_initial_conditions(
+    benchmark.setup_initial_conditions(
         wave_number=wave_number,
         amplitude=amplitude,
         background_density=1.0,
     )
 
     # Run simulation
-    results = numerical.run_simulation(
+    results = benchmark.run_simulation(
         wave_number=wave_number,
         simulation_time=simulation_time,
-        cfl_factor=0.5,
     )
 
     elapsed = time.time() - start_time
@@ -381,11 +364,11 @@ Examples:
 
     try:
         # Create benchmark
-        numerical, analytical = create_benchmark(resolution=args.resolution)
+        benchmark = create_benchmark(resolution=args.resolution)
 
         # Run dispersion relation analysis
         print("Running dispersion relation analysis...")
-        dispersion_data = run_dispersion_analysis(analytical)
+        dispersion_data = run_dispersion_analysis(benchmark.analytical)
 
         # Validate causality
         causality = validate_causality(dispersion_data)
@@ -395,7 +378,7 @@ Examples:
         print("DISPERSION RELATION VALIDATION")
         print("=" * 80)
         print(f"Resolution:          {args.resolution}")
-        print(f"Grid points:         {numerical.grid_points}")
+        print(f"Grid points:         {benchmark.grid_points}")
         print()
         print("Causality Constraints:")
         print(
@@ -424,7 +407,7 @@ Examples:
             print()
 
             sim_results = run_numerical_simulation(
-                numerical,
+                benchmark,
                 wave_number=args.wave_number,
                 amplitude=args.amplitude,
                 simulation_time=args.simulation_time,

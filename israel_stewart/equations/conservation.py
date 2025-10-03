@@ -171,24 +171,32 @@ class ConservationLaws:
 
         # Get coordinate arrays for spatial derivatives only
         coords = self._get_coordinate_arrays()
-        spatial_coords = coords[1:]  # [x, y, z] coordinates, excluding time
+
+        # Detect grid type to correctly map tensor indices to coordinate indices
+        # SpaceGrid: coords = [x, y, z] (3 elements, indices 0,1,2)
+        # SpacetimeGrid: coords = [t, x, y, z] (4 elements, indices 0,1,2,3)
+        is_spacegrid = len(coords) == 3
 
         # For 3+1D evolution: ∂_t T^0ν = -∂_i T^iν (only spatial divergence)
         drho_dt = np.zeros(grid_shape)
         dmom_dt = np.zeros((*grid_shape, 3))
 
         # Energy conservation: ∂_t ρ = ∂_t T^00 = -∂_i T^i0
-        # Sum over spatial indices i=1,2,3
-        for i in range(1, 4):  # i = 1, 2, 3 (spatial indices)
+        # Sum over spatial tensor indices i=1,2,3
+        for i in range(1, 4):  # i = 1, 2, 3 (tensor spatial indices)
             T_i0 = T[..., i, 0]  # T^i0 component
-            spatial_deriv = self._partial_derivative(T_i0, i, coords)
+            # Map tensor index to coordinate array index
+            coord_idx = i - 1 if is_spacegrid else i
+            spatial_deriv = self._partial_derivative(T_i0, coord_idx, coords)
             drho_dt -= spatial_deriv
 
         # Momentum conservation: ∂_t(ρu^j) = ∂_t T^0j = -∂_i T^ij
-        for j in range(1, 4):  # j = 1, 2, 3 (momentum components)
-            for i in range(1, 4):  # i = 1, 2, 3 (spatial divergence)
+        for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
+            for i in range(1, 4):  # i = 1, 2, 3 (spatial tensor divergence)
                 T_ij = T[..., i, j]  # T^ij component
-                spatial_deriv = self._partial_derivative(T_ij, i, coords)
+                # Map tensor index to coordinate array index
+                coord_idx = i - 1 if is_spacegrid else i
+                spatial_deriv = self._partial_derivative(T_ij, coord_idx, coords)
                 dmom_dt[..., j - 1] -= spatial_deriv
 
         # Add Christoffel symbol corrections if metric is not Minkowski

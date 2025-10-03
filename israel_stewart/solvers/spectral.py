@@ -2000,16 +2000,22 @@ class SpectralISHydrodynamics:
     def evolve(
         self,
         t_final: float,
+        dt: float | None = None,
+        method: str = "spectral_imex",
         output_callback: Callable | None = None,
+        callback: Callable[[float, "ISFieldConfiguration"], None] | None = None,
         save_trajectory: dict[str, Any] | None = None,
         snapshot_config: dict[str, Any] | None = None,
     ) -> None:
         """
-        Evolve hydrodynamics from t=0 to t_final using adaptive time stepping.
+        Evolve hydrodynamics from t=0 to t_final using time stepping.
 
         Args:
             t_final: Final simulation time
-            output_callback: Optional callback for data output (called every step)
+            dt: Timestep (uses adaptive stepping if None)
+            method: Integration method ('spectral_imex', 'rk4', etc.)
+            output_callback: Optional callback for data output (called every step as callback(t, step, fields))
+            callback: Optional simple callback for monitoring (called as callback(t, fields))
             save_trajectory: [DEPRECATED] Use snapshot_config instead. Optional dict for HDF5 saving
             snapshot_config: Optional dict to enable streaming snapshot saving:
                 - 'filename': HDF5 file path (required)
@@ -2019,7 +2025,14 @@ class SpectralISHydrodynamics:
 
         Example:
             ```python
-            # New streaming architecture (recommended)
+            # With monitoring callback
+            def monitor(t, fields):
+                print(f"t={t:.2f}, rho={np.mean(fields.rho):.3f}")
+
+
+            hydro.evolve(t_final=10.0, dt=0.01, callback=monitor)
+
+            # With streaming snapshots (recommended)
             hydro.evolve(
                 t_final=10.0,
                 snapshot_config={
@@ -2079,15 +2092,23 @@ class SpectralISHydrodynamics:
 
         try:
             while t < t_final:
-                # Adaptive time step
-                dt = self.adaptive_time_step()
-                dt = min(dt, t_final - t)  # Don't overshoot
+                # Determine time step
+                if dt is None:
+                    dt_step = self.adaptive_time_step()
+                else:
+                    dt_step = dt
 
-                # Advance one time step
-                self.time_step(dt)
+                dt_step = min(dt_step, t_final - t)  # Don't overshoot
 
-                t += dt
+                # Advance one time step with specified method
+                self.time_step(dt_step, method=method)
+
+                t += dt_step
                 step += 1
+
+                # Call simple monitoring callback
+                if callback is not None:
+                    callback(t, self.fields)
 
                 # Handle snapshots (new streaming or old trajectory writer)
                 if stream is not None:
@@ -2100,7 +2121,7 @@ class SpectralISHydrodynamics:
                         trajectory_writer.write_snapshot(t, self.fields)
                         last_snapshot_time = t
 
-                # Output callback
+                # Output callback (legacy, more complex signature)
                 if output_callback is not None:
                     output_callback(t, step, self.fields)
 

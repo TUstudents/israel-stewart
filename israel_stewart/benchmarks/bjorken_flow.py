@@ -17,8 +17,10 @@ from ..core.constants import HBAR, KBOLTZ
 from ..core.fields import ISFieldConfiguration, TransportCoefficients
 from ..core.metrics import MilneMetric
 from ..core.performance import monitor_performance
+from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 from ..equations.relaxation import ISRelaxationEquations
+from ..solvers.spectral import SpectralISHydrodynamics
 
 
 class BjorkenFlowSolution:
@@ -320,15 +322,15 @@ class BjorkenBenchmark:
 
     def __init__(
         self,
-        grid: SpacetimeGrid,
+        grid: SpaceGrid | SpacetimeGrid,
         coefficients: TransportCoefficients,
         analytical_solution: BjorkenFlowSolution,
     ):
         """
-        Initialize Bjorken flow benchmark.
+        Initialize Bjorken flow benchmark with pure 3D spatial grid.
 
         Args:
-            grid: Spacetime grid for numerical simulation
+            grid: SpaceGrid for numerical simulation (SpacetimeGrid also supported for compatibility)
             coefficients: Transport coefficients
             analytical_solution: Analytical solution for comparison
         """
@@ -336,9 +338,12 @@ class BjorkenBenchmark:
         self.coefficients = coefficients
         self.analytical = analytical_solution
 
-        # Numerical simulation setup
+        # Initialize fields
+        self.fields = ISFieldConfiguration(grid)
+
+        # Create spectral solver
         self.metric = MilneMetric()
-        self.relaxation_eq = ISRelaxationEquations(grid, self.metric, coefficients)
+        self.solver = SpectralISHydrodynamics(grid, self.fields, coefficients)
 
         # Results storage
         self.results: dict[str, Any] = {}
@@ -347,25 +352,24 @@ class BjorkenBenchmark:
     def run_numerical_simulation(
         self,
         final_time: float = 10.0,
-        timestep: float = 0.01,
-        solver_method: str = "explicit",
+        timestep: float | None = None,
+        method: str = "spectral_imex",
     ) -> dict[str, np.ndarray]:
         """
-        Run numerical Bjorken flow simulation.
+        Run numerical Bjorken flow simulation using spectral solver.
 
         Args:
             final_time: Final simulation time in fm/c
-            timestep: Integration timestep
-            solver_method: Numerical method ('explicit', 'implicit')
+            timestep: Integration timestep (adaptive if None)
+            method: Solver method ('spectral_imex', 'rk4', etc.)
 
         Returns:
             Dictionary with numerical solution
         """
-        # Initialize fields with Bjorken flow conditions
-        fields = ISFieldConfiguration(self.grid)
-        self._setup_bjorken_initial_conditions(fields)
+        # Setup initial conditions
+        self._setup_bjorken_initial_conditions(self.fields)
 
-        # Time evolution
+        # Storage for monitoring during evolution
         time_points: list[float] = []
         solutions: dict[str, list[float]] = {
             "temperature": [],
@@ -375,27 +379,21 @@ class BjorkenBenchmark:
             "shear_stress": [],
         }
 
-        current_time = self.analytical.tau0
-        time_points.append(current_time)
-
-        # Record initial conditions
-        self._record_solution_state(fields, solutions)
-
-        # Time integration loop
-        while current_time < final_time:
-            dt = min(timestep, final_time - current_time)
-
-            # Evolve fields
-            if solver_method == "explicit":
-                self.relaxation_eq.evolve_relaxation(fields, dt, method="explicit")
-            elif solver_method == "implicit":
-                self.relaxation_eq.evolve_relaxation(fields, dt, method="implicit")
-            else:
-                raise ValueError(f"Unknown solver method: {solver_method}")
-
-            current_time += dt
-            time_points.append(current_time)
+        # Callback to record solution state during evolution
+        def record_state(t: float, fields: ISFieldConfiguration) -> None:
+            time_points.append(t)
             self._record_solution_state(fields, solutions)
+
+        # Record initial state
+        record_state(self.analytical.tau0, self.fields)
+
+        # Evolve using spectral solver
+        self.solver.evolve(
+            t_final=final_time,
+            dt=timestep,
+            method=method,
+            callback=record_state,
+        )
 
         # Convert lists to arrays
         result = {
@@ -407,40 +405,52 @@ class BjorkenBenchmark:
         return result
 
     def _setup_bjorken_initial_conditions(self, fields: ISFieldConfiguration) -> None:
-        """Setup initial conditions for Bjorken flow."""
+        """Setup initial conditions for Bjorken flow (pure 3D)."""
         # Get ideal solution at initial time
         ideal_ic = self.analytical.ideal_solution(self.analytical.tau0)
 
-        # Set thermodynamic quantities
-        fields.temperature.fill(ideal_ic["temperature"][0])
-        fields.rho.fill(ideal_ic["energy_density"][0])
-        fields.pressure.fill(ideal_ic["pressure"][0])
+        # Set thermodynamic quantities (pure 3D arrays)
+        fields.rho[:] = ideal_ic["energy_density"][0]
+        fields.pressure[:] = ideal_ic["pressure"][0]
 
-        # Set four-velocity (boost-invariant)
-        fields.u_mu[..., 0] = 1.0  # u^τ = 1
-        fields.u_mu[..., 1] = 0.0  # u^η = 0
-        fields.u_mu[..., 2] = 0.0  # u^x = 0
-        fields.u_mu[..., 3] = 0.0  # u^y = 0
+        if hasattr(fields, "temperature"):
+            fields.temperature[:] = ideal_ic["temperature"][0]
+
+        # Set four-velocity (boost-invariant, rest frame)
+        fields.u_mu[:] = 0.0
+        fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
 
         # Initialize dissipative fluxes to zero
-        fields.Pi.fill(0.0)
-        fields.pi_munu.fill(0.0)
+        fields.Pi[:] = 0.0
+        fields.pi_munu[:] = 0.0
         if hasattr(fields, "q_mu"):
-            fields.q_mu.fill(0.0)
+            fields.q_mu[:] = 0.0
 
     def _record_solution_state(
         self, fields: ISFieldConfiguration, solutions: dict[str, list[float]]
     ) -> None:
-        """Record current solution state."""
-        # Take spatial average (for Bjorken flow, fields should be uniform)
-        solutions["temperature"].append(float(np.mean(fields.temperature)))
+        """Record current solution state (pure 3D fields)."""
+        # Take spatial average (Bjorken flow should be uniform)
+        if hasattr(fields, "temperature"):
+            solutions["temperature"].append(float(np.mean(fields.temperature)))
+        else:
+            # Compute temperature from energy density
+            T = self._compute_temperature_from_rho(float(np.mean(fields.rho)))
+            solutions["temperature"].append(T)
+
         solutions["energy_density"].append(float(np.mean(fields.rho)))
         solutions["pressure"].append(float(np.mean(fields.pressure)))
         solutions["bulk_pressure"].append(float(np.mean(fields.Pi)))
 
-        # Shear stress (take trace norm for scalar measure)
+        # Shear stress magnitude (Frobenius norm)
         pi_norm = np.sqrt(np.mean(fields.pi_munu**2))
         solutions["shear_stress"].append(float(pi_norm))
+
+    def _compute_temperature_from_rho(self, rho: float) -> float:
+        """Compute temperature from energy density (ideal gas EOS)."""
+        g_eff = 37.5  # QGP degrees of freedom
+        a = (np.pi**2 / 90.0) * g_eff
+        return (rho / a) ** (1.0 / 4.0)
 
     @monitor_performance("bjorken_comparison")
     def compare_solutions(
@@ -716,26 +726,28 @@ def create_standard_bjorken_benchmark(
     tau0: float = 0.6,
     T0: float = 0.3,
     eta_over_s: float = 0.08,
-    grid_points: tuple[int, int, int, int] = (8, 4, 4, 4),
+    grid_points: tuple[int, int, int] = (32, 32, 32),
+    domain_size: float = 2.0 * np.pi,
 ) -> BjorkenBenchmark:
     """
-    Create a standard Bjorken flow benchmark setup.
+    Create a standard Bjorken flow benchmark setup with pure 3D spatial grid.
 
     Args:
-        tau0: Initial time in fm/c
+        tau0: Initial proper time in fm/c
         T0: Initial temperature in GeV
         eta_over_s: Shear viscosity to entropy ratio
-        grid_points: Grid resolution
+        grid_points: Spatial grid resolution (nx, ny, nz)
+        domain_size: Spatial domain size (periodic)
 
     Returns:
-        Configured Bjorken benchmark
+        Configured Bjorken benchmark with SpaceGrid
     """
-    # Create grid (only tau direction matters for Bjorken flow)
-    grid = SpacetimeGrid(
-        coordinate_system="milne",
-        time_range=(tau0, 10.0),
-        spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-        grid_points=grid_points,
+    # Create pure 3D spatial grid
+    grid = SpaceGrid(
+        coordinate_system="cartesian",  # Use Cartesian for simplicity
+        spatial_ranges=[(0.0, domain_size)] * 3,
+        grid_points=grid_points,  # (nx, ny, nz) - pure 3D
+        boundary_conditions="periodic",  # Required for spectral methods
     )
 
     # Transport coefficients

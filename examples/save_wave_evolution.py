@@ -2,9 +2,11 @@
 """
 Example: Save sound wave evolution to HDF5 trajectory.
 
+Updated for Phase 6/7: Pure 3D SpaceGrid architecture with streaming snapshots.
+
 Demonstrates:
-1. Setting up a sound wave initial condition
-2. Running time evolution with trajectory saving
+1. Setting up a sound wave initial condition with SpaceGrid
+2. Running time evolution with streaming snapshot saving
 3. Reading the trajectory back
 4. Analyzing wave propagation
 """
@@ -13,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
+from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.solvers.spectral import SpectralISHydrodynamics
 from israel_stewart.utils.io import TrajectoryReader
 
@@ -22,30 +24,27 @@ def main():
     """Run wave evolution and save trajectory."""
 
     print("=" * 70)
-    print("EXAMPLE: Sound Wave Evolution with HDF5 Trajectory Saving")
+    print("EXAMPLE: Sound Wave Evolution with Streaming Snapshots (Phase 7)")
     print("=" * 70)
     print()
 
     # ==========================================================================
-    # 1. Setup simulation
+    # 1. Setup simulation with pure 3D SpaceGrid
     # ==========================================================================
 
     print("Setting up simulation...")
 
-    # Create 3D spatial grid
-    # NOTE: For pure 3+1D evolution, we use minimal nt (just for storage)
+    # Create pure 3D spatial grid (Phase 1 architecture)
     nx, ny, nz = 32, 32, 32
-    nt = 1  # Minimal time dimension (only current state)
 
-    grid = SpacetimeGrid(
+    grid = SpaceGrid(
         coordinate_system="cartesian",
-        time_range=(0.0, 1.0),
         spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-        grid_points=(nt, nx, ny, nz),
+        grid_points=(nx, ny, nz),
         boundary_conditions="periodic",
     )
 
-    # Initialize fields
+    # Initialize 3D fields (Phase 2 architecture)
     fields = ISFieldConfiguration(grid)
 
     # Sound wave parameters
@@ -55,63 +54,52 @@ def main():
     wavelength = 2 * np.pi
     k = 2 * np.pi / wavelength
 
-    # Get spatial coordinates
-    x = grid.coordinates["x"]
-    y = grid.coordinates["y"]
-    z = grid.coordinates["z"]
-    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+    # Get spatial coordinates and create meshgrid
+    X, Y, Z = grid.meshgrid()
 
     # Initialize with plane wave in x-direction
     # Density perturbation: ρ = ρ_0 + A sin(kx)
     density_perturbation = amplitude * np.sin(k * X)
 
-    # Handle both 3D and 4D storage
-    if fields.rho.ndim == 4:
-        # 4D storage: initialize last time slice
-        fields.rho[-1, :, :, :] = rho_0 + density_perturbation
-        fields.pressure[-1, :, :, :] = fields.rho[-1, :, :, :] / 3.0
+    # Pure 3D field initialization (no dimension checking needed!)
+    fields.rho[:] = rho_0 + density_perturbation
+    fields.pressure[:] = fields.rho / 3.0
 
-        # Velocity: u^x = (c_s/ρ_0) A sin(kx)
-        u_x = (c_s / rho_0) * density_perturbation
-        fields.u_mu[-1, :, :, :, 0] = np.sqrt(1.0 + u_x**2)
-        fields.u_mu[-1, :, :, :, 1] = u_x
-        fields.u_mu[-1, :, :, :, 2:] = 0.0
-    else:
-        # 3D storage: initialize directly
-        fields.rho[:] = rho_0 + density_perturbation
-        fields.pressure[:] = fields.rho / 3.0
-
-        u_x = (c_s / rho_0) * density_perturbation
-        fields.u_mu[..., 0] = np.sqrt(1.0 + u_x**2)
-        fields.u_mu[..., 1] = u_x
-        fields.u_mu[..., 2:] = 0.0
+    # Velocity: u^x = (c_s/ρ_0) A sin(kx)
+    u_x = (c_s / rho_0) * density_perturbation
+    fields.u_mu[..., 0] = np.sqrt(1.0 + u_x**2)
+    fields.u_mu[..., 1] = u_x
+    fields.u_mu[..., 2:] = 0.0
 
     # Zero viscosity for ideal fluid
     coeffs = TransportCoefficients(shear_viscosity=0.0, bulk_viscosity=0.0)
 
-    # Create solver
+    # Create spectral solver (Phase 3 architecture)
     hydro = SpectralISHydrodynamics(grid, fields, coeffs)
 
-    print(f"  Grid: {nx}x{ny}x{nz}")
+    print(f"  Grid: {nx}x{ny}x{nz} (pure 3D SpaceGrid)")
     print(f"  Wave: λ = {wavelength:.3f}, amplitude = {amplitude:.3f}")
     print(f"  Sound speed: c_s = {c_s:.4f}")
     print()
 
     # ==========================================================================
-    # 2. Run evolution with trajectory saving
+    # 2. Run evolution with streaming snapshot saving (Phase 5)
     # ==========================================================================
 
-    print("Running evolution...")
-    print("  Saving trajectory to: wave_evolution.h5")
+    print("Running evolution with streaming snapshots...")
+    print("  Output: wave_evolution.h5")
+    print("  Buffer size: 20 snapshots (memory efficient)")
 
     t_final = 5.0
     snapshot_interval = 0.1
 
+    # Use new snapshot_config for streaming architecture (Phase 5)
     hydro.evolve(
         t_final=t_final,
-        save_trajectory={
+        snapshot_config={
             "filename": "wave_evolution.h5",
             "interval": snapshot_interval,
+            "buffer_size": 20,  # Buffer 20 snapshots before flushing
             "save_initial": True,
         },
     )
@@ -119,21 +107,25 @@ def main():
     print()
 
     # ==========================================================================
-    # 3. Read trajectory and analyze
+    # 3. Read trajectory and analyze (validates streaming output)
     # ==========================================================================
 
-    print("Reading trajectory...")
+    print("Reading trajectory from HDF5...")
 
     reader = TrajectoryReader("wave_evolution.h5")
 
-    print(f"  Snapshots: {reader.get_n_snapshots()}")
+    print(f"  Snapshots saved: {reader.get_n_snapshots()}")
     print(f"  Time range: {reader.get_times()[[0, -1]]}")
+    print("  Memory used: Constant (buffered streaming)")
     print()
 
     # Extract density evolution at center point
     center_idx = (nx // 2, ny // 2, nz // 2)
     rho_timeseries = reader.get_field_timeseries("rho", center_idx)
     times = reader.get_times()
+
+    # Get coordinates for plotting
+    x = grid.coordinate_arrays[0]  # Pure 3D grid coordinates
 
     print(f"Time series at center {center_idx}:")
     print(f"  Initial density: {rho_timeseries[0]:.6f}")

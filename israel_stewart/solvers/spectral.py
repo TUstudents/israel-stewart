@@ -70,7 +70,7 @@ class SpectralISolver:
             warnings.warn(
                 f"SpectralISolver requires periodic boundary conditions, but grid has "
                 f"'{grid.boundary_conditions}' boundaries. This may cause FFT accuracy issues. "
-                f"Consider using boundary_conditions='periodic' when creating the SpacetimeGrid.",
+                f"Consider using boundary_conditions='periodic' when creating the SpaceGrid.",
                 UserWarning,
                 stacklevel=2,
             )

@@ -4,29 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a sophisticated Python implementation of relativistic hydrodynamics using the Israel-Stewart formalism with second-order viscous corrections. The codebase is organized into specialized modules for different aspects of relativistic fluid dynamics.
+This is a sophisticated Python implementation of relativistic hydrodynamics using the Israel-Stewart formalism with second-order viscous corrections. The codebase uses a **pure 3D spatial architecture** with time as an evolution parameter, achieving 95% memory reduction compared to 4D spacetime storage.
 
-## Architecture
+## Architecture: 3+1D Pure Spatial Formulation
 
-The package follows a modular physics-based architecture:
+**Key Concept**: Fields are stored as pure 3D spatial arrays `(nx, ny, nz)`. Time evolution is handled by numerical integrators (RK4, IMEX), not by storing 4D spacetime arrays.
 
-**Core Foundation (`core/`)**:
-- `tensor_base.py`: Core TensorField class with index management and basic operations
-- `four_vectors.py`: FourVector specialization with relativistic physics operations
-- `stress_tensors.py`: StressEnergyTensor and ViscousStressTensor for fluid dynamics
-- `derivatives.py`: CovariantDerivative and ProjectionOperator for curved spacetime
-- `transformations.py`: LorentzTransformation and CoordinateTransformation classes
-- `tensor_utils.py`: Type guards, validation functions, and optimization utilities
-- `performance.py`: Performance monitoring and optimization for tensor operations
-- `tensors.py`: Consolidated imports for backwards compatibility
+**Memory Efficiency**: For 64³ grid with 12 fields:
+- Old 4D architecture (nt=20): ~1500 MB
+- New 3D architecture: ~75 MB
+- **Reduction: 95%**
+
+## Core Modules
+
+**Spatial Grids (`core/`)**:
+- `spacegrid.py`: **NEW** - Pure 3D spatial grid (recommended for all simulations)
+- `spacetime_grid.py`: Legacy 4D grid (kept for backward compatibility, metadata only)
+- `fields.py`: ISFieldConfiguration with pure 3D field storage
 - `metrics.py`: Spacetime metrics and Christoffel symbols
-- `fields.py`: Fluid field variables and state vectors
 - `constants.py`: Physical constants and unit systems
 
+**Tensor Framework (`core/`)**:
+- `tensor_base.py`: Core TensorField class with index management
+- `four_vectors.py`: FourVector specialization with relativistic operations
+- `stress_tensors.py`: StressEnergyTensor and ViscousStressTensor
+- `derivatives.py`: CovariantDerivative and ProjectionOperator
+- `transformations.py`: Lorentz and coordinate transformations
+- `tensor_utils.py`: Validation and optimization utilities
+- `performance.py`: Performance monitoring
+- `tensors.py`: Consolidated imports for backward compatibility
+
 **Utilities (`utils/`)**:
-- `logging_config.py`: Structured logging configuration with performance and physics-specific loggers
-- `visualization.py`: Plotting utilities for tensor fields and physics data
-- `io.py`: File I/O utilities for simulation data
+- `streaming.py`: **NEW** - Buffered snapshot writing with constant memory
+- `io.py`: HDF5 trajectory I/O utilities
+- `logging_config.py`: Structured logging with performance tracking
+- `visualization.py`: Plotting utilities
 - `dimensionless.py`: Dimensionless variable transformations
 
 **Physics Equations (`equations/`)**:
@@ -65,51 +77,57 @@ The package follows a modular physics-based architecture:
 
 **Logging**: Set `ISRAEL_STEWART_LOG_LEVEL`, `ISRAEL_STEWART_LOG_FORMAT`, `ISRAEL_STEWART_LOG_PERFORMANCE`, `ISRAEL_STEWART_LOG_MEMORY`, `ISRAEL_STEWART_LOG_FILE`
 
-**Testing Complete Israel-Stewart System**:
+## Quick Start: Pure 3D Architecture
+
+**Recommended: SpaceGrid with Streaming Snapshots**
+
 ```python
-# Complete Israel-Stewart relaxation equations
 from israel_stewart.core import ISFieldConfiguration, TransportCoefficients
-from israel_stewart.core import SpacetimeGrid, MinkowskiMetric
-from israel_stewart.equations.relaxation import ISRelaxationEquations
+from israel_stewart.core.spacegrid import SpaceGrid
+from israel_stewart.solvers.spectral import SpectralISHydrodynamics
 import numpy as np
 
-# Setup spacetime grid
-grid = SpacetimeGrid(
+# Create pure 3D spatial grid (no time dimension)
+grid = SpaceGrid(
     coordinate_system="cartesian",
-    time_range=(0.0, 1.0),
-    spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-    grid_points=(8, 8, 8, 8)
+    spatial_ranges=[(0.0, 2*np.pi)] * 3,
+    grid_points=(64, 64, 64),  # Just spatial: (nx, ny, nz)
+    boundary_conditions="periodic"
 )
 
-# Transport coefficients with second-order terms
+# Initialize 3D fields (direct indexing, no time slice)
+fields = ISFieldConfiguration(grid)
+X, Y, Z = grid.meshgrid()
+
+# Direct 3D field initialization
+fields.rho[:] = 1.0 + 0.1 * np.sin(X)  # Pure 3D array (64, 64, 64)
+fields.pressure[:] = fields.rho / 3.0
+fields.u_mu[..., 0] = 1.0  # Rest frame
+
+# Transport coefficients
 coeffs = TransportCoefficients(
     shear_viscosity=0.1,
     bulk_viscosity=0.05,
     shear_relaxation_time=0.5,
-    bulk_relaxation_time=0.3,
-    lambda_pi_pi=0.1,  # Second-order coupling
-    xi_1=0.2          # Bulk nonlinearity
+    bulk_relaxation_time=0.3
 )
 
-# Initialize relaxation system
-metric = MinkowskiMetric()
-relaxation = ISRelaxationEquations(grid, metric, coeffs)
+# Create spectral solver (pure 3D operations)
+hydro = SpectralISHydrodynamics(grid, fields, coeffs)
 
-# Setup field configuration
-fields = ISFieldConfiguration(grid)
-fields.rho.fill(1.0)      # Energy density
-fields.pressure.fill(0.33) # Pressure
-fields.Pi.fill(0.01)      # Bulk pressure
-fields.pi_munu.fill(0.005) # Shear tensor
+# Evolve with streaming snapshots (constant memory)
+hydro.evolve(
+    t_final=10.0,
+    snapshot_config={
+        "filename": "output.h5",
+        "interval": 0.1,         # Save every 0.1 time units
+        "buffer_size": 20,       # Buffer 20 snapshots before flushing
+        "save_initial": True
+    }
+)
 
-# Evolve dissipative fluxes
-dt = 0.01
-relaxation.evolve_relaxation(fields, dt, method='implicit')
-
-# Analyze stability
-stability = relaxation.stability_analysis(fields)
-print(f"Stiffness ratio: {stability['stiffness_ratio']}")
-print(f"Recommended timestep: {stability['recommended_dt']}")
+# Memory usage: ~75 MB (constant)
+# vs old 4D approach: ~1500 MB (growing with nt)
 ```
 
 ## Development Notes
@@ -119,21 +137,59 @@ print(f"Recommended timestep: {stability['recommended_dt']}")
 - **Logging**: `from israel_stewart.utils import get_logger`
 - Israel-Stewart second-order viscous hydrodynamics, general covariance in curved spacetime
 
+### SpaceGrid vs SpacetimeGrid
+
+**Use SpaceGrid (Pure 3D) for all new code:**
+
+```python
+# ✅ RECOMMENDED: Pure 3D SpaceGrid
+grid = SpaceGrid(
+    coordinate_system="cartesian",
+    spatial_ranges=[(0.0, 2*np.pi)] * 3,
+    grid_points=(64, 64, 64),  # (nx, ny, nz)
+    boundary_conditions="periodic"
+)
+fields = ISFieldConfiguration(grid)
+fields.rho[:] = 1.0  # Direct 3D indexing
+```
+
+**SpacetimeGrid (Legacy 4D) - Deprecated:**
+
+```python
+# ❌ OLD: 4D SpacetimeGrid (deprecated, use only for backward compatibility)
+grid = SpacetimeGrid(
+    coordinate_system="cartesian",
+    time_range=(0.0, 1.0),  # Confusing: not used for evolution
+    spatial_ranges=[(0.0, 2*np.pi)] * 3,
+    grid_points=(1, 64, 64, 64),  # (nt, nx, ny, nz) - wasteful
+    boundary_conditions="periodic"
+)
+fields = ISFieldConfiguration(grid)
+# ISFieldConfiguration now always uses pure 3D storage internally
+fields.rho[:] = 1.0  # Works, but SpaceGrid is clearer
+```
+
+**Key Differences:**
+- **SpaceGrid**: 3D spatial grid, time is evolution parameter (modern)
+- **SpacetimeGrid**: 4D spacetime grid, kept for metadata/backward compatibility (legacy)
+- **Memory**: SpaceGrid uses 95% less memory (no time dimension)
+- **Clarity**: SpaceGrid makes the 3+1D architecture explicit
+
 ### Critical: Spectral Solver Boundary Conditions
 
 **ALWAYS use `boundary_conditions="periodic"` for spectral methods:**
 
 ```python
 # CORRECT:
-grid = SpacetimeGrid(
+grid = SpaceGrid(
     coordinate_system="cartesian",
-    spatial_ranges=[(0.0, 2*np.pi), (0.0, 2*np.pi), (0.0, 2*np.pi)],
-    grid_points=(8, 16, 16, 16),
+    spatial_ranges=[(0.0, 2*np.pi)] * 3,
+    grid_points=(64, 64, 64),
     boundary_conditions="periodic",  # Required for FFT-based methods!
 )
 
 # WRONG (defaults to "dirichlet", causes 6% error in derivatives):
-grid = SpacetimeGrid(..., grid_points=(8, 16, 16, 16))  # Missing boundary_conditions
+grid = SpaceGrid(..., grid_points=(64, 64, 64))  # Missing boundary_conditions
 ```
 
 **Why**: FFT assumes periodicity. Dirichlet: `dx = L/(N-1)`, Periodic: `dx = L/N`. Wrong spacing shifts wavenumbers by `(N-1)/N`, causing systematic derivative errors. See `EXPANSION_SCALAR_BUG_FIX.md`.

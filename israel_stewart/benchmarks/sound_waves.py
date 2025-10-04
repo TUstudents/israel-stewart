@@ -1090,8 +1090,18 @@ class NumericalSoundWaveBenchmark:
         sound_speed = analytical_mode.sound_speed
         dt_cfl = dt_factor * dx / max(sound_speed, 0.1)
 
-        # Monitor point for time series (center of domain)
-        monitor_idx = tuple(n // 2 for n in self.grid_points)
+        # Monitor point for time series (at antinode of wave for maximum signal)
+        # For sin(kx) wave, antinode is at x = π/(2k)
+        # Find grid point closest to this location
+        X, Y, Z = self.grid.meshgrid()
+        x_antinode = np.pi / (2 * wave_number)
+
+        # Find index closest to antinode in x-direction
+        x_1d = X[:, 0, 0]  # X coordinates along first axis
+        ix_antinode = np.argmin(np.abs(x_1d - x_antinode))
+
+        # Use center indices for y and z (wave is along x)
+        monitor_idx = (ix_antinode, self.grid_points[1] // 2, self.grid_points[2] // 2)
 
         # Storage for time series
         time_points = []

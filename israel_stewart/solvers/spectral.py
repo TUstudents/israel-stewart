@@ -1344,12 +1344,40 @@ class SpectralISHydrodynamics:
 
         try:
             # Use relaxation equation module if available
-            if self.relaxation is not None and hasattr(self.relaxation, "compute_source_terms"):
-                source_terms = self.relaxation.compute_source_terms(self.fields)
-                relaxation_rhs.update(source_terms)
+            if self.relaxation is not None and hasattr(self.relaxation, "compute_relaxation_rhs"):
+                # Compute full Israel-Stewart sources using relaxation module
+                rhs = self.relaxation.compute_relaxation_rhs(self.fields)
+
+                # Unpack the concatenated RHS array
+                # Format: [Pi_flat, pi_munu_flat, q_mu_flat]
+                Pi_size = self.fields.Pi.size
+                pi_munu_size = self.fields.pi_munu.size
+                q_mu_size = self.fields.q_mu.size
+
+                dPi_dt = rhs[:Pi_size].reshape(self.fields.Pi.shape)
+                dpi_munu_dt = rhs[Pi_size : Pi_size + pi_munu_size].reshape(
+                    self.fields.pi_munu.shape
+                )
+                dq_mu_dt = rhs[Pi_size + pi_munu_size : Pi_size + pi_munu_size + q_mu_size].reshape(
+                    self.fields.q_mu.shape
+                )
+
+                # Return with keys matching IMEX field names
+                relaxation_rhs = {
+                    "Pi": dPi_dt,
+                    "pi_munu": dpi_munu_dt,
+                    "q_mu": dq_mu_dt,
+                }
             else:
                 # Fallback: compute basic source terms manually
-                relaxation_rhs = self._compute_basic_relaxation_sources()
+                basic_sources = self._compute_basic_relaxation_sources()
+                # Rename keys from "_source" suffix to match IMEX field names
+                relaxation_rhs = {
+                    "Pi": basic_sources.get("dPi_dt_source", np.zeros_like(self.fields.Pi)),
+                    "pi_munu": basic_sources.get(
+                        "dpi_dt_source", np.zeros_like(self.fields.pi_munu)
+                    ),
+                }
 
         except Exception as e:
             physics_logger.log_physics_fallback(

@@ -16,6 +16,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
+    from ..core.spacegrid import SpaceGrid
     from ..core.spacetime_grid import SpacetimeGrid
 
 
@@ -42,7 +43,7 @@ class TrajectoryWriter:
     def __init__(
         self,
         filename: str | Path,
-        grid: SpacetimeGrid,
+        grid: SpaceGrid | SpacetimeGrid,
         coeffs: TransportCoefficients | None = None,
         max_snapshots: int | None = None,
         compression: str = "gzip",
@@ -53,7 +54,7 @@ class TrajectoryWriter:
 
         Args:
             filename: HDF5 file path
-            grid: SpacetimeGrid with spatial grid information
+            grid: SpaceGrid or SpacetimeGrid with spatial grid information
             coeffs: Transport coefficients (optional, for metadata)
             max_snapshots: Maximum number of snapshots (None for unlimited)
             compression: HDF5 compression type ('gzip', 'lzf', None)
@@ -102,7 +103,12 @@ class TrajectoryWriter:
                 spatial_shape = grid_points
             grid_group.attrs["grid_points"] = spatial_shape
         else:
-            spatial_shape = self.grid.shape
+            # Fallback to shape attribute (handle both 3D and 4D)
+            shape = self.grid.shape
+            if len(shape) == 4:
+                spatial_shape = shape[1:]  # type: ignore[assignment]
+            else:
+                spatial_shape = shape  # type: ignore[assignment]
 
         grid_group.attrs["boundary_conditions"] = getattr(
             self.grid, "boundary_conditions", "periodic"

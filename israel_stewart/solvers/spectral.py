@@ -132,8 +132,8 @@ class SpectralISolver:
         # Pre-allocate some workspace arrays
         for shape in common_shapes:
             # Real and complex workspaces
-            self.fft_manager.get_workspace(shape, np.float64)
-            self.fft_manager.get_workspace(shape, np.complex128)
+            self.fft_manager.get_workspace(shape, np.dtype(np.float64))
+            self.fft_manager.get_workspace(shape, np.dtype(np.complex128))
 
         # Pre-compute k-vectors for different FFT formats to avoid repeated computation
         self._precompute_k_vectors()
@@ -192,7 +192,7 @@ class SpectralISolver:
     def get_cached_k_vectors(self, shape: tuple[int, ...]) -> dict[str, np.ndarray]:
         """Get cached k-vectors for the given FFT shape."""
         if shape in self._k_vector_cache:
-            return self._k_vector_cache[shape]
+            return self._k_vector_cache[shape]  # type: ignore[index]
 
         # Fallback: compute on demand if not cached
         nx, ny, nz_half = shape
@@ -440,8 +440,8 @@ class SpectralISolver:
             result_shape = vector_field.shape[:-1]
 
             # Get temporary arrays from pool
-            div_result = self.array_pool.get_array(result_shape, np.float64)
-            temp_derivative = self.array_pool.get_array(result_shape, np.float64)
+            div_result = self.array_pool.get_array(result_shape, np.dtype(np.float64))
+            temp_derivative = self.array_pool.get_array(result_shape, np.dtype(np.float64))
 
             try:
                 # Initialize result
@@ -684,7 +684,7 @@ class SpectralISolver:
                 return complex_workspace
             else:
                 # Complex FFT with workspace
-                workspace = self.fft_manager.get_workspace(field.shape, np.complex128)
+                workspace = self.fft_manager.get_workspace(field.shape, np.dtype(np.complex128))
 
                 # Copy input to workspace
                 workspace.real = field.real if hasattr(field, "real") else field
@@ -713,7 +713,7 @@ class SpectralISolver:
             else:
                 # Fallback: compute on demand
                 kx, ky, kz = cached_k["kx"], cached_k["ky"], cached_k["kz"]
-                return kx**2 + ky**2 + kz**2
+                return cast(np.ndarray, kx**2 + ky**2 + kz**2)
         else:
             return self.k_squared
 
@@ -1567,7 +1567,7 @@ class SpectralISHydrodynamics:
         # du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
         du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
 
-        return du_dt
+        return cast(np.ndarray, du_dt)
 
     def _rk2_conservation_step(self, evolution_rhs: dict[str, np.ndarray], dt: float) -> None:
         """
@@ -1709,7 +1709,7 @@ class SpectralISHydrodynamics:
             velocity_spatial = u_mu[..., 1:4]  # u^1, u^2, u^3 (spatial components)
             theta = self.spectral.spatial_divergence(velocity_spatial)
 
-            return theta
+            return cast(np.ndarray, theta)
 
         except Exception as e:
             warnings.warn(
@@ -1810,7 +1810,7 @@ class SpectralISHydrodynamics:
         # Ensure pressure is set if rho is available (conformal EOS as fallback)
         if hasattr(new_fields, "rho") and np.any(new_fields.rho > 0):
             if not hasattr(new_fields, "pressure") or np.all(new_fields.pressure == 0):
-                new_fields.pressure = new_fields.rho / 3.0
+                new_fields.pressure = new_fields.rho / 3.0  # type: ignore[assignment]
 
         return new_fields
 
@@ -1995,8 +1995,8 @@ class SpectralISHydrodynamics:
                 expected_spatial = (self.spectral.nx, self.spectral.ny, self.spectral.nz)
                 spectral_solver = self.spectral
             else:
-                expected_spatial = (self.nx, self.ny, self.nz)
-                spectral_solver = self
+                expected_spatial = (self.spectral.nx, self.spectral.ny, self.spectral.nz)
+                spectral_solver = self.spectral
 
             if field.shape != expected_spatial:
                 raise ValueError(f"Field shape {field.shape} != grid shape {expected_spatial}")

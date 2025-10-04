@@ -30,6 +30,7 @@ dependencies = [
     "psutil>=7.0.0",
     "structlog>=23.0.0",
     "python-json-logger>=2.0.0",
+    "opt_einsum>=3.3.0",
 ]
 
 [project.optional-dependencies]

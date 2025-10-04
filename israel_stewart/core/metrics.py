@@ -417,8 +417,9 @@ class MetricBase(ABC):
             True if metric is constant
         """
         if isinstance(self.components, np.ndarray):
-            # Numerical metrics are assumed constant unless overridden
-            return True
+            # A numerical metric is constant if it's a single 4x4 matrix (ndim == 2).
+            # If it has more dimensions, it's defined on a grid and is not constant.
+            return self.components.ndim == 2
         elif isinstance(self.components, sp.Matrix):
             # Extract all free symbols from the metric components
             all_symbols = set()

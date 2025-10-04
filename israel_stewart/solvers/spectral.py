@@ -1593,6 +1593,10 @@ class SpectralISHydrodynamics:
         self.fields.rho[:] = rho_0 + dt * k2_rho
         self.fields.u_mu[:] = u_mu_0 + dt * k2_velocity
 
+        # CRITICAL: Update pressure from equation of state after ρ changes
+        # Without this, pressure gradients are wrong and sound waves don't propagate correctly
+        self.fields.update_pressure_from_eos("radiation")
+
         # Update derived quantities (includes normalization)
         self._update_derived_fields()
 
@@ -1637,9 +1641,9 @@ class SpectralISHydrodynamics:
     def _update_derived_fields(self) -> None:
         """Update derived quantities after conservation law evolution."""
         try:
-            # Update pressure from equation of state if available
-            if hasattr(self.fields, "update_pressure"):
-                self.fields.update_pressure()
+            # Update pressure from equation of state (CRITICAL for sound propagation!)
+            if hasattr(self.fields, "update_pressure_from_eos"):
+                self.fields.update_pressure_from_eos("radiation")
 
             # Ensure four-velocity normalization
             if hasattr(self.fields, "normalize_four_velocity"):

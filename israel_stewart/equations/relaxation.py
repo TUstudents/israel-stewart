@@ -354,11 +354,12 @@ class ISRelaxationEquations:
             for mu in range(4):
                 partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
 
-        # Add Christoffel term: Γ^μ_μν u^ν = Γ^μ_νμ u^ν (using symmetry)
+        # Add Christoffel term if metric is not flat
         christoffel_term = np.zeros(u_mu.shape[:-1])
-        for mu in range(4):
-            for nu in range(4):
-                christoffel_term += christoffel[mu, mu, nu] * u_mu[..., nu]
+        if not self.metric.is_flat():
+            for mu in range(4):
+                for nu in range(4):
+                    christoffel_term += christoffel[mu, mu, nu] * u_mu[..., nu]
 
         theta = partial_div + christoffel_term
 
@@ -412,12 +413,13 @@ class ISRelaxationEquations:
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
+        # Add Christoffel correction if metric is not flat
         nabla_u = nabla_u_partial.copy()
-        for mu in range(4):
-            for nu in range(4):
-                for rho in range(4):
-                    nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+        if not self.metric.is_flat():
+            for mu in range(4):
+                for nu in range(4):
+                    for rho in range(4):
+                        nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
 
         # Get metric tensors
         g_inv = self.metric.inverse
@@ -507,12 +509,13 @@ class ISRelaxationEquations:
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
+        # Add Christoffel correction if metric is not flat
         nabla_u = nabla_u_partial.copy()
-        for mu in range(4):
-            for nu in range(4):
-                for rho in range(4):
-                    nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+        if not self.metric.is_flat():
+            for mu in range(4):
+                for nu in range(4):
+                    for rho in range(4):
+                        nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
 
         # Get metric tensors
         g_inv = self.metric.inverse

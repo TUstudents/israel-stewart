@@ -977,6 +977,9 @@ class NumericalSoundWaveBenchmark:
         self.domain_size = domain_size
         self.grid_points = grid_points
 
+        # Physics setup
+        self.metric = metric or MinkowskiMetric()
+
         # Create pure 3D spatial grid for spectral simulation
         spatial_ranges = [(0.0, domain_size)] * 3
         self.grid = SpaceGrid(
@@ -984,10 +987,9 @@ class NumericalSoundWaveBenchmark:
             spatial_ranges=spatial_ranges,
             grid_points=grid_points,  # (nx, ny, nz)
             boundary_conditions="periodic",  # Required for FFT
+            metric=self.metric,
         )
 
-        # Physics setup
-        self.metric = metric or MinkowskiMetric()
         self.transport_coeffs = transport_coeffs or self._default_transport_coeffs()
 
         # Initialize analytical analysis for comparison

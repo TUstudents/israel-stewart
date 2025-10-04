@@ -864,6 +864,45 @@ class ISFieldConfiguration:
 
         self._thermodynamic_consistent = True
 
+    def update_pressure_from_eos(self, eos_type: str = "radiation") -> None:
+        """
+        Update pressure using equation of state (EOS).
+
+        This is CRITICAL for proper hydrodynamic evolution. When energy density ρ
+        changes during time evolution, pressure must be updated to maintain
+        thermodynamic consistency and provide correct restoring forces for sound waves.
+
+        Args:
+            eos_type: Type of equation of state
+                - "radiation": P = ρ/3 (conformal radiation fluid, c_s² = 1/3)
+                - "ideal_gas": P = (γ-1)ρ for ideal gas with adiabatic index γ
+                - "stiff": P = ρ (stiff matter, c_s² = 1)
+
+        Note:
+            For sound wave propagation, failing to update pressure after ρ changes
+            results in missing/incorrect pressure gradients, causing waves to propagate
+            at wrong speeds or not at all.
+        """
+        if eos_type == "radiation":
+            # Conformal radiation: P = ε/3, c_s² = ∂P/∂ε = 1/3
+            self.pressure[:] = self.rho / 3.0
+        elif eos_type == "ideal_gas":
+            # Ideal gas: P = (γ-1)ε
+            # Default γ = 5/3 for monatomic ideal gas (c_s² = γP/ρ = 5/9)
+            gamma = 5.0 / 3.0
+            self.pressure[:] = (gamma - 1.0) * self.rho
+        elif eos_type == "stiff":
+            # Stiff matter: P = ε (c_s² = 1, speed of light)
+            self.pressure[:] = self.rho
+        else:
+            raise ValueError(
+                f"Unknown EOS type: {eos_type}. "
+                f"Supported: 'radiation', 'ideal_gas', 'stiff'"
+            )
+
+        # Ensure pressure positivity after EOS update
+        self.pressure = np.maximum(self.pressure, -0.1 * self.rho)
+
     def compute_stress_energy_tensor(self) -> np.ndarray:
         """
         Compute total stress-energy tensor T^μν = T^μν_perfect + π^μν.

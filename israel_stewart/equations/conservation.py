@@ -50,15 +50,15 @@ class ConservationLaws:
         self.fields = fields
         self.coeffs = coefficients
 
-        # Initialize covariant derivative operator
-        if self.fields.grid.metric is not None:
-            self.covariant_derivative = CovariantDerivative(self.fields.grid.metric)
-        else:
-            # Use Minkowski metric for covariant derivatives
+        # Ensure metric is always available
+        self.metric = self.fields.grid.metric
+        if self.metric is None:
             from ..core.metrics import MinkowskiMetric
 
-            minkowski = MinkowskiMetric()
-            self.covariant_derivative = CovariantDerivative(minkowski)
+            self.metric = MinkowskiMetric()
+
+        # Initialize covariant derivative operator
+        self.covariant_derivative = CovariantDerivative(self.metric)
 
     @monitor_performance("stress_energy_tensor")
     def stress_energy_tensor(self) -> np.ndarray:
@@ -127,8 +127,8 @@ class ConservationLaws:
                 partial_deriv = self._partial_derivative(T_mu_nu, mu, coords)
                 div_component += partial_deriv
 
-                # Add Christoffel symbol corrections if metric is not Minkowski
-                try:
+                # Add Christoffel symbol corrections if metric is not flat
+                if self.metric and not self.metric.is_flat():
                     christoffel = self.covariant_derivative.christoffel_symbols
 
                     # Connection term: Γ^μ_μλ T^λν
@@ -140,9 +140,6 @@ class ConservationLaws:
                     for lam in range(4):
                         connection_2 = christoffel[nu, mu, lam] * T[..., mu, lam]
                         div_component += connection_2
-                except (TypeError, AttributeError):
-                    # Skip Christoffel corrections for Minkowski metric
-                    pass
 
             div_T[..., nu] = div_component
 
@@ -199,27 +196,22 @@ class ConservationLaws:
                 spatial_deriv = self._partial_derivative(T_ij, coord_idx, coords)
                 dmom_dt[..., j - 1] -= spatial_deriv
 
-        # Add Christoffel symbol corrections if metric is not Minkowski
-        # (Only for spatial terms)
-        try:
-            if hasattr(self.covariant_derivative, "christoffel_symbols"):
-                christoffel = self.covariant_derivative.christoffel_symbols
+        # Add Christoffel symbol corrections if metric is not flat
+        if self.metric and not self.metric.is_flat():
+            christoffel = self.covariant_derivative.christoffel_symbols
 
-                # Energy: connection terms for spatial divergence only
+            # Energy: connection terms for spatial divergence only
+            for i in range(1, 4):
+                for lam in range(4):
+                    drho_dt -= christoffel[i, i, lam] * T[..., lam, 0]
+                    drho_dt -= christoffel[0, i, lam] * T[..., i, lam]
+
+            # Momentum: connection terms for spatial divergence only
+            for j in range(1, 4):
                 for i in range(1, 4):
                     for lam in range(4):
-                        drho_dt -= christoffel[i, i, lam] * T[..., lam, 0]
-                        drho_dt -= christoffel[0, i, lam] * T[..., i, lam]
-
-                # Momentum: connection terms for spatial divergence only
-                for j in range(1, 4):
-                    for i in range(1, 4):
-                        for lam in range(4):
-                            dmom_dt[..., j - 1] -= christoffel[i, i, lam] * T[..., lam, j]
-                            dmom_dt[..., j - 1] -= christoffel[j, i, lam] * T[..., i, lam]
-        except (TypeError, AttributeError):
-            # Skip Christoffel corrections for Minkowski metric
-            pass
+                        dmom_dt[..., j - 1] -= christoffel[i, i, lam] * T[..., lam, j]
+                        dmom_dt[..., j - 1] -= christoffel[j, i, lam] * T[..., i, lam]
 
         return {"drho_dt": drho_dt, "dmom_dt": dmom_dt}
 

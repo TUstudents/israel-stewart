@@ -20,7 +20,7 @@ from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
 
-def run_short_simulation(k: float = 8.0, t_final: float = 0.1):
+def run_short_simulation(k: float = 8.0, t_final: float = 1.0):
     """Run minimal simulation for performance testing."""
     print(f"Setting up benchmark for k={k}, t_final={t_final}")
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Profile sound wave benchmark")
     parser.add_argument("--k", type=float, default=8.0, help="Wave number")
-    parser.add_argument("--time", type=float, default=0.1, help="Simulation time")
+    parser.add_argument("--time", type=float, default=1.0, help="Simulation time")
     parser.add_argument("--no-profile", action="store_true", help="Skip profiling")
 
     args = parser.parse_args()

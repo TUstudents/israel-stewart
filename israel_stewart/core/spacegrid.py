@@ -385,8 +385,8 @@ class SpaceGrid:
                 ) / (2.0 * spacing)
 
                 # Left boundary: forward difference (1st-order)
-                slices_left = [slice(None)] * 3
-                slices_left_p1 = [slice(None)] * 3
+                slices_left: list[slice | int] = [slice(None)] * 3
+                slices_left_p1: list[slice | int] = [slice(None)] * 3
                 slices_left[axis] = 0
                 slices_left_p1[axis] = 1
                 result[tuple(slices_left)] = (
@@ -394,8 +394,8 @@ class SpaceGrid:
                 ) / spacing
 
                 # Right boundary: backward difference (1st-order)
-                slices_right = [slice(None)] * 3
-                slices_right_m1 = [slice(None)] * 3
+                slices_right: list[slice | int] = [slice(None)] * 3
+                slices_right_m1: list[slice | int] = [slice(None)] * 3
                 slices_right[axis] = -1
                 slices_right_m1[axis] = -2
                 result[tuple(slices_right)] = (
@@ -435,9 +435,9 @@ class SpaceGrid:
 
                 # Near-boundary points: fall back to 2nd-order
                 # Point at index 1
-                slices_1 = [slice(None)] * 3
-                slices_0 = [slice(None)] * 3
-                slices_2 = [slice(None)] * 3
+                slices_1: list[slice | int] = [slice(None)] * 3
+                slices_0: list[slice | int] = [slice(None)] * 3
+                slices_2: list[slice | int] = [slice(None)] * 3
                 slices_1[axis] = 1
                 slices_0[axis] = 0
                 slices_2[axis] = 2
@@ -446,9 +446,9 @@ class SpaceGrid:
                 ) / (2.0 * spacing)
 
                 # Point at index -2
-                slices_n2 = [slice(None)] * 3
-                slices_n1 = [slice(None)] * 3
-                slices_n3 = [slice(None)] * 3
+                slices_n2: list[slice | int] = [slice(None)] * 3
+                slices_n1: list[slice | int] = [slice(None)] * 3
+                slices_n3: list[slice | int] = [slice(None)] * 3
                 slices_n2[axis] = -2
                 slices_n1[axis] = -1
                 slices_n3[axis] = -3
@@ -457,20 +457,20 @@ class SpaceGrid:
                 ) / (2.0 * spacing)
 
                 # Boundary points: 1st-order
-                slices_left = [slice(None)] * 3
-                slices_left_p1 = [slice(None)] * 3
-                slices_left[axis] = 0
-                slices_left_p1[axis] = 1
-                result[tuple(slices_left)] = (
-                    field[tuple(slices_left_p1)] - field[tuple(slices_left)]
+                slices_left_4th: list[slice | int] = [slice(None)] * 3
+                slices_left_p1_4th: list[slice | int] = [slice(None)] * 3
+                slices_left_4th[axis] = 0
+                slices_left_p1_4th[axis] = 1
+                result[tuple(slices_left_4th)] = (
+                    field[tuple(slices_left_p1_4th)] - field[tuple(slices_left_4th)]
                 ) / spacing
 
-                slices_right = [slice(None)] * 3
-                slices_right_m1 = [slice(None)] * 3
-                slices_right[axis] = -1
-                slices_right_m1[axis] = -2
-                result[tuple(slices_right)] = (
-                    field[tuple(slices_right)] - field[tuple(slices_right_m1)]
+                slices_right_4th: list[slice | int] = [slice(None)] * 3
+                slices_right_m1_4th: list[slice | int] = [slice(None)] * 3
+                slices_right_4th[axis] = -1
+                slices_right_m1_4th[axis] = -2
+                result[tuple(slices_right_4th)] = (
+                    field[tuple(slices_right_4th)] - field[tuple(slices_right_m1_4th)]
                 ) / spacing
 
         return result
@@ -599,7 +599,7 @@ class SpaceGrid:
             )
 
             # Compute divergence of contravariant gradient
-            return self.divergence(contravariant_gradient)
+            return cast(np.ndarray, self.divergence(contravariant_gradient))
 
         else:
             # Flat-space Laplacian
@@ -622,7 +622,7 @@ class SpaceGrid:
                 spacing = coord_array[1] - coord_array[0]
 
                 # Second derivative using numpy gradient
-                edge_order = 2 if len(coord_array) >= 3 else 1
+                edge_order: Literal[1, 2] = 2 if len(coord_array) >= 3 else 1
                 first_deriv = np.gradient(field, spacing, axis=axis, edge_order=edge_order)
                 second_deriv = np.gradient(first_deriv, spacing, axis=axis, edge_order=edge_order)
                 laplacian += second_deriv

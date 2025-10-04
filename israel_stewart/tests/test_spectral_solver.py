@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
+from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.solvers.spectral import SpectralISHydrodynamics, SpectralISolver
 
 
@@ -19,13 +19,12 @@ class TestSpectralISolver:
     """Test basic spectral solver functionality."""
 
     @pytest.fixture
-    def setup_spectral_solver(self) -> tuple[SpectralISolver, ISFieldConfiguration, SpacetimeGrid]:
+    def setup_spectral_solver(self) -> tuple[SpectralISolver, ISFieldConfiguration, SpaceGrid]:
         """Setup spectral solver with test configuration."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 32, 32, 32),  # 32^3 spatial grid for FFT efficiency
+            grid_points=(32, 32, 32),  # 32^3 spatial grid for FFT efficiency
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -101,7 +100,7 @@ class TestSpectralISolver:
 
         # Create coordinate arrays consistent with spectral method requirements
         # For spectral methods, we need proper periodic coordinates: [0, dx, 2*dx, ..., (N-1)*dx]
-        # where dx = L/N (not L/(N-1) as used by SpacetimeGrid)
+        # where dx = L/N (not L/(N-1) as used by SpaceGrid)
         x = np.arange(32) * solver.dx  # These are now the correct spectral coordinates
         y = np.arange(32) * solver.dy
         z = np.arange(32) * solver.dz
@@ -445,11 +444,10 @@ class TestSpectralISHydrodynamics:
     @pytest.fixture
     def setup_hydro_solver(self) -> tuple[SpectralISHydrodynamics, ISFieldConfiguration]:
         """Setup integrated hydrodynamics solver."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 16, 16, 16),  # Smaller grid for faster tests
+            grid_points=(16, 16, 16),  # Smaller grid for faster tests
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -665,11 +663,12 @@ class TestSpectralISHydrodynamics:
         #              = -ρ + 3(P + Π) + (-π^00 + π^11 + π^22 + π^33)
         #              = -ρ + 3(P + Π) + π^μ_μ
         # NOTE: Shear should be traceless (π^μ_μ = 0) but test fixture doesn't enforce this
+        # SpaceGrid: pi_munu has shape (nx, ny, nz, 4, 4), no time dimension
         pi_trace = (
-            -fields.pi_munu[-1, :, :, :, 0, 0]
-            + fields.pi_munu[-1, :, :, :, 1, 1]
-            + fields.pi_munu[-1, :, :, :, 2, 2]
-            + fields.pi_munu[-1, :, :, :, 3, 3]
+            -fields.pi_munu[:, :, :, 0, 0]
+            + fields.pi_munu[:, :, :, 1, 1]
+            + fields.pi_munu[:, :, :, 2, 2]
+            + fields.pi_munu[:, :, :, 3, 3]
         )
         expected_trace = -rho_final + 3.0 * (pressure_final + Pi_final) + pi_trace
 
@@ -701,9 +700,9 @@ class TestSpectralISHydrodynamics:
         assert "q_mu" in fields_copy
         assert "u_mu" in fields_copy
 
-        # Check that copies are independent
-        fields.rho[0, 0, 0, 0] += 1.0
-        assert fields_copy["rho"][0, 0, 0, 0] != fields.rho[0, 0, 0, 0]
+        # Check that copies are independent (SpaceGrid: 3D indexing)
+        fields.rho[0, 0, 0] += 1.0
+        assert fields_copy["rho"][0, 0, 0] != fields.rho[0, 0, 0]
 
 
 class TestSpectralPerformance:
@@ -712,11 +711,10 @@ class TestSpectralPerformance:
     @pytest.mark.parametrize("grid_size", [16, 32])
     def test_performance_scaling(self, grid_size: int) -> None:
         """Test performance scaling with grid size."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, grid_size, grid_size, grid_size),
+            grid_points=(grid_size, grid_size, grid_size),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -742,11 +740,10 @@ class TestSpectralPerformance:
 
     def test_memory_efficiency(self) -> None:
         """Test memory usage and cleanup."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 32, 32, 32),
+            grid_points=(32, 32, 32),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -777,11 +774,10 @@ class TestSpectralValidation:
         For proper Bjorken validation, see benchmarks/bjorken_flow.py.
         """
         # Simple 1D-like geometry for testing stability
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.1, 1.0),  # Avoid t=0 singularity
             spatial_ranges=[(-5.0, 5.0), (-1.0, 1.0), (-1.0, 1.0)],
-            grid_points=(10, 32, 8, 8),
+            grid_points=(32, 8, 8),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -825,6 +821,9 @@ class TestSpectralValidation:
         assert np.max(fields.rho) < 100 * initial_rho, "Energy density should not explode"
         assert np.max(fields.pressure) < 100 * initial_pressure, "Pressure should not explode"
 
+    @pytest.mark.skip(
+        reason="Test requires 4D SpacetimeGrid, incompatible with 3+1D SpaceGrid architecture"
+    )
     def test_sound_wave_4d_spacetime(self) -> None:
         """Test sound wave as 4D spacetime boundary value problem.
 
@@ -843,11 +842,10 @@ class TestSpectralValidation:
         - Conservation: ∂_μ T^μν ≈ 0 across all spacetime points
         - Wave structure: Solution matches analytical form
         """
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 0.5),  # Shorter time range for testing
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(8, 16, 16, 16),  # 8 time slices, 16³ spatial
+            grid_points=(16, 16, 16),  # 8 time slices, 16³ spatial
             boundary_conditions="periodic",
         )
 
@@ -968,11 +966,10 @@ class TestSpectralSolverFixes:
     @pytest.fixture
     def setup_fixed_solver(self) -> tuple[SpectralISHydrodynamics, ISFieldConfiguration]:
         """Setup spectral hydrodynamics solver with all fixes applied."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 16, 16, 16),  # Smaller grid for faster tests
+            grid_points=(16, 16, 16),  # Smaller grid for faster tests
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1086,11 +1083,10 @@ class TestSpectralSolverFixes:
     def test_grid_spacing_warning(self, capfd) -> None:
         """Test that grid spacing fallback warning is issued."""
         # Create normal grid first
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(10, 8, 8, 8),
+            grid_points=(8, 8, 8),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1105,11 +1101,10 @@ class TestSpectralSolverFixes:
 
     def test_curved_spacetime_warning(self, capfd) -> None:
         """Test that curved spacetime limitation warning is issued."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 8, 8, 8),
+            grid_points=(8, 8, 8),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1295,11 +1290,10 @@ class TestSpectralSolverFixes:
         """Test that spectral solver properly handles curved spacetime limitations."""
         from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
 
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 8, 8, 8),
+            grid_points=(8, 8, 8),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1320,11 +1314,10 @@ class TestSpectralSolverFixes:
             assert hydro.relaxation.metric.__class__.__name__ == "MinkowskiMetric"
 
         # Test 2: Verify spectral solver works correctly with explicit Minkowski
-        grid_minkowski = SpacetimeGrid(
+        grid_minkowski = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 8, 8, 8),
+            grid_points=(8, 8, 8),
             boundary_conditions="periodic",  # Required for spectral methods
         )
         grid_minkowski.metric = MinkowskiMetric()
@@ -1350,11 +1343,10 @@ class TestSpectralSolverCriticalFixes:
     @pytest.fixture
     def setup_solver_with_tensors(self) -> tuple:
         """Setup spectral solver with properly shaped tensor fields."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 16, 16, 16),
+            grid_points=(16, 16, 16),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1546,11 +1538,10 @@ class TestARS22IMEXRK:
     @pytest.fixture
     def setup_ars_solver(self) -> tuple:
         """Setup spectral hydro solver for ARS(2,2,2) testing."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 16, 16, 16),
+            grid_points=(16, 16, 16),
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -1990,11 +1981,10 @@ class TestSpectralLaplacianPhysics:
     @pytest.fixture
     def setup_laplacian_test(self) -> tuple:
         """Setup for testing spectral Laplacian computation."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(10, 32, 32, 32),  # Use 32³ for clean FFT
+            grid_points=(32, 32, 32),  # Use 32³ for clean FFT
             boundary_conditions="periodic",  # Required for spectral methods
         )
 
@@ -2138,8 +2128,8 @@ class TestSpectralLaplacianPhysics:
         """Test that diffusion timescales are physically reasonable."""
         hydro_solver, fields, grid, coeffs = setup_laplacian_test
 
-        # Create test field matching the solver's spatial grid
-        nt, nx, ny, nz = grid.grid_points
+        # Create test field matching the solver's spatial grid (3D SpaceGrid)
+        nx, ny, nz = grid.grid_points
         x = np.linspace(0, 2 * np.pi, nx, endpoint=False)
         y = np.linspace(0, 2 * np.pi, ny, endpoint=False)
         z = np.linspace(0, 2 * np.pi, nz, endpoint=False)
@@ -2172,8 +2162,8 @@ class TestSpectralLaplacianPhysics:
         """Test that diffusion preserves conservation laws appropriately."""
         hydro_solver, fields, grid, coeffs = setup_laplacian_test
 
-        # Create simple spatially varying field matching the solver's grid
-        nt, nx, ny, nz = grid.grid_points
+        # Create simple spatially varying field matching the solver's grid (3D SpaceGrid)
+        nx, ny, nz = grid.grid_points
         x = np.linspace(0, 2 * np.pi, nx, endpoint=False)
         y = np.linspace(0, 2 * np.pi, ny, endpoint=False)
         z = np.linspace(0, 2 * np.pi, nz, endpoint=False)
@@ -2211,28 +2201,26 @@ class TestPeriodicGridIntegration:
     """Test spectral solver integration with new periodic grid functionality."""
 
     @pytest.fixture
-    def periodic_grid(self) -> SpacetimeGrid:
+    def periodic_grid(self) -> SpaceGrid:
         """Create a properly configured periodic grid."""
-        return SpacetimeGrid(
+        return SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(8, 16, 16, 16),
+            grid_points=(16, 16, 16),
             boundary_conditions="periodic",
         )
 
     @pytest.fixture
-    def dirichlet_grid(self) -> SpacetimeGrid:
+    def dirichlet_grid(self) -> SpaceGrid:
         """Create a dirichlet grid for comparison."""
-        return SpacetimeGrid(
+        return SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi), (0.0, 2 * np.pi), (0.0, 2 * np.pi)],
-            grid_points=(8, 16, 16, 16),
+            grid_points=(16, 16, 16),
             boundary_conditions="dirichlet",
         )
 
-    def test_periodic_grid_no_warning(self, periodic_grid: SpacetimeGrid) -> None:
+    def test_periodic_grid_no_warning(self, periodic_grid: SpaceGrid) -> None:
         """Test that periodic grids don't trigger spacing warnings."""
         fields = ISFieldConfiguration(periodic_grid)
 
@@ -2249,7 +2237,7 @@ class TestPeriodicGridIntegration:
                 len(spacing_warnings) == 0
             ), f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
 
-    def test_dirichlet_grid_issues_warning(self, dirichlet_grid: SpacetimeGrid) -> None:
+    def test_dirichlet_grid_issues_warning(self, dirichlet_grid: SpaceGrid) -> None:
         """Test that non-periodic grids trigger appropriate warnings."""
         fields = ISFieldConfiguration(dirichlet_grid)
 
@@ -2257,7 +2245,7 @@ class TestPeriodicGridIntegration:
         with pytest.warns(UserWarning, match="periodic boundary conditions"):
             SpectralISolver(dirichlet_grid, fields)
 
-    def test_fft_frequency_consistency_periodic(self, periodic_grid: SpacetimeGrid) -> None:
+    def test_fft_frequency_consistency_periodic(self, periodic_grid: SpaceGrid) -> None:
         """Test that FFT frequencies match grid coordinates for periodic grids."""
         fields = ISFieldConfiguration(periodic_grid)
         solver = SpectralISolver(periodic_grid, fields)
@@ -2276,7 +2264,7 @@ class TestPeriodicGridIntegration:
             kx_1d[1], expected_k1
         ), f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
 
-    def test_spectral_derivative_accuracy_periodic(self, periodic_grid: SpacetimeGrid) -> None:
+    def test_spectral_derivative_accuracy_periodic(self, periodic_grid: SpaceGrid) -> None:
         """Test that spectral derivatives achieve high accuracy with periodic grids."""
         fields = ISFieldConfiguration(periodic_grid)
         solver = SpectralISolver(periodic_grid, fields)
@@ -2305,15 +2293,13 @@ class TestPeriodicGridIntegration:
         ), f"Spectral derivative relative error too large: {relative_error}"
 
     def test_spacing_consistency_with_factory(self) -> None:
-        """Test that create_periodic_grid produces consistent spacing."""
-        from israel_stewart.solvers import create_periodic_grid
-
-        # Create grid using factory function
-        periodic_grid = create_periodic_grid(
+        """Test that SpaceGrid produces consistent spacing for periodic BC."""
+        # Create grid directly with periodic boundary conditions
+        periodic_grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-            grid_points=(8, 16, 16, 16),
+            grid_points=(16, 16, 16),
+            boundary_conditions="periodic",
         )
 
         # Verify it has periodic boundary conditions
@@ -2336,18 +2322,20 @@ class TestPeriodicGridIntegration:
             assert len(spacing_warnings) == 0
 
     def test_backward_compatibility(self) -> None:
-        """Test that old-style grid creation still works but issues warnings."""
-        # Create old-style grid (without boundary_conditions, defaults to dirichlet)
-        old_grid = SpacetimeGrid(
+        """Test that grid without explicit boundary_conditions defaults to periodic."""
+        # Create grid without boundary_conditions (defaults to periodic)
+        old_grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 2 * np.pi)] * 3,
-            grid_points=(8, 16, 16, 16),
+            grid_points=(16, 16, 16),
             # Intentionally omit boundary_conditions to test default (dirichlet)
         )
 
         fields = ISFieldConfiguration(old_grid)
 
-        # Should issue warning about non-periodic boundaries
-        with pytest.warns(UserWarning, match="periodic boundary conditions"):
-            SpectralISolver(old_grid, fields)
+        # Verify default is periodic
+        assert old_grid.boundary_conditions == "periodic"
+
+        # Should work but may have lower accuracy than periodic BC
+        solver = SpectralISolver(old_grid, fields)
+        assert solver is not None

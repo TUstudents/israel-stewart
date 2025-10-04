@@ -1105,7 +1105,9 @@ class SpectralISHydrodynamics:
             from ..equations.conservation import ConservationLaws
             from ..equations.relaxation import ISRelaxationEquations
 
-            self.conservation = ConservationLaws(self.fields, self.coeffs)
+            self.conservation = ConservationLaws(
+                self.fields, self.coeffs, spectral_solver=self.spectral
+            )
 
             if self.coeffs is not None:
                 # Need metric for relaxation equations
@@ -1361,6 +1363,29 @@ class SpectralISHydrodynamics:
                 dq_mu_dt = rhs[Pi_size + pi_munu_size : Pi_size + pi_munu_size + q_mu_size].reshape(
                     self.fields.q_mu.shape
                 )
+
+                # CRITICAL FIX: Remove linear relaxation terms (they're in implicit part)
+                # The relaxation module computes FULL RHS including -Π/τ, -π/τ
+                # But IMEX splits: explicit = nonlinear only, implicit = linear stiff terms
+                # We must subtract the linear parts to avoid double-counting
+                if self.coeffs is not None:
+                    # Remove linear bulk relaxation: -Π/τ_Π
+                    if (
+                        hasattr(self.coeffs, "bulk_relaxation_time")
+                        and self.coeffs.bulk_relaxation_time
+                    ):
+                        dPi_dt += (
+                            self.fields.Pi / self.coeffs.bulk_relaxation_time
+                        )  # Add back to cancel -Π/τ
+
+                    # Remove linear shear relaxation: -π/τ_π
+                    if (
+                        hasattr(self.coeffs, "shear_relaxation_time")
+                        and self.coeffs.shear_relaxation_time
+                    ):
+                        dpi_munu_dt += (
+                            self.fields.pi_munu / self.coeffs.shear_relaxation_time
+                        )  # Add back to cancel -π/τ
 
                 # Return with keys matching IMEX field names
                 relaxation_rhs = {

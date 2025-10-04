@@ -339,9 +339,20 @@ class ISRelaxationEquations:
             christoffel = np.zeros((4, 4, 4))
 
         # Compute partial derivatives ∂_μ u^μ
+        # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
+        is_spacegrid = u_mu.ndim == 4 and u_mu.shape[-1] == 4  # (nx,ny,nz,4)
+
         partial_div = np.zeros(u_mu.shape[:-1])
-        for mu in range(4):
-            partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
+        if is_spacegrid:
+            # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
+            # Time derivative (mu=0) handled by time evolution, not spatial gradients
+            for mu in range(1, 4):
+                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                partial_div += np.gradient(u_mu[..., mu], axis=spatial_axis, edge_order=1)
+        else:
+            # 4D spacetime: all derivatives including time
+            for mu in range(4):
+                partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
 
         # Add Christoffel term: Γ^μ_μν u^ν = Γ^μ_νμ u^ν (using symmetry)
         christoffel_term = np.zeros(u_mu.shape[:-1])
@@ -382,11 +393,24 @@ class ISRelaxationEquations:
             )
             christoffel = np.zeros((4, 4, 4))
 
+        # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
+        is_spacegrid = u_mu.ndim == 4 and u_mu.shape[-1] == 4  # (nx,ny,nz,4)
+
         # Compute velocity gradients using finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
-        for mu in range(4):
-            for nu in range(4):
-                nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
+        if is_spacegrid:
+            # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
+            for mu in range(1, 4):
+                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                for nu in range(4):
+                    nabla_u_partial[..., mu, nu] = np.gradient(
+                        u_mu[..., nu], axis=spatial_axis, edge_order=1
+                    )
+        else:
+            # 4D spacetime: all derivatives
+            for mu in range(4):
+                for nu in range(4):
+                    nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
         # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
         nabla_u = nabla_u_partial.copy()
@@ -464,11 +488,24 @@ class ISRelaxationEquations:
             )
             christoffel = np.zeros((4, 4, 4))
 
+        # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
+        is_spacegrid = u_mu.ndim == 4 and u_mu.shape[-1] == 4  # (nx,ny,nz,4)
+
         # Compute velocity gradients using finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
-        for mu in range(4):
-            for nu in range(4):
-                nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
+        if is_spacegrid:
+            # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
+            for mu in range(1, 4):
+                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                for nu in range(4):
+                    nabla_u_partial[..., mu, nu] = np.gradient(
+                        u_mu[..., nu], axis=spatial_axis, edge_order=1
+                    )
+        else:
+            # 4D spacetime: all derivatives
+            for mu in range(4):
+                for nu in range(4):
+                    nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
         # Add Christoffel correction: ∇_μ u_ν = ∂_μ u_ν - Γ^ρ_{μν} u_ρ
         nabla_u = nabla_u_partial.copy()
@@ -532,9 +569,19 @@ class ISRelaxationEquations:
         ]
 
         # Compute gradient of temperature using finite differences: ∂_μ T
+        # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
+        is_spacegrid = T.ndim == 3  # (nx,ny,nz) for SpaceGrid
+
         grad_T_lower = np.zeros(T.shape + (4,))
-        for mu in range(4):
-            grad_T_lower[..., mu] = np.gradient(T, axis=mu, edge_order=1)
+        if is_spacegrid:
+            # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
+            for mu in range(1, 4):
+                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                grad_T_lower[..., mu] = np.gradient(T, axis=spatial_axis, edge_order=1)
+        else:
+            # 4D spacetime: all derivatives
+            for mu in range(4):
+                grad_T_lower[..., mu] = np.gradient(T, axis=mu, edge_order=1)
 
         # Get metric inverse for raising indices
         g_inv = self.metric.inverse

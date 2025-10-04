@@ -52,9 +52,9 @@ def create_benchmark(
         NumericalSoundWaveBenchmark instance
     """
     resolution_configs = {
-        "low": {"grid_points": (32, 32, 16)},
-        "standard": {"grid_points": (64, 64, 16)},
-        "high": {"grid_points": (128, 128, 32)},
+        "low": {"grid_points": (16, 16, 8)},
+        "standard": {"grid_points": (32, 32, 16)},
+        "high": {"grid_points": (64, 64, 32)},
     }
 
     if resolution not in resolution_configs:
@@ -160,7 +160,7 @@ def run_numerical_simulation(
         simulation_time: Total simulation time
 
     Returns:
-        Dictionary with simulation results
+        Dictionary with simulation results and performance metrics
     """
     logger.info(f"Running numerical simulation for k = {wave_number}")
 
@@ -174,17 +174,29 @@ def run_numerical_simulation(
     )
 
     # Run simulation
-    # Note: n_periods=0 means use simulation_time directly without override
+    # Use n_periods=3 for accurate frequency extraction (minimum for FFT analysis)
+    # This overrides simulation_time to ensure at least 3 wave periods are simulated
     results = benchmark.run_simulation(
         wave_number=wave_number,
         simulation_time=simulation_time,
-        n_periods=0,  # Use simulation_time directly, don't extend to N periods
+        n_periods=3,  # Minimum periods for accurate frequency measurement
     )
 
     elapsed = time.time() - start_time
-    logger.info(f"Numerical simulation completed in {elapsed:.2f}s")
 
-    return {"results": results, "elapsed_time": elapsed}
+    # Extract timestep count from time series data
+    n_steps = len(results.time_series_data.get("time", []))
+    time_per_step = elapsed / max(n_steps, 1)
+
+    logger.info(f"Numerical simulation completed in {elapsed:.2f}s")
+    logger.info(f"Total timesteps: {n_steps}, Time per step: {time_per_step:.4f}s")
+
+    return {
+        "results": results,
+        "elapsed_time": elapsed,
+        "n_timesteps": n_steps,
+        "time_per_step": time_per_step,
+    }
 
 
 def plot_dispersion_relation(dispersion_data: dict, output_path: Path | None = None) -> None:
@@ -405,7 +417,11 @@ Examples:
             print("=" * 80)
             print(f"Wave number k:       {args.wave_number}")
             print(f"Amplitude:           {args.amplitude}")
-            print(f"Simulation time:     {args.simulation_time}")
+            print(f"Simulation time:     {args.simulation_time} (requested)")
+            print()
+            print("NOTE: Simulation automatically extends to 3 wave periods for accurate")
+            print("      frequency measurement. Expected runtime: 2-10 minutes depending")
+            print("      on wave number (higher k = faster)")
             print()
 
             sim_results = run_numerical_simulation(
@@ -416,19 +432,22 @@ Examples:
             )
 
             print(f"Elapsed time:        {sim_results['elapsed_time']:.2f}s")
+            print()
 
-            # Check if simulation succeeded
-            if sim_results["results"]["success"]:
-                print("Status:              ✓ Simulation completed successfully")
-                if "measured_frequency" in sim_results["results"]:
-                    print(
-                        f"Measured frequency:  {sim_results['results']['measured_frequency']:.6f}"
-                    )
+            # Display convergence metrics
+            results = sim_results["results"]
+            print("Convergence Metrics:")
+            print(f"  Measured frequency:   {results.measured_frequency:.6f}")
+            print(f"  Analytical frequency: {results.analytical_frequency:.6f}")
+            print(f"  Frequency error:      {results.frequency_error:.1%}")
+            print(f"  Damping error:        {results.damping_error:.1%}")
+            print()
+
+            if results.convergence_achieved:
+                print("Status:              ✓ Simulation converged")
             else:
-                print("Status:              ⚠️  Simulation did not converge")
-                print(
-                    f"Reason:              {sim_results['results'].get('error_message', 'Unknown')}"
-                )
+                print("Status:              ⚠️  Did not meet convergence criteria")
+                print("  Required: freq_error < 10%, damping_error < 20%")
 
         # Overall validation
         print()

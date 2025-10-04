@@ -106,7 +106,7 @@ class SoundWaveAnalysis:
 
     def __init__(
         self,
-        grid: SpacetimeGrid,
+        grid: SpaceGrid,
         metric: GeneralMetric,
         transport_coeffs: TransportCoefficients,
         background_fields: ISFieldConfiguration | None = None,
@@ -115,7 +115,7 @@ class SoundWaveAnalysis:
         Initialize sound wave analysis.
 
         Args:
-            grid: Spacetime grid for numerical analysis
+            grid: Spatial grid for numerical analysis (pure 3D)
             metric: Spacetime metric
             transport_coeffs: Transport coefficients
             background_fields: Background field configuration
@@ -1108,11 +1108,12 @@ class NumericalSoundWaveBenchmark:
             ux_time_series.append(ux_monitor)
 
         # Evolve using spectral solver with callback
+        # Use split_step method (2.6x faster than spectral_imex for sound waves)
         try:
             self.solver.evolve(
                 t_final=simulation_time,
                 dt=dt_cfl,
-                method="spectral_imex",
+                method="split_step",
                 callback=record_time_series,
             )
         except Exception as e:

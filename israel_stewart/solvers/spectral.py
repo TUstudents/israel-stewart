@@ -265,7 +265,7 @@ class SpectralISolver:
         if field_k.shape != self.k_vectors[direction].shape:
             # Use cached k-vectors for real FFT format
             cached_k = self.get_cached_k_vectors(field_k.shape)
-            k_direction = cached_k[f'k{"xyz"[direction]}']
+            k_direction = cached_k[f"k{'xyz'[direction]}"]
         else:
             k_direction = self.k_vectors[direction]
 
@@ -460,15 +460,44 @@ class SpectralISolver:
 
             return result
 
+    @monitor_performance("relaxation_operator")
+    def apply_relaxation_operator(
+        self, field: np.ndarray, relaxation_time: float, dt: float
+    ) -> np.ndarray:
+        """
+        Apply Israel-Stewart relaxation operator for linear relaxation terms.
+
+        Implements pure exponential decay: exp(-Δt/τ)
+        This is the correct operator for Israel-Stewart relaxation equations:
+        ∂f/∂t = -f/τ + [sources]  →  Linear part: f(t) = f₀·exp(-t/τ)
+
+        IMPORTANT: This is NOT a diffusion operator. The decay is k-independent
+        (uniform in Fourier space), unlike viscous diffusion which has exp(-ν k² Δt).
+
+        Args:
+            field: Field to apply relaxation to (Π, π^μν, or q^μ)
+            relaxation_time: Relaxation time τ (τ_Π, τ_π, or τ_q)
+            dt: Time step
+
+        Returns:
+            Relaxed field: field * exp(-dt/τ)
+        """
+        # Pure exponential relaxation (no k-dependence)
+        relaxation_factor = np.exp(-dt / relaxation_time)
+        return cast(np.ndarray, field * relaxation_factor)
+
     @monitor_performance("viscous_operator")
     def apply_viscous_operator(
         self, shear_mode: np.ndarray, viscosity: float, dt: float
     ) -> np.ndarray:
         """
-        Apply the viscous operator in Fourier space.
+        Apply viscous diffusion operator in Fourier space.
 
-        More efficient than real space for linear diffusion terms.
-        Implements: exp(-ν k² Δt) for viscous damping
+        WARNING: This is for TRUE DIFFUSION (∂f/∂t = ν∇²f), NOT for Israel-Stewart
+        relaxation. For Israel-Stewart relaxation terms (-f/τ), use apply_relaxation_operator().
+
+        Implements: exp(-ν k² Δt) for viscous diffusion
+        This operator is k-dependent (high-k modes decay faster).
 
         Args:
             shear_mode: Field to apply viscous damping to
@@ -759,35 +788,51 @@ class SpectralISolver:
             raise ValueError(f"Unknown spectral method: {method}")
 
     def _exponential_advance(self, fields: "ISFieldConfiguration", dt: float) -> None:
-        """Advance using exponential integrators for stiff terms."""
+        """
+        Advance using exponential integrators for Israel-Stewart relaxation terms.
+
+        IMPORTANT: This applies PURE RELAXATION (exp(-dt/τ)), not diffusion.
+        Israel-Stewart equations have linear relaxation terms: ∂f/∂t = -f/τ + sources
+        The correct operator is k-independent exponential decay.
+        """
         if self.coeffs is None:
             return
 
-        # Bulk pressure evolution with relaxation
+        # Bulk pressure relaxation: Π(t) = Π₀·exp(-t/τ_Π)
         if hasattr(self.coeffs, "bulk_relaxation_time") and self.coeffs.bulk_relaxation_time:
             tau_Pi = self.coeffs.bulk_relaxation_time
-            fields.Pi = self.apply_bulk_viscous_operator(
-                fields.Pi, self.coeffs.bulk_viscosity or 0.0, tau_Pi, dt
-            )
+            fields.Pi = self.apply_relaxation_operator(fields.Pi, tau_Pi, dt)
 
-        # Shear stress relaxation
+        # Shear stress relaxation: π^μν(t) = π₀^μν·exp(-t/τ_π)
         if hasattr(self.coeffs, "shear_relaxation_time") and self.coeffs.shear_relaxation_time:
             tau_pi = self.coeffs.shear_relaxation_time
-            eta = self.coeffs.shear_viscosity or 0.0
 
             # Apply to each component of shear tensor
             if hasattr(fields, "pi_munu") and fields.pi_munu.ndim >= 2:
                 # Ensure tensor has expected shape (..., 4, 4)
                 tensor_shape = fields.pi_munu.shape
                 if len(tensor_shape) >= 2 and tensor_shape[-2:] == (4, 4):
-                    for mu in range(4):
-                        for nu in range(4):
-                            fields.pi_munu[..., mu, nu] = self.apply_viscous_operator(
-                                fields.pi_munu[..., mu, nu], eta / tau_pi, dt
-                            )
+                    # Pure relaxation: all components decay at same rate (k-independent)
+                    relaxation_factor = np.exp(-dt / tau_pi)
+                    fields.pi_munu[...] *= relaxation_factor
                 else:
                     warnings.warn(
                         f"pi_munu tensor shape {tensor_shape} incompatible with 4x4 indices",
+                        stacklevel=2,
+                    )
+
+        # Heat flux relaxation: q^μ(t) = q₀^μ·exp(-t/τ_q) (if heat conduction enabled)
+        if hasattr(self.coeffs, "heat_relaxation_time") and self.coeffs.heat_relaxation_time:
+            tau_q = self.coeffs.heat_relaxation_time
+            if hasattr(fields, "q_mu") and fields.q_mu.ndim >= 1:
+                vector_shape = fields.q_mu.shape
+                if len(vector_shape) >= 1 and vector_shape[-1] == 4:
+                    # Pure relaxation for heat flux
+                    relaxation_factor = np.exp(-dt / tau_q)
+                    fields.q_mu[...] *= relaxation_factor
+                else:
+                    warnings.warn(
+                        f"q_mu vector shape {vector_shape} incompatible with 4-component index",
                         stacklevel=2,
                     )
 

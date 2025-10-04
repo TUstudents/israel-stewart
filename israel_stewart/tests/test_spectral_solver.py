@@ -511,18 +511,18 @@ class TestSpectralISHydrodynamics:
         assert dt > 0, "Adaptive timestep must be positive"
 
         # Verify it respects all physical constraints
-        assert (
-            dt <= expected_cfl_dt * 1.1
-        ), f"Timestep violates CFL condition: dt={dt:.6f} > CFL_dt={expected_cfl_dt:.6f}"
-        assert (
-            dt <= expected_viscous_dt * 1.1
-        ), f"Timestep violates viscous constraint: dt={dt:.6f} > visc_dt={expected_viscous_dt:.6f}"
-        assert (
-            dt <= expected_relax_dt * 1.1
-        ), f"Timestep violates relaxation constraint: dt={dt:.6f} > relax_dt={expected_relax_dt:.6f}"
-        assert (
-            dt <= hydro_solver.max_dt
-        ), f"Timestep exceeds maximum: dt={dt:.6f} > max_dt={hydro_solver.max_dt:.6f}"
+        assert dt <= expected_cfl_dt * 1.1, (
+            f"Timestep violates CFL condition: dt={dt:.6f} > CFL_dt={expected_cfl_dt:.6f}"
+        )
+        assert dt <= expected_viscous_dt * 1.1, (
+            f"Timestep violates viscous constraint: dt={dt:.6f} > visc_dt={expected_viscous_dt:.6f}"
+        )
+        assert dt <= expected_relax_dt * 1.1, (
+            f"Timestep violates relaxation constraint: dt={dt:.6f} > relax_dt={expected_relax_dt:.6f}"
+        )
+        assert dt <= hydro_solver.max_dt, (
+            f"Timestep exceeds maximum: dt={dt:.6f} > max_dt={hydro_solver.max_dt:.6f}"
+        )
 
         # Verify adaptive timestep is within reasonable factor of computed constraint
         expected_dt = min(
@@ -584,9 +584,9 @@ class TestSpectralISHydrodynamics:
 
         # Basic validation
         expected_shape = (*fields.rho.shape, 4, 4)
-        assert (
-            T_munu.shape == expected_shape
-        ), f"Wrong tensor shape: got {T_munu.shape}, expected {expected_shape}"
+        assert T_munu.shape == expected_shape, (
+            f"Wrong tensor shape: got {T_munu.shape}, expected {expected_shape}"
+        )
         assert np.all(np.isfinite(T_munu)), (
             f"Tensor contains NaN/Inf: "
             f"NaN count: {np.sum(np.isnan(T_munu))}, "
@@ -813,8 +813,7 @@ class TestSpectralValidation:
         final_total_energy = np.sum(fields.rho)
         energy_change = abs(final_total_energy - initial_total_energy) / initial_total_energy
         assert energy_change < 0.1, (
-            f"Ideal fluid energy should be approximately conserved: "
-            f"change = {energy_change:.3f}"
+            f"Ideal fluid energy should be approximately conserved: change = {energy_change:.3f}"
         )
 
         # Fields should not have exploded
@@ -1060,9 +1059,9 @@ class TestSpectralSolverFixes:
         low_freq_correlation = np.corrcoef(
             dealiased_signal.flatten(), low_freq_reference.flatten()
         )[0, 1]
-        assert (
-            low_freq_correlation > 0.98
-        ), f"Low frequency preserved: correlation = {low_freq_correlation:.4f}"
+        assert low_freq_correlation > 0.98, (
+            f"Low frequency preserved: correlation = {low_freq_correlation:.4f}"
+        )
 
         # High frequency should be significantly reduced
         high_freq_reference = solver.spectral.ifft_plan(
@@ -1071,9 +1070,9 @@ class TestSpectralSolverFixes:
         high_freq_correlation = np.corrcoef(
             dealiased_signal.flatten(), high_freq_reference.flatten()
         )[0, 1]
-        assert (
-            abs(high_freq_correlation) < 0.1
-        ), f"High frequency removed: correlation = {high_freq_correlation:.4f}"
+        assert abs(high_freq_correlation) < 0.1, (
+            f"High frequency removed: correlation = {high_freq_correlation:.4f}"
+        )
 
         # Verify dealiasing reduces total signal energy (removes high-frequency components)
         original_energy = np.sum(np.abs(conv_k) ** 2)
@@ -1190,9 +1189,9 @@ class TestSpectralSolverFixes:
 
         # Test adaptive IFFT round-trip
         reconstructed = solver.spectral.adaptive_ifft(fft_result, real_field.shape)
-        assert np.allclose(
-            reconstructed, real_field, rtol=1e-12
-        ), "Real FFT round-trip preserves data"
+        assert np.allclose(reconstructed, real_field, rtol=1e-12), (
+            "Real FFT round-trip preserves data"
+        )
 
         # Test that performance is actually improved
         # (This would require timing tests in practice)
@@ -1618,23 +1617,23 @@ class TestARS22IMEXRK:
 
         # Test _add_fields
         fields_doubled = hydro_solver._add_fields(fields_copy, fields_copy, scale=1.0)
-        assert np.allclose(
-            fields_doubled["rho"], 2.0 * fields_copy["rho"]
-        ), "_add_fields works correctly"
+        assert np.allclose(fields_doubled["rho"], 2.0 * fields_copy["rho"]), (
+            "_add_fields works correctly"
+        )
 
         # Test _scale_fields
         fields_half = hydro_solver._scale_fields(fields_copy, scale=0.5)
-        assert np.allclose(
-            fields_half["rho"], 0.5 * fields_copy["rho"]
-        ), "_scale_fields works correctly"
+        assert np.allclose(fields_half["rho"], 0.5 * fields_copy["rho"]), (
+            "_scale_fields works correctly"
+        )
 
         # Test _config_from_dict
         try:
             config_from_dict = hydro_solver._config_from_dict(fields_copy)
             assert hasattr(config_from_dict, "rho"), "Config object created correctly"
-            assert np.allclose(
-                config_from_dict.rho, fields_copy["rho"]
-            ), "Values transferred correctly"
+            assert np.allclose(config_from_dict.rho, fields_copy["rho"]), (
+                "Values transferred correctly"
+            )
         except Exception as e:
             pytest.fail(f"_config_from_dict failed: {e}")
 
@@ -1672,9 +1671,9 @@ class TestARS22IMEXRK:
             required_fields = ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
             for field in required_fields:
                 assert field in stiff_terms, f"Stiff terms contain {field}"
-                assert (
-                    stiff_terms[field].shape == getattr(fields, field).shape
-                ), f"Shape consistency for {field}"
+                assert stiff_terms[field].shape == getattr(fields, field).shape, (
+                    f"Shape consistency for {field}"
+                )
                 assert np.all(np.isfinite(stiff_terms[field])), f"Finite stiff terms for {field}"
 
             # For viscous terms, should have correct sign (dissipative)
@@ -1786,9 +1785,9 @@ class TestARS22IMEXRK:
                 )
 
                 # All errors should be reasonable (not near 50%)
-                assert all(
-                    e < 0.1 for e in errors
-                ), f"Errors too large for exponential decay test: {errors}"
+                assert all(e < 0.1 for e in errors), (
+                    f"Errors too large for exponential decay test: {errors}"
+                )
 
                 # Estimate convergence rate (should be close to 2 for 2nd-order method)
                 if errors[1] > 1e-10 and errors[2] > 1e-10:
@@ -1947,14 +1946,14 @@ class TestARS22IMEXRK:
 
             if rhs_norm > 1e-14:
                 relative_residual = residual_norm / rhs_norm
-                assert (
-                    relative_residual < 1e-6
-                ), f"Newton-Krylov did not converge: residual={relative_residual:.2e}"
+                assert relative_residual < 1e-6, (
+                    f"Newton-Krylov did not converge: residual={relative_residual:.2e}"
+                )
             else:
                 # RHS is near zero, check absolute residual
-                assert (
-                    residual_norm < 1e-10
-                ), f"Newton-Krylov absolute residual too large: {residual_norm:.2e}"
+                assert residual_norm < 1e-10, (
+                    f"Newton-Krylov absolute residual too large: {residual_norm:.2e}"
+                )
 
             # Check analytical solution for implicit stage equation
             # Π_new = RHS + γ·dt·(-Π_new/τ_Π)
@@ -1973,6 +1972,135 @@ class TestARS22IMEXRK:
             # Restore original values
             coeffs.bulk_relaxation_time = original_bulk_time
             coeffs.bulk_viscosity = original_bulk_visc
+
+
+class TestRelaxationOperator:
+    """Test the correct Israel-Stewart relaxation operator (exp(-dt/τ))."""
+
+    @pytest.fixture
+    def setup_relaxation_test(self) -> tuple:
+        """Setup for testing pure relaxation physics."""
+        grid = SpaceGrid(
+            coordinate_system="cartesian",
+            spatial_ranges=[(0.0, 2 * np.pi)] * 3,
+            grid_points=(32, 32, 32),
+            boundary_conditions="periodic",
+        )
+
+        fields = ISFieldConfiguration(grid)
+        coeffs = TransportCoefficients(
+            shear_viscosity=0.1,
+            bulk_viscosity=0.05,
+            shear_relaxation_time=0.5,
+            bulk_relaxation_time=0.3,
+        )
+
+        solver = SpectralISolver(grid, fields, coeffs)
+        return solver, fields, grid, coeffs
+
+    def test_pure_exponential_relaxation(self, setup_relaxation_test: tuple) -> None:
+        """
+        Test that relaxation operator produces pure exponential decay exp(-t/τ).
+
+        This is the CORRECT physics for Israel-Stewart relaxation terms.
+        The decay should be k-independent (all Fourier modes decay at same rate).
+        """
+        solver, fields, grid, coeffs = setup_relaxation_test
+
+        # Initialize bulk pressure with a pattern (mix of k-modes)
+        x = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
+        Pi_initial = 1.0 + 0.5 * np.sin(2 * X) + 0.3 * np.cos(3 * Y) * np.sin(Z)
+        fields.Pi[:] = Pi_initial
+
+        # Relaxation time
+        tau_Pi = coeffs.bulk_relaxation_time  # 0.3
+
+        # Time step
+        dt = 0.1
+
+        # Apply relaxation operator
+        Pi_relaxed = solver.apply_relaxation_operator(fields.Pi, tau_Pi, dt)
+
+        # Analytical solution: Π(t) = Π₀·exp(-t/τ)
+        expected_decay_factor = np.exp(-dt / tau_Pi)
+        Pi_expected = Pi_initial * expected_decay_factor
+
+        # Check error (should be machine precision since it's just multiplication)
+        error = np.max(np.abs(Pi_relaxed - Pi_expected))
+        assert error < 1e-14, f"Relaxation operator error: {error:.3e} (expected ~0)"
+
+        # CRITICAL: Verify k-independence by checking Fourier space
+        # All modes should decay by EXACTLY the same factor
+        Pi_initial_k = np.fft.fftn(Pi_initial)
+        Pi_relaxed_k = np.fft.fftn(Pi_relaxed)
+
+        # Ratio should be exactly exp(-dt/τ) for ALL k
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Ignore division by zero warnings
+            decay_ratios = np.abs(Pi_relaxed_k / Pi_initial_k)
+
+        # Check non-zero modes (skip k=0 to avoid numerical issues)
+        nonzero_mask = np.abs(Pi_initial_k) > 1e-10
+        decay_ratios_nonzero = decay_ratios[nonzero_mask]
+
+        # All ratios should be equal to exp(-dt/τ)
+        ratio_std = np.std(decay_ratios_nonzero)
+        ratio_mean = np.mean(decay_ratios_nonzero)
+
+        assert ratio_std < 1e-12, f"Decay not k-independent! std={ratio_std:.3e} (should be ~0)"
+        assert np.abs(ratio_mean - expected_decay_factor) < 1e-12, (
+            f"Mean decay ratio {ratio_mean:.6f} != expected {expected_decay_factor:.6f}"
+        )
+
+    def test_relaxation_vs_diffusion_physics(self, setup_relaxation_test: tuple) -> None:
+        """
+        Verify relaxation operator is DIFFERENT from diffusion operator.
+
+        - Relaxation: exp(-dt/τ) - k-independent
+        - Diffusion: exp(-ν k² dt) - k-dependent (high-k decays faster)
+
+        This test ensures we're using the correct physics.
+        """
+        solver, fields, grid, coeffs = setup_relaxation_test
+
+        # Create field with TWO distinct k-modes
+        x = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+        X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
+
+        # Low-k mode (k=1) and high-k mode (k=8)
+        field_low_k = np.sin(X)  # k=1
+        field_high_k = np.sin(8 * X)  # k=8
+
+        tau = 0.5
+        dt = 0.1
+
+        # Apply RELAXATION operator (correct for Israel-Stewart)
+        relaxed_low_k = solver.apply_relaxation_operator(field_low_k, tau, dt)
+        relaxed_high_k = solver.apply_relaxation_operator(field_high_k, tau, dt)
+
+        # Both should decay by SAME factor (k-independent)
+        expected_factor = np.exp(-dt / tau)
+        error_low = np.max(np.abs(relaxed_low_k - field_low_k * expected_factor))
+        error_high = np.max(np.abs(relaxed_high_k - field_high_k * expected_factor))
+
+        assert error_low < 1e-14, f"Low-k relaxation error: {error_low:.3e}"
+        assert error_high < 1e-14, f"High-k relaxation error: {error_high:.3e}"
+
+        # Compute decay ratios
+        decay_ratio_low = np.max(np.abs(relaxed_low_k)) / np.max(np.abs(field_low_k))
+        decay_ratio_high = np.max(np.abs(relaxed_high_k)) / np.max(np.abs(field_high_k))
+
+        # Ratios should be IDENTICAL (k-independent)
+        ratio_difference = np.abs(decay_ratio_low - decay_ratio_high)
+        assert ratio_difference < 1e-14, (
+            f"Relaxation is k-dependent! "
+            f"Low-k ratio={decay_ratio_low:.6f}, High-k ratio={decay_ratio_high:.6f}"
+        )
+
+        # Contrast with diffusion: if we used viscous operator (WRONG), we'd get:
+        # diffusion_low = exp(-ν·1²·dt), diffusion_high = exp(-ν·64·dt)
+        # where diffusion_high << diffusion_low (k-dependent decay)
 
 
 class TestSpectralLaplacianPhysics:
@@ -2023,9 +2151,9 @@ class TestSpectralLaplacianPhysics:
             max_relative_error = np.max(relative_error) / np.max(np.abs(expected_laplacian))
 
             # Spectral methods should achieve machine precision for represented modes
-            assert (
-                max_relative_error < 1e-12
-            ), f"Spectral Laplacian error too large: {max_relative_error}"
+            assert max_relative_error < 1e-12, (
+                f"Spectral Laplacian error too large: {max_relative_error}"
+            )
             assert computed_laplacian.shape == test_field.shape, "Shape preservation"
 
         except Exception as e:
@@ -2084,9 +2212,9 @@ class TestSpectralLaplacianPhysics:
             center_idx = 16  # Middle of domain
             if fields.Pi[center_idx, center_idx, center_idx] > 0.5:
                 # High field region should have negative Laplacian (diffusion outward)
-                assert (
-                    laplacian_Pi[center_idx, center_idx, center_idx] < 0
-                ), "Diffusion opposes gradients"
+                assert laplacian_Pi[center_idx, center_idx, center_idx] < 0, (
+                    "Diffusion opposes gradients"
+                )
 
         except Exception as e:
             pytest.fail(f"Viscous diffusion physics test failed: {e}")
@@ -2182,9 +2310,9 @@ class TestSpectralLaplacianPhysics:
             )
 
             # Check that integral of Laplacian is approximately zero (conservation)
-            assert (
-                relative_conservation < 1e-10
-            ), f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
+            assert relative_conservation < 1e-10, (
+                f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
+            )
 
             # Check that Laplacian is not identically zero (it should do something)
             max_laplacian = np.max(np.abs(laplacian_result))
@@ -2233,9 +2361,9 @@ class TestPeriodicGridIntegration:
             spacing_warnings = [
                 warning for warning in w if "spacing" in str(warning.message).lower()
             ]
-            assert (
-                len(spacing_warnings) == 0
-            ), f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
+            assert len(spacing_warnings) == 0, (
+                f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
+            )
 
     def test_dirichlet_grid_issues_warning(self, dirichlet_grid: SpaceGrid) -> None:
         """Test that non-periodic grids trigger appropriate warnings."""
@@ -2260,9 +2388,9 @@ class TestPeriodicGridIntegration:
 
         # Check that frequency arrays have correct structure
         kx_1d = np.fft.fftfreq(N, solver.dx) * 2 * np.pi
-        assert np.allclose(
-            kx_1d[1], expected_k1
-        ), f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
+        assert np.allclose(kx_1d[1], expected_k1), (
+            f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
+        )
 
     def test_spectral_derivative_accuracy_periodic(self, periodic_grid: SpaceGrid) -> None:
         """Test that spectral derivatives achieve high accuracy with periodic grids."""
@@ -2288,9 +2416,9 @@ class TestPeriodicGridIntegration:
         max_error = np.max(np.abs(numerical_derivative - expected_derivative))
         relative_error = max_error / np.max(np.abs(expected_derivative))
 
-        assert (
-            relative_error < 1e-12
-        ), f"Spectral derivative relative error too large: {relative_error}"
+        assert relative_error < 1e-12, (
+            f"Spectral derivative relative error too large: {relative_error}"
+        )
 
     def test_spacing_consistency_with_factory(self) -> None:
         """Test that SpaceGrid produces consistent spacing for periodic BC."""

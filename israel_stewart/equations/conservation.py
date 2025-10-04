@@ -39,6 +39,7 @@ class ConservationLaws:
         self,
         fields: ISFieldConfiguration,
         coefficients: Any = None,  # TODO: Replace with TransportCoefficients
+        spectral_solver: Optional[Any] = None,  # Allow passing in a spectral solver
     ):
         """
         Initialize conservation laws.
@@ -46,9 +47,11 @@ class ConservationLaws:
         Args:
             fields: ISFieldConfiguration containing all hydrodynamic variables
             coefficients: Transport coefficients (can be None for now)
+            spectral_solver: Optional spectral solver for computing derivatives.
         """
         self.fields = fields
         self.coeffs = coefficients
+        self.spectral_solver = spectral_solver
 
         # Ensure metric is always available
         self.metric = self.fields.grid.metric
@@ -104,6 +107,13 @@ class ConservationLaws:
 
         For each ν, computes ∇_μ T^μν = ∂_μ T^μν + Γ^μ_μλ T^λν + Γ^ν_μλ T^μλ
 
+        For SpaceGrid (3+1D formalism):
+        - Only computes spatial divergence ∂_i T^iν (i=1,2,3)
+        - Time derivative ∂_0 T^0ν must be computed separately via evolution_equations()
+
+        For SpacetimeGrid (legacy 4D):
+        - Computes full 4D divergence ∂_μ T^μν (μ=0,1,2,3)
+
         Returns:
             Divergence with shape (*grid.shape, 4) - one component for each ν
         """
@@ -114,17 +124,30 @@ class ConservationLaws:
         # Get coordinate arrays for numerical derivatives
         coords = self._get_coordinate_arrays()
 
+        # Detect grid type: SpaceGrid has 3 coords, SpacetimeGrid has 4
+        is_spacegrid = len(coords) == 3
+
+        # For SpaceGrid: only compute spatial divergence (μ runs over spatial indices only)
+        # For SpacetimeGrid: compute full 4D divergence (μ runs over 0,1,2,3)
+        mu_start = 1 if is_spacegrid else 0  # Skip time index for SpaceGrid
+        mu_range = range(mu_start, 4)
+
         # For each component ν of the conservation equation
         for nu in range(4):
             div_component = np.zeros_like(T[..., 0, 0])
 
             # Sum over contracted index μ: ∂_μ T^μν
-            for mu in range(4):
+            for mu in mu_range:
                 # Extract T^μν component
                 T_mu_nu = T[..., mu, nu]
 
+                # Map tensor index to coordinate index
+                # SpaceGrid: tensor μ=1,2,3 → coord 0,1,2
+                # SpacetimeGrid: tensor μ=0,1,2,3 → coord 0,1,2,3
+                coord_idx = mu - 1 if is_spacegrid else mu
+
                 # Compute partial derivative ∂_μ T^μν
-                partial_deriv = self._partial_derivative(T_mu_nu, mu, coords)
+                partial_deriv = self._partial_derivative(T_mu_nu, coord_idx, coords)
                 div_component += partial_deriv
 
                 # Add Christoffel symbol corrections if metric is not flat
@@ -178,23 +201,32 @@ class ConservationLaws:
         drho_dt = np.zeros(grid_shape)
         dmom_dt = np.zeros((*grid_shape, 3))
 
-        # Energy conservation: ∂_t ρ = ∂_t T^00 = -∂_i T^i0
-        # Sum over spatial tensor indices i=1,2,3
-        for i in range(1, 4):  # i = 1, 2, 3 (tensor spatial indices)
-            T_i0 = T[..., i, 0]  # T^i0 component
-            # Map tensor index to coordinate array index
-            coord_idx = i - 1 if is_spacegrid else i
-            spatial_deriv = self._partial_derivative(T_i0, coord_idx, coords)
-            drho_dt -= spatial_deriv
+        # Use spectral divergence for periodic boundaries for efficiency and accuracy
+        if self.spectral_solver is not None and self.fields.grid.boundary_conditions == "periodic":
+            # Energy conservation: ∂_t ρ = -∂_i T^i0
+            energy_flux_vector = T[..., 1:4, 0]  # Vector (T^10, T^20, T^30)
+            drho_dt = -self.spectral_solver.spatial_divergence(energy_flux_vector)
 
-        # Momentum conservation: ∂_t(ρu^j) = ∂_t T^0j = -∂_i T^ij
-        for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
-            for i in range(1, 4):  # i = 1, 2, 3 (spatial tensor divergence)
-                T_ij = T[..., i, j]  # T^ij component
-                # Map tensor index to coordinate array index
-                coord_idx = i - 1 if is_spacegrid else i
-                spatial_deriv = self._partial_derivative(T_ij, coord_idx, coords)
-                dmom_dt[..., j - 1] -= spatial_deriv
+            # Momentum conservation: ∂_t(ρu^j) = -∂_i T^ij
+            for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
+                momentum_flux_vector = T[..., 1:4, j]  # Vector (T^1j, T^2j, T^3j)
+                dmom_dt[..., j - 1] = -self.spectral_solver.spatial_divergence(
+                    momentum_flux_vector
+                )
+        else:
+            # Fallback to grid-based vectorized derivatives for non-spectral solvers
+            # Use grid.divergence() for better performance and consistency
+
+            # Energy conservation: ∂_t ρ = -∂_i T^i0
+            energy_flux_vector = T[..., 1:4, 0]  # Vector (T^10, T^20, T^30)
+            drho_dt = -self.fields.grid.divergence(energy_flux_vector, order=2)
+
+            # Momentum conservation: ∂_t(ρu^j) = -∂_i T^ij
+            for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
+                momentum_flux_vector = T[..., 1:4, j]  # Vector (T^1j, T^2j, T^3j)
+                dmom_dt[..., j - 1] = -self.fields.grid.divergence(
+                    momentum_flux_vector, order=2
+                )
 
         # Add Christoffel symbol corrections if metric is not flat
         if self.metric and not self.metric.is_flat():
@@ -280,27 +312,48 @@ class ConservationLaws:
 
     def _partial_derivative(self, field: np.ndarray, direction: int, coords: list) -> np.ndarray:
         """
-        Compute partial derivative ∂_μ field using finite differences.
+        Compute partial derivative ∂_μ field using the most appropriate method.
 
-        Args:
-            field: Field to differentiate with shape (*grid.shape,)
-            direction: Direction index
-                - SpaceGrid (3D): 0,1,2 = x,y,z
-                - SpacetimeGrid (4D): 0=time, 1,2,3=spatial
-            coords: Coordinate arrays
-
-        Returns:
-            Partial derivative ∂_μ field
+        Hierarchy:
+        1. Spectral solver (if available and periodic BC)
+        2. Grid gradient method (robust finite differences with proper BC)
+        3. np.gradient fallback (legacy, avoid if possible)
         """
+        # Use spectral solver if available (preferred for accuracy and consistency)
+        if self.spectral_solver is not None:
+            # The spectral solver operates on pure 3D spatial fields.
+            # The `direction` here corresponds to the spatial axes (0,1,2 for x,y,z).
+            if field.ndim != 3:
+                # Pad or slice field if it doesn't match the expected 3D shape
+                # This is a temporary workaround. A better solution is to ensure
+                # all fields passed to this function are purely spatial.
+                warnings.warn(
+                    f"Field with shape {field.shape} is not a pure 3D spatial field. "
+                    "Attempting to use spectral derivative on a slice.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                if field.ndim > 3:
+                    field = field[..., 0]  # Example: take first component
+
+            # Ensure direction is within the spatial dimensions
+            if direction < 3:
+                return self.spectral_solver.spatial_derivative(field, direction=direction)
+
+        # Use grid gradient method (respects boundary conditions)
+        if hasattr(self.fields.grid, 'gradient') and field.ndim == 3:
+            if direction >= len(coords):
+                raise ValueError(f"Direction {direction} exceeds coordinate dimensions")
+            return self.fields.grid.gradient(field, axis=direction, order=2)
+
+        # Legacy fallback to np.gradient (does not respect periodic BC properly)
         if direction >= len(coords):
             raise ValueError(f"Direction {direction} exceeds coordinate dimensions")
 
-        # OPTIMIZATION: Only compute gradient in requested direction
-        # np.gradient with single spacing is 3x faster than computing all directions
         spacing = coords[direction]
         gradient_dir = np.gradient(field, spacing, axis=direction)
 
-        return gradient_dir  # type: ignore[no-any-return]
+        return gradient_dir
 
     def _covariant_div(self, tensor_component: np.ndarray, index: int) -> np.ndarray:
         """
@@ -337,6 +390,12 @@ class ConservationLaws:
         """
         Compute particle number conservation ∂_μ N^μ = ∂_μ (n u^μ) = 0.
 
+        For SpaceGrid (3+1D formalism):
+        - Only computes spatial divergence ∂_i N^i (i=1,2,3)
+
+        For SpacetimeGrid (legacy 4D):
+        - Computes full 4D divergence ∂_μ N^μ (μ=0,1,2,3)
+
         Returns:
             Particle number conservation equation: ∂_t n + ∇·(n v) = 0
         """
@@ -349,8 +408,21 @@ class ConservationLaws:
         coords = self._get_coordinate_arrays()
         div_N = np.zeros_like(N_mu[..., 0])
 
-        for mu in range(4):
-            partial = self._partial_derivative(N_mu[..., mu], mu, coords)
+        # Detect grid type: SpaceGrid has 3 coords, SpacetimeGrid has 4
+        is_spacegrid = len(coords) == 3
+
+        # For SpaceGrid: only compute spatial divergence (μ runs over spatial indices only)
+        # For SpacetimeGrid: compute full 4D divergence (μ runs over 0,1,2,3)
+        mu_start = 1 if is_spacegrid else 0  # Skip time index for SpaceGrid
+        mu_range = range(mu_start, 4)
+
+        for mu in mu_range:
+            # Map tensor index to coordinate index
+            # SpaceGrid: tensor μ=1,2,3 → coord 0,1,2
+            # SpacetimeGrid: tensor μ=0,1,2,3 → coord 0,1,2,3
+            coord_idx = mu - 1 if is_spacegrid else mu
+
+            partial = self._partial_derivative(N_mu[..., mu], coord_idx, coords)
             div_N += partial
 
             # Add Christoffel corrections if needed

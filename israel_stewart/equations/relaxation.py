@@ -346,11 +346,17 @@ class ISRelaxationEquations:
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
             # Time derivative (mu=0) handled by time evolution, not spatial gradients
-            for mu in range(1, 4):
-                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
-                partial_div += np.gradient(u_mu[..., mu], axis=spatial_axis, edge_order=1)
+            # Use grid.gradient() for proper boundary condition handling
+            if hasattr(self.grid, 'gradient'):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    partial_div += self.grid.gradient(u_mu[..., mu], axis=spatial_axis, order=2)
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    partial_div += np.gradient(u_mu[..., mu], axis=spatial_axis, edge_order=1)
         else:
-            # 4D spacetime: all derivatives including time
+            # 4D spacetime: all derivatives including time (legacy SpacetimeGrid)
             for mu in range(4):
                 partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
 
@@ -401,14 +407,23 @@ class ISRelaxationEquations:
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
-            for mu in range(1, 4):
-                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
-                for nu in range(4):
-                    nabla_u_partial[..., mu, nu] = np.gradient(
-                        u_mu[..., nu], axis=spatial_axis, edge_order=1
-                    )
+            # Use grid.gradient() for proper boundary condition handling
+            if hasattr(self.grid, 'gradient'):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = self.grid.gradient(
+                            u_mu[..., nu], axis=spatial_axis, order=2
+                        )
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = np.gradient(
+                            u_mu[..., nu], axis=spatial_axis, edge_order=1
+                        )
         else:
-            # 4D spacetime: all derivatives
+            # 4D spacetime: all derivatives (legacy SpacetimeGrid)
             for mu in range(4):
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
@@ -497,14 +512,23 @@ class ISRelaxationEquations:
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
-            for mu in range(1, 4):
-                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
-                for nu in range(4):
-                    nabla_u_partial[..., mu, nu] = np.gradient(
-                        u_mu[..., nu], axis=spatial_axis, edge_order=1
-                    )
+            # Use grid.gradient() for proper boundary condition handling
+            if hasattr(self.grid, 'gradient'):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = self.grid.gradient(
+                            u_mu[..., nu], axis=spatial_axis, order=2
+                        )
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = np.gradient(
+                            u_mu[..., nu], axis=spatial_axis, edge_order=1
+                        )
         else:
-            # 4D spacetime: all derivatives
+            # 4D spacetime: all derivatives (legacy SpacetimeGrid)
             for mu in range(4):
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
@@ -578,11 +602,17 @@ class ISRelaxationEquations:
         grad_T_lower = np.zeros(T.shape + (4,))
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
-            for mu in range(1, 4):
-                spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
-                grad_T_lower[..., mu] = np.gradient(T, axis=spatial_axis, edge_order=1)
+            # Use grid.gradient() for proper boundary condition handling
+            if hasattr(self.grid, 'gradient'):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    grad_T_lower[..., mu] = self.grid.gradient(T, axis=spatial_axis, order=2)
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    grad_T_lower[..., mu] = np.gradient(T, axis=spatial_axis, edge_order=1)
         else:
-            # 4D spacetime: all derivatives
+            # 4D spacetime: all derivatives (legacy SpacetimeGrid)
             for mu in range(4):
                 grad_T_lower[..., mu] = np.gradient(T, axis=mu, edge_order=1)
 

@@ -297,30 +297,36 @@ class SpaceGrid:
         return np.meshgrid(*coord_arrays, indexing=indexing)
 
     @monitor_performance("space_gradient")
-    def gradient(self, field: np.ndarray, axis: int) -> np.ndarray:
+    def gradient(self, field: np.ndarray, axis: int, order: int = 2) -> np.ndarray:
         """
         Compute spatial gradient along specified axis using finite differences.
 
         Args:
             field: Scalar field with shape (nx, ny, nz)
             axis: Spatial axis (0=first, 1=second, 2=third coordinate)
+            order: Accuracy order (2 or 4, default=2)
 
         Returns:
             Gradient array with same shape as input
 
         Raises:
-            ValueError: If field shape doesn't match grid or axis is invalid
+            ValueError: If field shape doesn't match grid, axis is invalid, or order is invalid
 
         Notes:
-            - Uses second-order accurate centered differences for interior points
-            - Edge accuracy depends on available points (first or second order)
-            - Assumes uniform grid spacing (warns if non-uniform)
+            - Uses centered differences for interior points
+            - Periodic BC: Wraps around domain (exact for smooth periodic functions)
+            - Non-periodic BC: Uses one-sided stencils at boundaries
+            - 2nd-order: O(h²) truncation error
+            - 4th-order: O(h⁴) truncation error (requires n_points >= 5)
         """
         if field.shape != self.shape:
             raise ValueError(f"Field shape {field.shape} doesn't match grid shape {self.shape}")
 
         if axis < 0 or axis >= 3:
             raise ValueError(f"Axis must be 0, 1, or 2 for 3D grid, got {axis}")
+
+        if order not in [2, 4]:
+            raise ValueError(f"Order must be 2 or 4, got {order}")
 
         # Get coordinate array and spacing
         coord_name = self.coordinate_names[axis]
@@ -332,7 +338,7 @@ class SpaceGrid:
             return np.zeros_like(field)
 
         # Check for uniform spacing
-        spacing = coord_array[1] - coord_array[0]
+        spacing = self.spatial_spacing[axis]
         if n_points > 2:
             max_spacing_diff = np.max(np.diff(coord_array)) - np.min(np.diff(coord_array))
             if max_spacing_diff > 1e-10 * abs(spacing):
@@ -343,17 +349,140 @@ class SpaceGrid:
                     stacklevel=2,
                 )
 
-        # Compute gradient using numpy's gradient function
-        edge_order = 2 if n_points >= 3 else 1
-        return cast(np.ndarray, np.gradient(field, spacing, axis=axis, edge_order=edge_order))
+        # Check if sufficient points for requested order
+        if order == 4 and n_points < 5:
+            warnings.warn(
+                f"4th-order accuracy requires at least 5 points, but {coord_name} has {n_points}. "
+                "Falling back to 2nd-order.",
+                UserWarning,
+                stacklevel=2,
+            )
+            order = 2
+
+        # Initialize result
+        result = np.zeros_like(field)
+
+        # Create index slices for different stencil positions
+        if order == 2:
+            # 2nd-order centered: f'(x) = [f(x+h) - f(x-h)] / (2h)
+            if self.boundary_conditions == "periodic":
+                # Periodic: wrap indices
+                result = (np.roll(field, -1, axis=axis) - np.roll(field, 1, axis=axis)) / (
+                    2.0 * spacing
+                )
+            else:
+                # Interior points: centered difference
+                slices_center = [slice(None)] * 3
+                slices_forward = [slice(None)] * 3
+                slices_backward = [slice(None)] * 3
+
+                slices_center[axis] = slice(1, -1)
+                slices_forward[axis] = slice(2, None)
+                slices_backward[axis] = slice(None, -2)
+
+                result[tuple(slices_center)] = (
+                    field[tuple(slices_forward)] - field[tuple(slices_backward)]
+                ) / (2.0 * spacing)
+
+                # Left boundary: forward difference (1st-order)
+                slices_left = [slice(None)] * 3
+                slices_left_p1 = [slice(None)] * 3
+                slices_left[axis] = 0
+                slices_left_p1[axis] = 1
+                result[tuple(slices_left)] = (
+                    field[tuple(slices_left_p1)] - field[tuple(slices_left)]
+                ) / spacing
+
+                # Right boundary: backward difference (1st-order)
+                slices_right = [slice(None)] * 3
+                slices_right_m1 = [slice(None)] * 3
+                slices_right[axis] = -1
+                slices_right_m1[axis] = -2
+                result[tuple(slices_right)] = (
+                    field[tuple(slices_right)] - field[tuple(slices_right_m1)]
+                ) / spacing
+
+        elif order == 4:
+            # 4th-order centered: f'(x) = [-f(x+2h) + 8f(x+h) - 8f(x-h) + f(x-2h)] / (12h)
+            if self.boundary_conditions == "periodic":
+                # Periodic: wrap indices
+                result = (
+                    -np.roll(field, -2, axis=axis)
+                    + 8.0 * np.roll(field, -1, axis=axis)
+                    - 8.0 * np.roll(field, 1, axis=axis)
+                    + np.roll(field, 2, axis=axis)
+                ) / (12.0 * spacing)
+            else:
+                # Interior points: 4th-order centered
+                slices_center = [slice(None)] * 3
+                slices_p2 = [slice(None)] * 3
+                slices_p1 = [slice(None)] * 3
+                slices_m1 = [slice(None)] * 3
+                slices_m2 = [slice(None)] * 3
+
+                slices_center[axis] = slice(2, -2)
+                slices_p2[axis] = slice(4, None)
+                slices_p1[axis] = slice(3, -1)
+                slices_m1[axis] = slice(1, -3)
+                slices_m2[axis] = slice(None, -4)
+
+                result[tuple(slices_center)] = (
+                    -field[tuple(slices_p2)]
+                    + 8.0 * field[tuple(slices_p1)]
+                    - 8.0 * field[tuple(slices_m1)]
+                    + field[tuple(slices_m2)]
+                ) / (12.0 * spacing)
+
+                # Near-boundary points: fall back to 2nd-order
+                # Point at index 1
+                slices_1 = [slice(None)] * 3
+                slices_0 = [slice(None)] * 3
+                slices_2 = [slice(None)] * 3
+                slices_1[axis] = 1
+                slices_0[axis] = 0
+                slices_2[axis] = 2
+                result[tuple(slices_1)] = (
+                    field[tuple(slices_2)] - field[tuple(slices_0)]
+                ) / (2.0 * spacing)
+
+                # Point at index -2
+                slices_n2 = [slice(None)] * 3
+                slices_n1 = [slice(None)] * 3
+                slices_n3 = [slice(None)] * 3
+                slices_n2[axis] = -2
+                slices_n1[axis] = -1
+                slices_n3[axis] = -3
+                result[tuple(slices_n2)] = (
+                    field[tuple(slices_n1)] - field[tuple(slices_n3)]
+                ) / (2.0 * spacing)
+
+                # Boundary points: 1st-order
+                slices_left = [slice(None)] * 3
+                slices_left_p1 = [slice(None)] * 3
+                slices_left[axis] = 0
+                slices_left_p1[axis] = 1
+                result[tuple(slices_left)] = (
+                    field[tuple(slices_left_p1)] - field[tuple(slices_left)]
+                ) / spacing
+
+                slices_right = [slice(None)] * 3
+                slices_right_m1 = [slice(None)] * 3
+                slices_right[axis] = -1
+                slices_right_m1[axis] = -2
+                result[tuple(slices_right)] = (
+                    field[tuple(slices_right)] - field[tuple(slices_right_m1)]
+                ) / spacing
+
+        return result
 
     @monitor_performance("space_divergence")
-    def divergence(self, vector_field: np.ndarray) -> np.ndarray:
+    def divergence(self, vector_field: np.ndarray, order: int = 2) -> np.ndarray:
         """
-        Compute divergence of 3D vector field.
+        Compute divergence of 3D vector field: ∇·v = ∂ₓvₓ + ∂ᵧvᵧ + ∂_zvz.
 
         Args:
             vector_field: Vector field with shape (nx, ny, nz, 3)
+            order: Accuracy order for derivatives (2 or 4, default=2)
 
         Returns:
             Divergence field with shape (nx, ny, nz)
@@ -362,9 +491,9 @@ class SpaceGrid:
             ValueError: If vector field shape is incorrect
 
         Notes:
-            - Uses covariant divergence if metric is provided
+            - Uses covariant divergence if metric is provided: ∇_i V^i = ∂_i V^i + Γ^i_{ij} V^j
             - Falls back to flat-space divergence for Cartesian coordinates
-            - Warns if using flat-space approximation with non-Cartesian coordinates
+            - Boundary conditions and accuracy order from grid.gradient()
         """
         expected_shape = (*self.shape, 3)
         if vector_field.shape != expected_shape:
@@ -383,7 +512,7 @@ class SpaceGrid:
             for i in range(3):
                 if coord_lengths[i] < 2:
                     continue
-                divergence += self.gradient(vector_field[..., i], axis=i)
+                divergence += self.gradient(vector_field[..., i], axis=i, order=order)
 
             # Christoffel symbol contributions
             christoffel = self.metric.christoffel_symbols
@@ -422,7 +551,7 @@ class SpaceGrid:
             for i in range(3):
                 if coord_lengths[i] < 2:
                     continue
-                divergence += self.gradient(vector_field[..., i], axis=i)
+                divergence += self.gradient(vector_field[..., i], axis=i, order=order)
 
             return divergence
 

@@ -12,7 +12,7 @@ import pytest
 
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
-from israel_stewart.core.spacetime_grid import SpacetimeGrid
+from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.equations.relaxation import ISRelaxationEquations
 
 
@@ -111,11 +111,11 @@ class TestISFieldConfigurationEnhanced:
     @pytest.fixture
     def setup_field_config(self) -> ISFieldConfiguration:
         """Setup test field configuration."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4),
+            grid_points=(4, 4, 4),
+            boundary_conditions="periodic",
         )
         config = ISFieldConfiguration(grid)
         return config
@@ -173,11 +173,11 @@ class TestISRelaxationEquations:
     @pytest.fixture
     def setup_relaxation_system(self) -> ISFieldConfiguration:
         """Setup relaxation equation test system."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4),
+            grid_points=(4, 4, 4),
+            boundary_conditions="periodic",
         )
         metric = MinkowskiMetric()
 
@@ -429,11 +429,11 @@ class TestRelaxationPhysics:
 
     def test_relaxation_to_equilibrium(self) -> None:
         """Test that dissipative fluxes relax to zero in equilibrium."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4),
+            grid_points=(4, 4, 4),
+            boundary_conditions="periodic",
         )
         metric = MinkowskiMetric()
 
@@ -481,11 +481,11 @@ class TestRelaxationPhysics:
 
     def test_second_order_coupling_effects(self) -> None:
         """Test that second-order couplings affect evolution."""
-        grid = SpacetimeGrid(
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4),
+            grid_points=(4, 4, 4),
+            boundary_conditions="periodic",
         )
         metric = MinkowskiMetric()
 

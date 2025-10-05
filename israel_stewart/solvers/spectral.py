@@ -1258,7 +1258,22 @@ class SpectralISHydrodynamics:
         IMEX Runge-Kutta method: implicit spectral linear terms + explicit nonlinear terms.
 
         Uses second-order IMEX scheme for optimal balance of stability and accuracy.
+
+        CURRENT LIMITATION: This method only evolves dissipative fluxes (Π, π, q).
+        Hydrodynamic variables (ρ, u) remain frozen. For problems requiring
+        hydrodynamic evolution (sound waves, shocks, flow), use split_step method.
         """
+        # Warn user once about IMEX limitations
+        if not hasattr(self, "_imex_conservation_warning_shown"):
+            warnings.warn(
+                "IMEX method currently only evolves dissipative fluxes (Π, π, q). "
+                "Hydrodynamic variables (ρ, u) are frozen at initial values. "
+                "For sound waves and hydrodynamic problems, use method='split_step' instead.",
+                UserWarning,
+                stacklevel=3,
+            )
+            self._imex_conservation_warning_shown = True
+
         # Second-order IMEX scheme with two stages
         self._imex_rk2_step(dt)
 
@@ -1359,28 +1374,44 @@ class SpectralISHydrodynamics:
         explicit_rhs = {}
 
         # Conservation law terms (advection, pressure gradients)
-        if self.conservation is not None:
-            try:
-                conservation_rhs = self.conservation.evolution_equations()
-                # Convert derivative names to field names for IMEX compatibility
-                # conservation returns {"drho_dt": ..., "dmom_dt": ...}
-                # but IMEX expects {"rho": ..., "u_mu": ...}
-                if "drho_dt" in conservation_rhs:
-                    explicit_rhs["rho"] = conservation_rhs["drho_dt"]
-                if "dmom_dt" in conservation_rhs and "drho_dt" in conservation_rhs:
-                    # Convert momentum density derivative to velocity derivative
-                    # dmom_dt = ∂_t(ρu^i), need to compute ∂_t(u^i) using product rule
-                    du_spatial_dt = self._convert_momentum_to_velocity_derivative(
-                        conservation_rhs["dmom_dt"], conservation_rhs["drho_dt"]
-                    )
-                    # Map spatial velocity derivative to four-velocity derivative
-                    du_dt = np.zeros_like(self.fields.u_mu)
-                    du_dt[..., 1:4] = du_spatial_dt  # Spatial components (indices 1,2,3)
-                    explicit_rhs["u_mu"] = du_dt
-            except Exception as e:
-                physics_logger.log_physics_fallback(
-                    "conservation_rhs_computation", str(e), "skip_conservation_terms"
-                )
+        # TODO: Conservation laws are currently DISABLED in IMEX method
+        #
+        # REASON: Conservation laws require coupling between ρ and u evolution that
+        # is incompatible with IMEX operator splitting. The conversion from momentum
+        # density derivatives ∂_t(ρu^i) to velocity derivatives ∂_t(u^i) creates
+        # field configuration dependencies that make Newton-Krylov solver unstable.
+        #
+        # CURRENT LIMITATION: IMEX only evolves dissipative fluxes (Π, π, q).
+        # Hydrodynamic variables (ρ, u) remain frozen at initial values.
+        #
+        # WORKAROUND: Use split_step method for problems requiring hydrodynamic evolution
+        # (e.g., sound waves, shocks, flow). IMEX is only suitable for pure relaxation
+        # dynamics with fixed background.
+        #
+        # FUTURE FIX: Redesign IMEX to handle conservation laws via:
+        # - Operator splitting: IMEX for stiff terms + RK2 for conservation
+        # - Fully coupled implicit-explicit system
+        # - Different variable formulation (entropy variables)
+        #
+        # if self.conservation is not None:
+        #     try:
+        #         conservation_rhs = self.conservation.evolution_equations()
+        #         if "drho_dt" in conservation_rhs:
+        #             explicit_rhs["rho"] = conservation_rhs["drho_dt"]
+        #         if "dmom_dt" in conservation_rhs and "drho_dt" in conservation_rhs:
+        #             du_spatial_dt = self._convert_momentum_to_velocity_derivative_with_fields(
+        #                 conservation_rhs["dmom_dt"],
+        #                 conservation_rhs["drho_dt"],
+        #                 self.fields.rho,
+        #                 self.fields.u_mu[..., 1:4],
+        #             )
+        #             du_dt = np.zeros_like(self.fields.u_mu)
+        #             du_dt[..., 1:4] = du_spatial_dt
+        #             explicit_rhs["u_mu"] = du_dt
+        #     except Exception as e:
+        #         physics_logger.log_physics_fallback(
+        #             "conservation_rhs_computation", str(e), "skip_conservation_terms"
+        #         )
 
         # Nonlinear relaxation source terms
         if self.relaxation is not None:
@@ -1600,7 +1631,7 @@ class SpectralISHydrodynamics:
         drho_dt: np.ndarray,
     ) -> np.ndarray:
         """
-        Convert momentum density derivative to velocity derivative.
+        Convert momentum density derivative to velocity derivative using current fields.
 
         Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
         Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
@@ -1616,9 +1647,32 @@ class SpectralISHydrodynamics:
         Returns:
             du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
         """
-        rho = self.fields.rho
-        u_spatial = self.fields.u_mu[..., 1:4]
+        return self._convert_momentum_to_velocity_derivative_with_fields(
+            dmom_dt, drho_dt, self.fields.rho, self.fields.u_mu[..., 1:4]
+        )
 
+    def _convert_momentum_to_velocity_derivative_with_fields(
+        self,
+        dmom_dt: np.ndarray,
+        drho_dt: np.ndarray,
+        rho: np.ndarray,
+        u_spatial: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert momentum density derivative to velocity derivative with explicit fields.
+
+        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
+        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+
+        Args:
+            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
+            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
+            rho: Energy density at evaluation point, shape (*grid.shape,)
+            u_spatial: Spatial velocity at evaluation point, shape (*grid.shape, 3)
+
+        Returns:
+            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
+        """
         # Avoid division by zero (use small epsilon where rho is tiny)
         rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
 

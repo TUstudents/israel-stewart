@@ -1118,6 +1118,9 @@ class NumericalSoundWaveBenchmark:
             background_density: Background energy density ρ₀
             background_pressure: Background pressure P₀
         """
+        # Store background density for use in damping extraction
+        self._background_density = background_density
+
         # Get analytical mode properties and eigenvector structure
         wave_vector = np.array([wave_number, 0.0, 0.0])
         analytical_modes = self.analytical.analyze_dispersion_relation(wave_vector)
@@ -1386,11 +1389,23 @@ class NumericalSoundWaveBenchmark:
         time_points = []
         rho_time_series = []
         ux_time_series = []
+        rho_k_amplitude_series = []  # Fourier mode amplitude
+
+        # Fourier mode index for wave_number
+        # For 1D wave along x: k_index is the x-wavenumber index
+        nx = self.grid_points[0]
+        L_x = self.grid.spatial_ranges[0][1] - self.grid.spatial_ranges[0][0]
+        k_index = int(round(wave_number * L_x / (2 * np.pi)))
+        k_index = k_index % nx  # Wrap to valid range
 
         # Record initial state (t=0)
         time_points.append(0.0)
         rho_time_series.append(self.fields.rho[monitor_idx])
         ux_time_series.append(self.fields.u_mu[monitor_idx + (1,)])
+
+        # Extract Fourier mode amplitude (initial)
+        rho_fft = np.fft.fftn(self.fields.rho - self._background_density)
+        rho_k_amplitude_series.append(np.abs(rho_fft[k_index, 0, 0]))
 
         # Callback to record time series during evolution
         def record_time_series(t: float, fields: ISFieldConfiguration) -> None:
@@ -1400,6 +1415,10 @@ class NumericalSoundWaveBenchmark:
             ux_monitor = fields.u_mu[monitor_idx + (1,)]  # u^x component
             rho_time_series.append(rho_monitor)
             ux_time_series.append(ux_monitor)
+
+            # Extract Fourier mode amplitude
+            rho_fft = np.fft.fftn(fields.rho - self._background_density)
+            rho_k_amplitude_series.append(np.abs(rho_fft[k_index, 0, 0]))
 
         # Evolve using spectral solver with callback
         try:
@@ -1418,8 +1437,17 @@ class NumericalSoundWaveBenchmark:
         time_array = np.array(time_points)
         rho_array = np.array(rho_time_series)
         ux_array = np.array(ux_time_series)
+        rho_k_array = np.array(rho_k_amplitude_series)
 
-        measured_freq, measured_damping = self._extract_frequency_damping(time_array, rho_array)
+        # Extract frequency from point measurement (works well)
+        # Extract damping from Fourier mode amplitude (more robust)
+        measured_freq_point, _ = self._extract_frequency_damping(time_array, rho_array)
+        _, measured_damping_fourier = self._extract_frequency_damping_fourier(
+            time_array, rho_k_array
+        )
+
+        measured_freq = measured_freq_point
+        measured_damping = measured_damping_fourier
 
         logger = get_logger(__name__)
         logger.info(f"Measured: ω={measured_freq:.6f}, γ={measured_damping:.6f}")
@@ -1471,6 +1499,48 @@ class NumericalSoundWaveBenchmark:
             time_series_data={},
         )
 
+    def _extract_frequency_damping_fourier(
+        self, time: npt.NDArray[np.float64], mode_amplitude: npt.NDArray[np.float64]
+    ) -> tuple[float, float]:
+        """
+        Extract frequency and damping from Fourier mode amplitude time series.
+
+        This method tracks the amplitude of a single Fourier mode, which decays
+        exponentially as A(t) = A₀ exp(-γt) without the complications of phase
+        evolution at fixed spatial points.
+
+        Args:
+            time: Time array
+            mode_amplitude: Fourier mode amplitude |ρ_k(t)| time series
+
+        Returns:
+            Tuple of (frequency, damping_rate)
+        """
+        if len(time) < 10:
+            return 0.0, 0.0
+
+        # Damping extraction from exponential decay of amplitude
+        # Fit log(A(t)) = log(A₀) - γt
+        valid_mask = mode_amplitude > 0.01 * np.max(mode_amplitude)
+        if np.sum(valid_mask) < 5:
+            return 0.0, 0.0
+
+        valid_amp = mode_amplitude[valid_mask]
+        valid_time = time[valid_mask]
+
+        try:
+            log_amp = np.log(valid_amp)
+            coeffs = np.polyfit(valid_time, log_amp, 1)
+            measured_damping = -coeffs[0]  # Negative slope = damping rate
+        except (ValueError, np.linalg.LinAlgError):
+            measured_damping = 0.0
+
+        # Frequency: use the existing point-based method for now
+        # (Fourier amplitude doesn't directly give frequency)
+        measured_frequency = 0.0
+
+        return measured_frequency, measured_damping
+
     def _extract_frequency_damping(
         self, time: npt.NDArray[np.float64], density_signal: npt.NDArray[np.float64]
     ) -> tuple[float, float]:
@@ -1490,8 +1560,14 @@ class NumericalSoundWaveBenchmark:
         if len(time) < 10:
             return 0.0, 0.0
 
-        # Remove DC component
-        signal_ac = density_signal - np.mean(density_signal)
+        # Remove DC component using known equilibrium density (more accurate for damped waves)
+        # For damped oscillations, time-averaged mean is biased toward initial amplitude
+        equilibrium = getattr(self, "_background_density", None)
+        if equilibrium is None:
+            # Fallback to time-averaged mean if background density not available
+            equilibrium = np.mean(density_signal)
+
+        signal_ac = density_signal - equilibrium
 
         # FFT analysis for frequency
         dt = time[1] - time[0] if len(time) > 1 else 1.0
@@ -1509,31 +1585,51 @@ class NumericalSoundWaveBenchmark:
         peak_idx = np.argmax(np.abs(positive_vals))
         measured_frequency = 2 * np.pi * positive_freqs[peak_idx]  # Convert to angular frequency
 
-        # Exponential envelope fitting for damping using Hilbert transform
-        # The Hilbert transform gives the analytic signal, whose magnitude is the true envelope
+        # Exponential envelope fitting for damping
+        # Use peak-tracking for more robust damping measurement (avoids phase evolution issues)
         try:
-            from scipy.signal import hilbert
+            from scipy.signal import find_peaks
 
-            # Compute analytic signal: x(t) + i*H[x(t)]
-            analytic_signal = hilbert(signal_ac)
-            envelope = np.abs(analytic_signal)
+            # Find peaks in the oscillation (local maxima)
+            peaks, _ = find_peaks(np.abs(signal_ac), distance=3)
 
-            # Fit exponential decay to envelope: A * exp(-γt)
-            # Filter out very small values to avoid log issues
-            valid_mask = envelope > 0.01 * np.max(envelope)
-            valid_envelope = envelope[valid_mask]
-            valid_time = time[valid_mask]
+            if len(peaks) >= 3:
+                # Fit exponential decay to peak amplitudes
+                peak_times = time[peaks]
+                peak_amplitudes = np.abs(signal_ac[peaks])
 
-            if len(valid_envelope) > 5:
-                log_envelope = np.log(valid_envelope)
-                coeffs = np.polyfit(valid_time, log_envelope, 1)
-                measured_damping = -coeffs[0]  # Negative slope gives damping rate
+                # Filter out very small peaks
+                valid_mask = peak_amplitudes > 0.01 * np.max(peak_amplitudes)
+                if np.sum(valid_mask) >= 3:
+                    valid_peak_times = peak_times[valid_mask]
+                    valid_peak_amps = peak_amplitudes[valid_mask]
+
+                    log_amps = np.log(valid_peak_amps)
+                    coeffs = np.polyfit(valid_peak_times, log_amps, 1)
+                    measured_damping = -coeffs[0]  # Negative slope gives damping rate
+                else:
+                    measured_damping = 0.0
             else:
-                measured_damping = 0.0
+                # Fallback to Hilbert transform if not enough peaks
+                from scipy.signal import hilbert
+
+                analytic_signal = hilbert(signal_ac)
+                envelope = np.abs(analytic_signal)
+
+                valid_mask = envelope > 0.01 * np.max(envelope)
+                valid_envelope = envelope[valid_mask]
+                valid_time = time[valid_mask]
+
+                if len(valid_envelope) > 5:
+                    log_envelope = np.log(valid_envelope)
+                    coeffs = np.polyfit(valid_time, log_envelope, 1)
+                    measured_damping = -coeffs[0]
+                else:
+                    measured_damping = 0.0
 
         except Exception as e:
-            # Fallback to simple abs() method if Hilbert fails
-            warnings.warn(f"Hilbert transform failed: {e}. Using simple envelope.", stacklevel=2)
+            # Ultimate fallback: use simple abs() envelope
+            warnings.warn(f"Peak tracking failed: {e}. Using simple envelope.", stacklevel=2)
             envelope = np.abs(signal_ac)
             valid_envelope = envelope[envelope > 0.01 * np.max(envelope)]
             valid_time = time[: len(valid_envelope)]
@@ -1545,7 +1641,8 @@ class NumericalSoundWaveBenchmark:
             else:
                 measured_damping = 0.0
 
-        return max(measured_frequency, 0.0), max(measured_damping, 0.0)
+        # Return measured values (allow negative damping to surface for debugging)
+        return max(measured_frequency, 0.0), measured_damping
 
     def _extract_frequency_windowed_fft(
         self,

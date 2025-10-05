@@ -423,43 +423,6 @@ class SpectralISolver:
 
         return div_result
 
-    def memory_optimized_divergence(self, vector_field: np.ndarray) -> np.ndarray:
-        """
-        Memory-optimized spatial divergence using pre-allocated arrays.
-
-        Args:
-            vector_field: Vector field with shape (*spatial_shape, 3)
-
-        Returns:
-            Divergence ∇·v
-        """
-        if vector_field.shape[-1] != 3:
-            raise ValueError("Vector field must have 3 components")
-
-        with profile_operation("memory_optimized_divergence", {"input_shape": vector_field.shape}):
-            result_shape = vector_field.shape[:-1]
-
-            # Get temporary arrays from pool
-            div_result = self.array_pool.get_array(result_shape, np.dtype(np.float64))
-            temp_derivative = self.array_pool.get_array(result_shape, np.dtype(np.float64))
-
-            try:
-                # Initialize result
-                div_result.fill(0.0)
-
-                # Use optimized divergence computation (reduces to single FFT per component)
-                div_result[:] = self.spatial_divergence(vector_field)
-
-                # Return copy since we're returning temporary arrays to pool
-                result = div_result.copy()
-
-            finally:
-                # Return arrays to pool
-                self.array_pool.return_array(div_result)
-                self.array_pool.return_array(temp_derivative)
-
-            return result
-
     @monitor_performance("relaxation_operator")
     def apply_relaxation_operator(
         self, field: np.ndarray, relaxation_time: float, dt: float
@@ -587,36 +550,6 @@ class SpectralISolver:
             self.adaptive_ifft(laplacian_k, field.shape),
         )
 
-    def spectral_convolution(
-        self, field1: np.ndarray, field2: np.ndarray, dealiasing: bool = True
-    ) -> np.ndarray:
-        """
-        Compute convolution of two fields using FFT.
-
-        Useful for nonlinear terms in IS equations.
-
-        Args:
-            field1: First field
-            field2: Second field
-            dealiasing: Apply 2/3 rule for dealiasing
-
-        Returns:
-            Convolution field1 * field2
-        """
-        # Forward FFTs with adaptive selection
-        field1_k = self.adaptive_fft(field1)
-        field2_k = self.adaptive_fft(field2)
-
-        # Pointwise multiplication in Fourier space
-        conv_k = field1_k * field2_k
-
-        # Apply dealiasing if requested
-        if dealiasing:
-            conv_k = self._apply_dealiasing(conv_k)
-
-        # Inverse FFT with adaptive selection
-        return self.adaptive_ifft(conv_k, field1.shape)
-
     def _apply_dealiasing(self, field_k: np.ndarray) -> np.ndarray:
         """
         Apply 2/3 rule dealiasing to prevent aliasing errors.
@@ -683,46 +616,6 @@ class SpectralISolver:
         else:
             # Use complex FFT for complex fields or when real FFT disabled
             return self.fft_plan(field)
-
-    def memory_optimized_fft(self, field: np.ndarray) -> np.ndarray:
-        """
-        Memory-optimized FFT using pre-allocated workspaces.
-
-        Args:
-            field: Input field for FFT
-
-        Returns:
-            FFT of field in k-space
-        """
-        with profile_operation("memory_optimized_fft", {"input_shape": field.shape}):
-            # Get appropriate workspace
-            if np.isrealobj(field) and self.use_real_fft:
-                # Real FFT with workspace
-                real_workspace, complex_workspace = self.fft_manager.get_real_fft_workspace(
-                    field.shape
-                )
-
-                # Copy input to workspace to avoid modifying original
-                self.inplace_ops.copy_with_slicing(real_workspace, field)
-
-                # Perform FFT in-place
-                result = self.rfft_plan(real_workspace)
-
-                # Copy result to output workspace
-                complex_workspace[:] = result
-                return complex_workspace
-            else:
-                # Complex FFT with workspace
-                workspace = self.fft_manager.get_workspace(field.shape, np.dtype(np.complex128))
-
-                # Copy input to workspace
-                workspace.real = field.real if hasattr(field, "real") else field
-                if hasattr(field, "imag"):
-                    workspace.imag = field.imag
-
-                # Perform FFT in-place
-                result = self.fft_plan(workspace)
-                return result
 
     def get_k_squared_for_field(self, field_k: np.ndarray) -> np.ndarray:
         """
@@ -1683,65 +1576,6 @@ class SpectralISHydrodynamics:
                 "conservation_evolution", error_msg, "fallback_conservation_advance"
             )
             self._fallback_conservation_advance(dt)
-
-    def _convert_momentum_to_velocity_derivative(
-        self,
-        dmom_dt: np.ndarray,
-        drho_dt: np.ndarray,
-    ) -> np.ndarray:
-        """
-        Convert momentum density derivative to velocity derivative using current fields.
-
-        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
-        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
-
-        This is CRITICAL for sound wave propagation and any flow where both
-        density and velocity change. Without this conversion, waves propagate
-        at incorrect speeds.
-
-        Args:
-            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
-            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
-
-        Returns:
-            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
-        """
-        return self._convert_momentum_to_velocity_derivative_with_fields(
-            dmom_dt, drho_dt, self.fields.rho, self.fields.u_mu[..., 1:4]
-        )
-
-    def _convert_momentum_to_velocity_derivative_with_fields(
-        self,
-        dmom_dt: np.ndarray,
-        drho_dt: np.ndarray,
-        rho: np.ndarray,
-        u_spatial: np.ndarray,
-    ) -> np.ndarray:
-        """
-        Convert momentum density derivative to velocity derivative with explicit fields.
-
-        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
-        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
-
-        Args:
-            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
-            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
-            rho: Energy density at evaluation point, shape (*grid.shape,)
-            u_spatial: Spatial velocity at evaluation point, shape (*grid.shape, 3)
-
-        Returns:
-            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
-        """
-        # Avoid division by zero (use small epsilon where rho is tiny)
-        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
-
-        # Expand drho_dt to broadcast with spatial velocity
-        drho_dt_expanded = drho_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
-
-        # du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
-        du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
-
-        return cast(np.ndarray, du_dt)
 
     def _fields_to_momentum_basis(self) -> dict[str, np.ndarray]:
         """

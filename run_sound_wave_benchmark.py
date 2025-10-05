@@ -168,14 +168,7 @@ def run_numerical_simulation(
 
     start_time = time.time()
 
-    # Set up initial conditions
-    benchmark.setup_initial_conditions(
-        wave_number=wave_number,
-        amplitude=amplitude,
-        background_density=1.0,
-    )
-
-    # Run simulation
+    # Run simulation (setup_initial_conditions called internally)
     # Use n_periods=3 for accurate frequency extraction (minimum for FFT analysis)
     # This overrides simulation_time to ensure at least 3 wave periods are simulated
     results = benchmark.run_simulation(

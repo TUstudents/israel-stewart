@@ -1387,6 +1387,11 @@ class NumericalSoundWaveBenchmark:
         rho_time_series = []
         ux_time_series = []
 
+        # Record initial state (t=0)
+        time_points.append(0.0)
+        rho_time_series.append(self.fields.rho[monitor_idx])
+        ux_time_series.append(self.fields.u_mu[monitor_idx + (1,)])
+
         # Callback to record time series during evolution
         def record_time_series(t: float, fields: ISFieldConfiguration) -> None:
             time_points.append(t)

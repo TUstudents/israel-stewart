@@ -44,12 +44,12 @@ from ..core.metrics import GeneralMetric, MinkowskiMetric
 from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
-from ..utils.logging_config import get_logger
 from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
 from ..equations.relaxation import ISRelaxationEquations
 from ..solvers import create_periodic_grid
 from ..solvers.spectral import SpectralISHydrodynamics
+from ..utils.logging_config import get_logger
 
 
 @dataclass
@@ -71,8 +71,15 @@ class WaveProperties:
 
     def __post_init__(self):
         """Validate wave properties."""
-        if self.frequency < 0:
-            raise ValueError("Frequency must be non-negative")
+        # Allow small negative frequencies within numerical precision (e.g., -5e-17)
+        if self.frequency < -1e-12:
+            raise ValueError(
+                f"Frequency {self.frequency} is negative beyond numerical precision tolerance"
+            )
+        # Clamp to zero if within tolerance
+        if -1e-12 <= self.frequency < 0:
+            object.__setattr__(self, "frequency", 0.0)
+
         if self.sound_speed < 0 or self.sound_speed > 1:
             warnings.warn("Sound speed outside physical range [0,1]", stacklevel=2)
         if self.attenuation < 0:
@@ -192,8 +199,34 @@ class SoundWaveAnalysis:
             physical_modes = [mode for mode in wave_modes if self._is_physical_mode(mode)]
 
             if physical_modes:
-                # Cache the most physical mode (usually the sound mode with smallest damping)
-                best_mode = min(physical_modes, key=lambda m: abs(m.attenuation))
+                # Classify modes and prefer sound modes over viscous modes
+                sound_modes = []
+                viscous_modes = []
+                other_modes = []
+
+                for mode in physical_modes:
+                    # Reconstruct complex omega for classification
+                    omega_complex = complex(mode.frequency, -mode.attenuation)
+                    mode_type = self._classify_mode(omega_complex, k_magnitude)
+
+                    if mode_type == "sound":
+                        sound_modes.append(mode)
+                    elif mode_type == "viscous":
+                        viscous_modes.append(mode)
+                    else:
+                        other_modes.append(mode)
+
+                # Select best mode: prefer sound > other > viscous
+                if sound_modes:
+                    # For sound modes, pick the one with smallest damping
+                    best_mode = min(sound_modes, key=lambda m: abs(m.attenuation))
+                elif other_modes:
+                    best_mode = min(other_modes, key=lambda m: abs(m.attenuation))
+                elif viscous_modes:
+                    best_mode = min(viscous_modes, key=lambda m: abs(m.attenuation))
+                else:
+                    best_mode = physical_modes[0]
+
                 self._dispersion_cache[cache_key] = best_mode
 
             return physical_modes
@@ -274,13 +307,34 @@ class SoundWaveAnalysis:
         # Estimate sound speed for initial guesses
         cs_estimate = self._estimate_sound_speed()
 
-        # Generate initial guesses around expected frequencies
-        # For Israel-Stewart, expect: sound mode + viscous modes
+        # Estimate background state and transport coefficients
+        background_rho = np.mean(self.background_fields.rho)
+        background_p = np.mean(self.background_fields.pressure)
+        enthalpy = background_rho + background_p
+
+        # Extract transport coefficients
+        eta = getattr(self.transport_coeffs, "shear_viscosity", 0.0) or 0.0
+        zeta = getattr(self.transport_coeffs, "bulk_viscosity", 0.0) or 0.0
+
+        # First-order estimate of damping rate from viscous theory
+        # γ ≈ (ζ + 4η/3) * k² / (ε₀ + p₀)
+        # However, this breaks down for large k in Israel-Stewart theory where
+        # relaxation effects suppress damping. Cap to ensure |γ| << |ω| for sound modes.
+        gamma_first_order = (zeta + 4.0 * eta / 3.0) * k**2 / max(enthalpy, 1e-10)
+
+        # For sound modes, damping should be smaller than frequency: |γ| < |ω|
+        # Cap the damping to a fraction of the expected sound frequency
+        omega_sound = cs_estimate * k
+        gamma_cap = 0.3 * omega_sound  # Keep |γ| < 30% of |ω| for sound mode
+        gamma_viscous = min(gamma_first_order, gamma_cap)
+
+        # Generate initial guesses for sound modes with viscous corrections
+        # Sound mode typically has ω ~ cs*k with small imaginary part from damping
         initial_guesses = [
-            complex(cs_estimate * k, 0),  # Sound mode (real)
-            complex(cs_estimate * k, -0.1 * k**2),  # Damped sound mode
-            complex(0, -0.5 * k**2),  # Viscous mode 1
-            complex(0, -(k**2)),  # Viscous mode 2
+            complex(cs_estimate * k, -gamma_viscous),  # Sound mode with capped damping
+            complex(cs_estimate * k * 1.3, -gamma_viscous * 0.8),  # Higher frequency variant
+            complex(cs_estimate * k * 0.8, -gamma_viscous * 1.2),  # Lower frequency variant
+            complex(0, -0.5 * k**2),  # Keep one pure viscous mode for completeness
         ]
 
         roots = []
@@ -485,6 +539,39 @@ class SoundWaveAnalysis:
             return False
 
         return True
+
+    def _classify_mode(self, omega: complex, k: float) -> str:
+        """
+        Classify eigenmode as 'sound', 'viscous', or 'other'.
+
+        Sound modes: ω_r > 0 and comparable to cs*k (propagating waves)
+        Viscous modes: ω_r ≈ 0, ω_i < 0 (diffusive, non-propagating)
+
+        Args:
+            omega: Complex frequency ω = ω_r - iγ
+            k: Wave number magnitude
+
+        Returns:
+            Mode type: "sound", "viscous", or "other"
+        """
+        omega_r = omega.real
+        omega_i = omega.imag
+
+        # Estimate ideal sound frequency
+        cs = self._estimate_sound_speed()
+        omega_sound = cs * k
+
+        # Sound mode: real part is significant and positive, imaginary part is smaller
+        # Typically |ω_r| ~ cs*k and |ω_i| < |ω_r|
+        if omega_r > 0.1 * omega_sound and abs(omega_i) < abs(omega_r):
+            return "sound"
+
+        # Viscous/diffusive mode: real part near zero, imaginary part negative
+        # These are non-propagating exponential decay modes
+        if abs(omega_r) < 0.1 * omega_sound and omega_i < -1e-10:
+            return "viscous"
+
+        return "other"
 
 
 class DispersionRelation:
@@ -1047,7 +1134,38 @@ class NumericalSoundWaveBenchmark:
             )
             return
 
-        mode = analytical_modes[0]
+        # Select sound mode (prefer sound > other > viscous)
+        sound_modes = []
+        other_modes = []
+        viscous_modes = []
+
+        for m in analytical_modes:
+            omega_complex = complex(m.frequency, -m.attenuation)
+            mode_type = self.analytical._classify_mode(omega_complex, wave_number)
+
+            if mode_type == "sound":
+                sound_modes.append(m)
+            elif mode_type == "viscous":
+                viscous_modes.append(m)
+            else:
+                other_modes.append(m)
+
+        # Choose best sound mode (lowest attenuation)
+        if sound_modes:
+            mode = min(sound_modes, key=lambda m: abs(m.attenuation))
+        elif other_modes:
+            mode = min(other_modes, key=lambda m: abs(m.attenuation))
+        else:
+            # If only viscous modes found, warn and use fallback
+            warnings.warn(
+                f"Only viscous modes found for k={wave_number}. "
+                "Using simplified initialization.",
+                stacklevel=2,
+            )
+            self._setup_simple_initial_conditions(
+                wave_number, amplitude, background_density, background_pressure
+            )
+            return
 
         # Get spatial coordinates
         X, Y, Z = self.grid.meshgrid()
@@ -1063,19 +1181,42 @@ class NumericalSoundWaveBenchmark:
             _, s, Vh = np.linalg.svd(dispersion_matrix)
             eigenvector = Vh[-1, :]  # Last row = eigenvector for smallest singular value
 
-            # Normalize by density amplitude
+            # Normalize for sin(kx) initial condition
+            # For field ∝ sin(kx) at t=0, need eigenvector to be purely imaginary
+            # Physical: Re[v·exp(ikx)] = Re(v)·cos(kx) - Im(v)·sin(kx)
+            # For sin(kx): Re(v) = 0, -Im(v) = amplitude
             if abs(eigenvector[0]) > 1e-10:
-                eigenvector = eigenvector / eigenvector[0]
+                # Normalize magnitude
+                eigenvector = eigenvector / abs(eigenvector[0])
 
-            # For sin(kx) initial condition, use IMAGINARY part of complex eigenvector
-            # The mode is exp(ikx - iωt), and at t=0: exp(ikx) = cos(kx) + i*sin(kx)
-            # Since ρ ∝ sin(kx), we need Im(eigenvector) for all components
-            v_x_ratio = np.imag(eigenvector[1])
-            Pi_ratio = np.imag(eigenvector[2])
-            pi_xx_ratio = np.imag(eigenvector[3])
+                # Find phase rotation that makes entire eigenvector most imaginary
+                # (minimizes norm of real part)
+                best_phase = 0.0
+                min_real_norm = float("inf")
+
+                for test_phase in np.linspace(0, 2 * np.pi, 100):
+                    rotated = eigenvector * np.exp(1j * test_phase)
+                    real_norm = np.sum(np.abs(np.real(rotated)) ** 2)
+                    if real_norm < min_real_norm:
+                        min_real_norm = real_norm
+                        best_phase = test_phase
+
+                eigenvector = eigenvector * np.exp(1j * best_phase)
+
+                # Ensure correct sign: Im(v[0]) should be negative for sin(kx)
+                if np.imag(eigenvector[0]) > 0:
+                    eigenvector = -eigenvector
+
+            # Extract component ratios (all should now be ~purely imaginary)
+            # For sin(kx) with Im(v) < 0, the amplitude ratio is -Im(v)
+            v_x_ratio = -np.imag(eigenvector[1])
+            Pi_ratio = -np.imag(eigenvector[2])
+            pi_xx_ratio = -np.imag(eigenvector[3])
 
             logger = get_logger(__name__)
-            logger.info(f"Eigenmode ratios: v_x={v_x_ratio:.6e}, Π={Pi_ratio:.6e}, π_xx={pi_xx_ratio:.6e}")
+            logger.info(
+                f"Eigenmode ratios: v_x={v_x_ratio:.6e}, Π={Pi_ratio:.6e}, π_xx={pi_xx_ratio:.6e}"
+            )
 
         except Exception as e:
             warnings.warn(
@@ -1088,7 +1229,9 @@ class NumericalSoundWaveBenchmark:
             sound_speed = mode.sound_speed
             v_x_ratio = sound_speed / enthalpy
             Pi_ratio = -self.transport_coeffs.bulk_viscosity * wave_number * v_x_ratio
-            pi_xx_ratio = (4.0 / 3.0) * self.transport_coeffs.shear_viscosity * wave_number * v_x_ratio
+            pi_xx_ratio = (
+                (4.0 / 3.0) * self.transport_coeffs.shear_viscosity * wave_number * v_x_ratio
+            )
 
         # Initialize fields with eigenmode structure
         delta_rho = amplitude * np.sin(wave_number * X)
@@ -1124,14 +1267,17 @@ class NumericalSoundWaveBenchmark:
         background_pressure: float,
     ) -> None:
         """
-        Fallback initialization without dissipative fluxes (old method).
+        Fallback initialization with first-order analytical estimates for dissipative fluxes.
 
-        Only used if analytical mode cannot be found.
+        Used if full eigenmode cannot be found. Applies first-order viscous theory
+        to estimate initial dissipative flux perturbations.
         """
         X, Y, Z = self.grid.meshgrid()
+        k_x = wave_number
 
-        delta_rho = amplitude * np.sin(wave_number * X)
-        delta_ux = amplitude * 0.5 * np.sin(wave_number * X)
+        # Hydrodynamic perturbations (standard)
+        delta_rho = amplitude * np.sin(k_x * X)
+        delta_ux = amplitude * 0.5 * np.sin(k_x * X)
 
         self.fields.rho[:] = background_density + delta_rho
         self.fields.pressure[:] = (background_density + delta_rho) / 3.0
@@ -1140,8 +1286,41 @@ class NumericalSoundWaveBenchmark:
         self.fields.u_mu[..., 0] = 1.0
         self.fields.u_mu[..., 1] = delta_ux
 
-        self.fields.Pi[:] = 0.0
+        # IMPROVED: Estimate dissipative flux perturbations using first-order theory
+        # From linearized Israel-Stewart equations:
+        # Π ≈ -(ζ·k·δu)/(1-iωτ_Π)
+        # π_xx ≈ -(4η/3·k·δu)/(1-iωτ_π)
+
+        # Extract transport coefficients
+        eta = getattr(self.transport_coeffs, "shear_viscosity", 0.0) or 0.0
+        zeta = getattr(self.transport_coeffs, "bulk_viscosity", 0.0) or 0.0
+        tau_pi = getattr(self.transport_coeffs, "shear_relaxation_time", 0.1) or 0.1
+        tau_Pi = getattr(self.transport_coeffs, "bulk_relaxation_time", 0.1) or 0.1
+
+        # Estimate sound wave frequency for relaxation time corrections
+        cs = 1.0 / np.sqrt(3.0)  # Radiation sound speed
+        omega_est = cs * k_x
+
+        # First-order amplitude estimates (accounting for relaxation time lag)
+        # δΠ ~ -(ζ·k·δu) / sqrt(1 + (ωτ_Π)²)
+        enthalpy = background_density + background_pressure
+        relaxation_factor_Pi = 1.0 / np.sqrt(1.0 + (omega_est * tau_Pi) ** 2)
+        relaxation_factor_pi = 1.0 / np.sqrt(1.0 + (omega_est * tau_pi) ** 2)
+
+        # Bulk viscous pressure perturbation
+        # Π ~ -ζ·∇·u ~ -ζ·k·u_x for sin(kx) mode
+        Pi_amplitude = -zeta * k_x * amplitude * 0.5 * relaxation_factor_Pi
+        self.fields.Pi[:] = Pi_amplitude * np.sin(k_x * X)
+
+        # Shear stress perturbation (only xx component for longitudinal wave)
+        # π_xx ~ -(4η/3)·(∂_x u_x - 1/3·∇·u) ~ -(4η/3)·(2/3·k·u_x) for longitudinal wave
+        pi_xx_amplitude = (
+            -(4.0 * eta / 3.0) * (2.0 / 3.0) * k_x * amplitude * 0.5 * relaxation_factor_pi
+        )
         self.fields.pi_munu[:] = 0.0
+        self.fields.pi_munu[..., 0, 0] = pi_xx_amplitude * np.sin(k_x * X)
+
+        # Heat flux (zero for isentropic sound waves in radiation fluid)
         if hasattr(self.fields, "q_mu"):
             self.fields.q_mu[:] = 0.0
 
@@ -1325,14 +1504,20 @@ class NumericalSoundWaveBenchmark:
         peak_idx = np.argmax(np.abs(positive_vals))
         measured_frequency = 2 * np.pi * positive_freqs[peak_idx]  # Convert to angular frequency
 
-        # Exponential envelope fitting for damping
-        envelope = np.abs(signal_ac)
-
-        # Fit exponential decay: A * exp(-γt)
+        # Exponential envelope fitting for damping using Hilbert transform
+        # The Hilbert transform gives the analytic signal, whose magnitude is the true envelope
         try:
-            # Use log-linear fit for exponential
-            valid_envelope = envelope[envelope > 0.01 * np.max(envelope)]
-            valid_time = time[: len(valid_envelope)]
+            from scipy.signal import hilbert
+
+            # Compute analytic signal: x(t) + i*H[x(t)]
+            analytic_signal = hilbert(signal_ac)
+            envelope = np.abs(analytic_signal)
+
+            # Fit exponential decay to envelope: A * exp(-γt)
+            # Filter out very small values to avoid log issues
+            valid_mask = envelope > 0.01 * np.max(envelope)
+            valid_envelope = envelope[valid_mask]
+            valid_time = time[valid_mask]
 
             if len(valid_envelope) > 5:
                 log_envelope = np.log(valid_envelope)
@@ -1340,8 +1525,20 @@ class NumericalSoundWaveBenchmark:
                 measured_damping = -coeffs[0]  # Negative slope gives damping rate
             else:
                 measured_damping = 0.0
-        except Exception:
-            measured_damping = 0.0
+
+        except Exception as e:
+            # Fallback to simple abs() method if Hilbert fails
+            warnings.warn(f"Hilbert transform failed: {e}. Using simple envelope.", stacklevel=2)
+            envelope = np.abs(signal_ac)
+            valid_envelope = envelope[envelope > 0.01 * np.max(envelope)]
+            valid_time = time[: len(valid_envelope)]
+
+            if len(valid_envelope) > 5:
+                log_envelope = np.log(valid_envelope)
+                coeffs = np.polyfit(valid_time, log_envelope, 1)
+                measured_damping = -coeffs[0]
+            else:
+                measured_damping = 0.0
 
         return max(measured_frequency, 0.0), max(measured_damping, 0.0)
 

@@ -1032,6 +1032,9 @@ class SpectralISHydrodynamics:
         self.cfl_factor = 0.5
         self.max_dt = 0.01
 
+        # Track integration mode (split_step vs spectral_imex)
+        self._integration_mode: str = "split_step"
+
         # Pre-allocate workspace for Newton-Krylov solver to avoid repeated allocations
         # This workspace is reused in _config_from_dict during implicit stage solves
         self._nk_workspace_fields: ISFieldConfiguration | None = None
@@ -1121,6 +1124,8 @@ class SpectralISHydrodynamics:
             dt: Time step size
             method: Integration method ('split_step', 'spectral_imex')
         """
+
+        self._integration_mode = method
         if method == "split_step":
             self._split_step_advance(dt)
         elif method == "spectral_imex":
@@ -1189,8 +1194,18 @@ class SpectralISHydrodynamics:
         # Store initial state in momentum basis
         y_n_dict = self._fields_to_momentum_basis()
 
+        # DEBUG: Print initial state
+        debug_enabled = False  # Set to True to enable debug output
+        if debug_enabled:
+            print("\n  DEBUG IMEX: y_n")
+            self._print_field_stats(y_n_dict)
+
         # === Stage 1: Y₁ = y^n + h·γ·G(Y₁) ===
         Y1_dict = self._solve_implicit_stage_momentum(y_n_dict, gamma * h)
+
+        if debug_enabled:
+            print("  DEBUG IMEX: Y1")
+            self._print_field_stats(Y1_dict)
 
         # Convert back to velocity basis for RHS evaluation
         self._momentum_basis_to_fields(Y1_dict)
@@ -1198,9 +1213,17 @@ class SpectralISHydrodynamics:
         # Compute explicit RHS F(Y₁)
         F_Y1_dict = self._compute_explicit_rhs_momentum()
 
+        if debug_enabled:
+            print("  DEBUG IMEX: F(Y1)")
+            self._print_field_stats(F_Y1_dict)
+
         # Compute implicit terms G(Y₁) from stage equation: G(Y₁) = [Y₁ - y^n] / (γh)
         G_Y1_scaled_dict = self._add_fields_momentum(Y1_dict, y_n_dict, scale=-1.0)
         G_Y1_dict = self._scale_fields_momentum(G_Y1_scaled_dict, scale=1.0 / (gamma * h))
+
+        if debug_enabled:
+            print("  DEBUG IMEX: G(Y1)")
+            self._print_field_stats(G_Y1_dict)
 
         # === Stage 2: Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
         # Compute RHS for implicit solve: y^n + h·F(Y₁) + h·(1-γ)·G(Y₁)
@@ -1209,15 +1232,27 @@ class SpectralISHydrodynamics:
 
         Y2_dict = self._solve_implicit_stage_momentum(rhs2_dict, gamma * h)
 
+        if debug_enabled:
+            print("  DEBUG IMEX: Y2")
+            self._print_field_stats(Y2_dict)
+
         # Convert Y₂ back to velocity basis
         self._momentum_basis_to_fields(Y2_dict)
 
         # Compute explicit RHS F(Y₂)
         F_Y2_dict = self._compute_explicit_rhs_momentum()
 
+        if debug_enabled:
+            print("  DEBUG IMEX: F(Y2)")
+            self._print_field_stats(F_Y2_dict)
+
         # Compute implicit terms G(Y₂) from stage equation: G(Y₂) = [Y₂ - rhs2] / (γh)
         G_Y2_scaled_dict = self._add_fields_momentum(Y2_dict, rhs2_dict, scale=-1.0)
         G_Y2_dict = self._scale_fields_momentum(G_Y2_scaled_dict, scale=1.0 / (gamma * h))
+
+        if debug_enabled:
+            print("  DEBUG IMEX: G(Y2)")
+            self._print_field_stats(G_Y2_dict)
 
         # === Final Update: y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
         final_dict = y_n_dict.copy()
@@ -1226,8 +1261,23 @@ class SpectralISHydrodynamics:
         final_dict = self._add_fields_momentum(final_dict, G_Y1_dict, scale=h * (1.0 - gamma))
         final_dict = self._add_fields_momentum(final_dict, G_Y2_dict, scale=h * gamma)
 
+        if debug_enabled:
+            print("  DEBUG IMEX: y_{n+1}")
+            self._print_field_stats(final_dict)
+
         # Convert final result back to velocity basis
         self._momentum_basis_to_fields(final_dict)
+
+    def _print_field_stats(self, field_dict: dict[str, np.ndarray]) -> None:
+        """Print values at monitoring point for momentum-basis field dictionary (for debugging)."""
+        # Monitor at a point where sin(kx) waves have non-zero amplitude
+        # Use grid point (1, 16, 8) which is near x ≈ π/(2k) for typical k values
+        idx = (1, 16, 8) if field_dict["rho"].shape[0] > 1 else (0, 0, 0)
+
+        print(f"    rho: {field_dict['rho'][idx]:.2e}")
+        print(f"    mom_x: {field_dict['mom_x'][idx]:.2e}")
+        print(f"    Pi: {field_dict['Pi'][idx]:.2e}")
+        print(f"    pi_xx: {field_dict['pi_munu'][idx + (1, 1)]:.2e}")
 
     def _compute_relaxation_sources(self) -> dict[str, np.ndarray]:
         """
@@ -1257,28 +1307,12 @@ class SpectralISHydrodynamics:
                     self.fields.q_mu.shape
                 )
 
-                # CRITICAL FIX: Remove linear relaxation terms (they're in implicit part)
-                # The relaxation module computes FULL RHS including -Π/τ, -π/τ
-                # But IMEX splits: explicit = nonlinear only, implicit = linear stiff terms
-                # We must subtract the linear parts to avoid double-counting
-                if self.coeffs is not None:
-                    # Remove linear bulk relaxation: -Π/τ_Π
-                    if (
-                        hasattr(self.coeffs, "bulk_relaxation_time")
-                        and self.coeffs.bulk_relaxation_time
-                    ):
-                        dPi_dt += (
-                            self.fields.Pi / self.coeffs.bulk_relaxation_time
-                        )  # Add back to cancel -Π/τ
-
-                    # Remove linear shear relaxation: -π/τ_π
-                    if (
-                        hasattr(self.coeffs, "shear_relaxation_time")
-                        and self.coeffs.shear_relaxation_time
-                    ):
-                        dpi_munu_dt += (
-                            self.fields.pi_munu / self.coeffs.shear_relaxation_time
-                        )  # Add back to cancel -π/τ
+                # Only subtract linear stiff terms in IMEX mode
+                if self._integration_mode == "spectral_imex" and self.coeffs is not None:
+                    if getattr(self.coeffs, "bulk_relaxation_time", None):
+                        dPi_dt += self.fields.Pi / self.coeffs.bulk_relaxation_time
+                    if getattr(self.coeffs, "shear_relaxation_time", None):
+                        dpi_munu_dt += self.fields.pi_munu / self.coeffs.shear_relaxation_time
 
                 # Return with keys matching IMEX field names
                 relaxation_rhs = {

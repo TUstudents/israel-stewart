@@ -44,6 +44,7 @@ from ..core.metrics import GeneralMetric, MinkowskiMetric
 from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
+from ..utils.logging_config import get_logger
 from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
 from ..equations.relaxation import ISRelaxationEquations
@@ -1020,30 +1021,125 @@ class NumericalSoundWaveBenchmark:
         """
         Setup sinusoidal perturbation initial conditions (pure 3D).
 
+        Initializes both hydrodynamic fields AND dissipative fluxes to match
+        the Israel-Stewart sound wave eigenmode, ensuring proper viscous damping
+        from the start of the simulation.
+
         Args:
             wave_number: Wave number k for the perturbation
             amplitude: Perturbation amplitude (should be small for linear regime)
             background_density: Background energy density ρ₀
             background_pressure: Background pressure P₀
         """
-        # Get spatial coordinates and create meshgrid
+        # Get analytical mode properties and eigenvector structure
+        wave_vector = np.array([wave_number, 0.0, 0.0])
+        analytical_modes = self.analytical.analyze_dispersion_relation(wave_vector)
+
+        if not analytical_modes:
+            warnings.warn(
+                f"Could not find analytical mode for k={wave_number}. "
+                "Using simplified initialization without dissipative fluxes.",
+                stacklevel=2,
+            )
+            # Fallback to old initialization
+            self._setup_simple_initial_conditions(
+                wave_number, amplitude, background_density, background_pressure
+            )
+            return
+
+        mode = analytical_modes[0]
+
+        # Get spatial coordinates
         X, Y, Z = self.grid.meshgrid()
 
-        # Sound wave perturbation along x-direction
-        # δρ = A * sin(k*x), δuₓ = A' * sin(k*x)
-        delta_rho = amplitude * np.sin(wave_number * X)
-        delta_ux = amplitude * 0.5 * np.sin(wave_number * X)
+        # Compute eigenmode structure by solving dispersion matrix
+        # The mode has frequency ω - iγ, and the eigenvector is complex
+        omega_complex = complex(mode.frequency, -mode.attenuation)
+        dispersion_matrix = self.analytical._build_dispersion_matrix(omega_complex, wave_vector)
 
-        # Initialize pure 3D fields (no time loop!)
+        # Find nullspace eigenvector: M·v = 0 where v = [δε, δv_x, δΠ, δπ_xx]
+        # Use SVD to find the smallest singular value's eigenvector
+        try:
+            _, s, Vh = np.linalg.svd(dispersion_matrix)
+            eigenvector = Vh[-1, :]  # Last row = eigenvector for smallest singular value
+
+            # Normalize by density amplitude
+            if abs(eigenvector[0]) > 1e-10:
+                eigenvector = eigenvector / eigenvector[0]
+
+            # For sin(kx) initial condition, use IMAGINARY part of complex eigenvector
+            # The mode is exp(ikx - iωt), and at t=0: exp(ikx) = cos(kx) + i*sin(kx)
+            # Since ρ ∝ sin(kx), we need Im(eigenvector) for all components
+            v_x_ratio = np.imag(eigenvector[1])
+            Pi_ratio = np.imag(eigenvector[2])
+            pi_xx_ratio = np.imag(eigenvector[3])
+
+            logger = get_logger(__name__)
+            logger.info(f"Eigenmode ratios: v_x={v_x_ratio:.6e}, Π={Pi_ratio:.6e}, π_xx={pi_xx_ratio:.6e}")
+
+        except Exception as e:
+            warnings.warn(
+                f"Failed to compute eigenmode structure: {e}. "
+                "Using Navier-Stokes approximation.",
+                stacklevel=2,
+            )
+            # Fallback to Navier-Stokes estimates
+            enthalpy = background_density + background_pressure
+            sound_speed = mode.sound_speed
+            v_x_ratio = sound_speed / enthalpy
+            Pi_ratio = -self.transport_coeffs.bulk_viscosity * wave_number * v_x_ratio
+            pi_xx_ratio = (4.0 / 3.0) * self.transport_coeffs.shear_viscosity * wave_number * v_x_ratio
+
+        # Initialize fields with eigenmode structure
+        delta_rho = amplitude * np.sin(wave_number * X)
+
         self.fields.rho[:] = background_density + delta_rho
         self.fields.pressure[:] = (background_density + delta_rho) / 3.0  # P = ρ/3
 
-        # Velocity: u^μ = (γ, γvˣ, 0, 0) where γ ≈ 1 for small velocities
+        # Velocity: use eigenmode ratio
+        delta_ux = amplitude * v_x_ratio * np.sin(wave_number * X)
         self.fields.u_mu[:] = 0.0
         self.fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
-        self.fields.u_mu[..., 1] = delta_ux  # u^x = δuₓ
+        self.fields.u_mu[..., 1] = delta_ux  # u^x = δu_x
 
-        # Zero dissipative fluxes initially
+        # Dissipative fluxes: use eigenmode ratios
+        self.fields.Pi[:] = amplitude * Pi_ratio * np.sin(wave_number * X)
+
+        self.fields.pi_munu[:] = 0.0
+        delta_pi_xx = amplitude * pi_xx_ratio * np.sin(wave_number * X)
+        self.fields.pi_munu[..., 1, 1] = delta_pi_xx  # π_xx component
+        # Transverse components: π_yy = π_zz = -(1/2) * π_xx (traceless)
+        self.fields.pi_munu[..., 2, 2] = -0.5 * delta_pi_xx
+        self.fields.pi_munu[..., 3, 3] = -0.5 * delta_pi_xx
+
+        # Heat flux: q^μ = 0 for adiabatic sound wave
+        if hasattr(self.fields, "q_mu"):
+            self.fields.q_mu[:] = 0.0
+
+    def _setup_simple_initial_conditions(
+        self,
+        wave_number: float,
+        amplitude: float,
+        background_density: float,
+        background_pressure: float,
+    ) -> None:
+        """
+        Fallback initialization without dissipative fluxes (old method).
+
+        Only used if analytical mode cannot be found.
+        """
+        X, Y, Z = self.grid.meshgrid()
+
+        delta_rho = amplitude * np.sin(wave_number * X)
+        delta_ux = amplitude * 0.5 * np.sin(wave_number * X)
+
+        self.fields.rho[:] = background_density + delta_rho
+        self.fields.pressure[:] = (background_density + delta_rho) / 3.0
+
+        self.fields.u_mu[:] = 0.0
+        self.fields.u_mu[..., 0] = 1.0
+        self.fields.u_mu[..., 1] = delta_ux
+
         self.fields.Pi[:] = 0.0
         self.fields.pi_munu[:] = 0.0
         if hasattr(self.fields, "q_mu"):
@@ -1055,6 +1151,7 @@ class NumericalSoundWaveBenchmark:
         simulation_time: float = 10.0,
         n_periods: int = 5,
         dt_factor: float = 0.1,
+        method: str = "split_step",
     ) -> NumericalWaveResults:
         """
         Run numerical simulation of sound wave evolution.
@@ -1064,6 +1161,7 @@ class NumericalSoundWaveBenchmark:
             simulation_time: Total simulation time
             n_periods: Number of wave periods to evolve
             dt_factor: Timestep factor (fraction of CFL limit)
+            method: Integration method ('split_step' or 'spectral_imex')
 
         Returns:
             Numerical wave simulation results with frequency and damping
@@ -1120,12 +1218,11 @@ class NumericalSoundWaveBenchmark:
             ux_time_series.append(ux_monitor)
 
         # Evolve using spectral solver with callback
-        # Use split_step method (2.6x faster than spectral_imex for sound waves)
         try:
             self.solver.evolve(
                 t_final=simulation_time,
                 dt=dt_cfl,
-                method="split_step",
+                method=method,
                 callback=record_time_series,
             )
         except Exception as e:
@@ -1139,6 +1236,10 @@ class NumericalSoundWaveBenchmark:
         ux_array = np.array(ux_time_series)
 
         measured_freq, measured_damping = self._extract_frequency_damping(time_array, rho_array)
+
+        logger = get_logger(__name__)
+        logger.info(f"Measured: ω={measured_freq:.6f}, γ={measured_damping:.6f}")
+        logger.info(f"Analytical: ω={analytical_freq:.6f}, γ={analytical_damping:.6f}")
 
         # Calculate errors
         freq_error = abs(measured_freq - analytical_freq) / max(analytical_freq, 1e-10)

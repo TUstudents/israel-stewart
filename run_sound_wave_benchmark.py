@@ -150,6 +150,7 @@ def run_numerical_simulation(
     wave_number: float = 1.0,
     amplitude: float = 0.01,
     simulation_time: float = 10.0,
+    method: str = "split_step",
 ) -> dict:
     """Run numerical sound wave propagation simulation.
 
@@ -158,6 +159,7 @@ def run_numerical_simulation(
         wave_number: Wave number k
         amplitude: Initial amplitude
         simulation_time: Total simulation time
+        method: Integration method ('split_step' or 'spectral_imex')
 
     Returns:
         Dictionary with simulation results and performance metrics
@@ -180,6 +182,7 @@ def run_numerical_simulation(
         wave_number=wave_number,
         simulation_time=simulation_time,
         n_periods=3,  # Minimum periods for accurate frequency measurement
+        method=method,
     )
 
     elapsed = time.time() - start_time
@@ -369,6 +372,13 @@ Examples:
         help="Only run dispersion analysis (skip numerical simulation)",
     )
 
+    parser.add_argument(
+        "--method",
+        choices=["split_step", "spectral_imex"],
+        default="split_step",
+        help="Integration method for time stepping (default: split_step)",
+    )
+
     args = parser.parse_args()
 
     print("=" * 80)
@@ -418,6 +428,7 @@ Examples:
             print(f"Wave number k:       {args.wave_number}")
             print(f"Amplitude:           {args.amplitude}")
             print(f"Simulation time:     {args.simulation_time} (requested)")
+            print(f"Integration method:  {args.method}")
             print()
             print("NOTE: Simulation automatically extends to 3 wave periods for accurate")
             print("      frequency measurement. Expected runtime: 2-10 minutes depending")
@@ -429,6 +440,7 @@ Examples:
                 wave_number=args.wave_number,
                 amplitude=args.amplitude,
                 simulation_time=args.simulation_time,
+                method=args.method,
             )
 
             print(f"Elapsed time:        {sim_results['elapsed_time']:.2f}s")

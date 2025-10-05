@@ -34,6 +34,7 @@ class ISRelaxationEquations:
         grid: SpaceGrid | SpacetimeGrid,
         metric: MetricBase,
         coefficients: TransportCoefficients,
+        spectral_solver: Any | None = None,
     ):
         """
         Initialize Israel-Stewart relaxation equations.
@@ -42,10 +43,41 @@ class ISRelaxationEquations:
             grid: Spatial grid (SpaceGrid for pure 3D or SpacetimeGrid for 4D)
             metric: Background spacetime metric
             coefficients: Transport coefficients with second-order terms
+            spectral_solver: Optional spectral solver for high-accuracy derivatives
+                           If provided, uses spectral derivatives instead of finite differences
         """
         self.grid = grid
         self.metric = metric
         self.coeffs = coefficients
+        self.spectral_solver = spectral_solver
+
+        # Cache Christoffel symbols and flat-space status for performance
+        # (Avoids recomputing on every call to expansion_scalar/shear_tensor)
+        self._is_flat = self.metric.is_flat()
+        if not self._is_flat:
+            from ..core.derivatives import CovariantDerivative
+
+            cov_deriv = CovariantDerivative(self.metric)
+            christoffel = cov_deriv.christoffel_symbols
+
+            # Check if symbolic or numerical
+            is_symbolic = (
+                hasattr(christoffel, "dtype") and christoffel.dtype == "O"
+            ) or not isinstance(christoffel, np.ndarray)
+
+            if is_symbolic:
+                # Symbolic metric - use flat space approximation
+                warnings.warn(
+                    "Using flat space approximation for symbolic metric",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                self._christoffel = np.zeros((4, 4, 4))
+            else:
+                self._christoffel = christoffel
+        else:
+            # Flat space: Christoffel symbols are zero, never needed
+            self._christoffel = None
 
         # Build symbolic equations for analysis
         self.symbolic_eqs = self._build_symbolic_equations()
@@ -198,8 +230,6 @@ class ISRelaxationEquations:
             # Use trace-free part of shear tensor
             pi_trace = np.trace(pi_munu, axis1=-2, axis2=-1)
             shear_contribution = self.coeffs.lambda_Pi_pi * pi_trace * theta
-            nonlinear += shear_contribution
-
         result: np.ndarray = linear + first_order + nonlinear
         return result
 
@@ -325,30 +355,11 @@ class ISRelaxationEquations:
 
         Uses a field-aware wrapper to interface with the corrected vector_divergence method.
         """
-        from ..core.derivatives import CovariantDerivative
-
         # Compute divergence using manual gradients and Christoffel symbols
         # ∇_μ u^μ = ∂_μ u^μ + Γ^μ_μν u^ν
 
-        # Initialize covariant derivative operator for Christoffel symbols
-        cov_deriv = CovariantDerivative(self.metric)
-
-        # Get Christoffel symbols - handle both numerical and symbolic cases
-        christoffel = cov_deriv.christoffel_symbols
-
-        # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (
-            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
-        ) or not isinstance(christoffel, np.ndarray)
-
-        if is_symbolic:
-            # This is symbolic - for now use flat space approximation
-            import warnings
-
-            warnings.warn(
-                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
-            )
-            christoffel = np.zeros((4, 4, 4))
+        # Use cached Christoffel symbols (computed once at initialization)
+        christoffel = self._christoffel
 
         # Compute partial derivatives ∂_μ u^μ
         # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
@@ -358,8 +369,18 @@ class ISRelaxationEquations:
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
             # Time derivative (mu=0) handled by time evolution, not spatial gradients
-            # Use grid.gradient() for proper boundary condition handling
-            if hasattr(self.grid, 'gradient'):
+
+            # Use spectral derivatives if available (machine precision accuracy)
+            if self.spectral_solver is not None and hasattr(
+                self.spectral_solver, "spatial_derivative"
+            ):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    partial_div += self.spectral_solver.spatial_derivative(
+                        u_mu[..., mu], direction=spatial_axis
+                    )
+            # Fall back to grid.gradient() for proper boundary condition handling
+            elif hasattr(self.grid, "gradient"):
                 for mu in range(1, 4):
                     spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
                     partial_div += self.grid.gradient(u_mu[..., mu], axis=spatial_axis, order=2)
@@ -372,14 +393,16 @@ class ISRelaxationEquations:
             for mu in range(4):
                 partial_div += np.gradient(u_mu[..., mu], axis=mu, edge_order=1)
 
-        # Add Christoffel term if metric is not flat
-        christoffel_term = np.zeros(u_mu.shape[:-1])
-        if not self.metric.is_flat():
+        # Add Christoffel term if metric is not flat (use cached flag)
+        if not self._is_flat:
+            christoffel_term = np.zeros(u_mu.shape[:-1])
             for mu in range(4):
                 for nu in range(4):
                     christoffel_term += christoffel[mu, mu, nu] * u_mu[..., nu]
-
-        theta = partial_div + christoffel_term
+            theta = partial_div + christoffel_term
+        else:
+            # Flat space: Christoffel contribution is zero
+            theta = partial_div
 
         return theta
 
@@ -389,38 +412,31 @@ class ISRelaxationEquations:
 
         Formula: σ^μν = ∇^(μ u^ν) + a^(μ u^ν) - (1/3)Δ^μν θ
         """
-        from ..core.derivatives import CovariantDerivative
         from ..core.tensor_utils import optimized_einsum
 
-        # Initialize covariant derivative operator for Christoffel symbols
-        cov_deriv = CovariantDerivative(self.metric)
-
-        # Get Christoffel symbols - handle both numerical and symbolic cases
-        christoffel = cov_deriv.christoffel_symbols
-
-        # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (
-            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
-        ) or not isinstance(christoffel, np.ndarray)
-
-        if is_symbolic:
-            # This is symbolic - for now use flat space approximation
-            import warnings
-
-            warnings.warn(
-                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
-            )
-            christoffel = np.zeros((4, 4, 4))
+        # Use cached Christoffel symbols (computed once at initialization)
+        christoffel = self._christoffel
 
         # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
         is_spacegrid = u_mu.ndim == 4 and u_mu.shape[-1] == 4  # (nx,ny,nz,4)
 
-        # Compute velocity gradients using finite differences
+        # Compute velocity gradients using spectral or finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
-            # Use grid.gradient() for proper boundary condition handling
-            if hasattr(self.grid, 'gradient'):
+
+            # Use spectral derivatives if available (machine precision accuracy)
+            if self.spectral_solver is not None and hasattr(
+                self.spectral_solver, "spatial_derivative"
+            ):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = self.spectral_solver.spatial_derivative(
+                            u_mu[..., nu], direction=spatial_axis
+                        )
+            # Fall back to grid.gradient() for proper boundary condition handling
+            elif hasattr(self.grid, "gradient"):
                 for mu in range(1, 4):
                     spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
                     for nu in range(4):
@@ -440,13 +456,16 @@ class ISRelaxationEquations:
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # Add Christoffel correction if metric is not flat
-        nabla_u = nabla_u_partial.copy()
-        if not self.metric.is_flat():
+        # Add Christoffel correction if metric is not flat (use cached flag)
+        if not self._is_flat:
+            nabla_u = nabla_u_partial.copy()
             for mu in range(4):
                 for nu in range(4):
                     for rho in range(4):
                         nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+        else:
+            # Flat space: no Christoffel correction needed
+            nabla_u = nabla_u_partial
 
         # Get metric tensors
         g_inv = self.metric.inverse
@@ -494,38 +513,31 @@ class ISRelaxationEquations:
 
         Formula: ω^μν = ∇^[μ u^ν] + a^[μ u^ν]
         """
-        from ..core.derivatives import CovariantDerivative
         from ..core.tensor_utils import optimized_einsum
 
-        # Initialize covariant derivative operator for Christoffel symbols
-        cov_deriv = CovariantDerivative(self.metric)
-
-        # Get Christoffel symbols - handle both numerical and symbolic cases
-        christoffel = cov_deriv.christoffel_symbols
-
-        # Check if christoffel is symbolic or contains symbolic elements
-        is_symbolic = (
-            hasattr(christoffel, "dtype") and christoffel.dtype == "O"
-        ) or not isinstance(christoffel, np.ndarray)
-
-        if is_symbolic:
-            # This is symbolic - for now use flat space approximation
-            import warnings
-
-            warnings.warn(
-                "Using flat space approximation for symbolic metric", UserWarning, stacklevel=2
-            )
-            christoffel = np.zeros((4, 4, 4))
+        # Use cached Christoffel symbols (computed once at initialization)
+        christoffel = self._christoffel
 
         # Detect grid type: SpaceGrid (3D) vs SpacetimeGrid (4D)
         is_spacegrid = u_mu.ndim == 4 and u_mu.shape[-1] == 4  # (nx,ny,nz,4)
 
-        # Compute velocity gradients using finite differences
+        # Compute velocity gradients using spectral or finite differences
         nabla_u_partial = np.zeros(u_mu.shape[:-1] + (4, 4))
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
-            # Use grid.gradient() for proper boundary condition handling
-            if hasattr(self.grid, 'gradient'):
+
+            # Use spectral derivatives if available (machine precision accuracy)
+            if self.spectral_solver is not None and hasattr(
+                self.spectral_solver, "spatial_derivative"
+            ):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
+                    for nu in range(4):
+                        nabla_u_partial[..., mu, nu] = self.spectral_solver.spatial_derivative(
+                            u_mu[..., nu], direction=spatial_axis
+                        )
+            # Fall back to grid.gradient() for proper boundary condition handling
+            elif hasattr(self.grid, "gradient"):
                 for mu in range(1, 4):
                     spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
                     for nu in range(4):
@@ -545,13 +557,16 @@ class ISRelaxationEquations:
                 for nu in range(4):
                     nabla_u_partial[..., mu, nu] = np.gradient(u_mu[..., nu], axis=mu, edge_order=1)
 
-        # Add Christoffel correction if metric is not flat
-        nabla_u = nabla_u_partial.copy()
-        if not self.metric.is_flat():
+        # Add Christoffel correction if metric is not flat (use cached flag)
+        if not self._is_flat:
+            nabla_u = nabla_u_partial.copy()
             for mu in range(4):
                 for nu in range(4):
                     for rho in range(4):
                         nabla_u[..., mu, nu] -= christoffel[rho, mu, nu] * u_mu[..., rho]
+        else:
+            # Flat space: no Christoffel correction needed
+            nabla_u = nabla_u_partial
 
         # Get metric tensors
         g_inv = self.metric.inverse
@@ -615,7 +630,7 @@ class ISRelaxationEquations:
         if is_spacegrid:
             # Pure 3D: only spatial derivatives (mu=1,2,3 → axes 0,1,2)
             # Use grid.gradient() for proper boundary condition handling
-            if hasattr(self.grid, 'gradient'):
+            if hasattr(self.grid, "gradient"):
                 for mu in range(1, 4):
                     spatial_axis = mu - 1  # Map mu=1,2,3 → axis=0,1,2
                     grad_T_lower[..., mu] = self.grid.gradient(T, axis=spatial_axis, order=2)

@@ -1168,7 +1168,9 @@ class SpectralISHydrodynamics:
                     )
                     metric = MinkowskiMetric()
 
-                self.relaxation = ISRelaxationEquations(self.grid, metric, self.coeffs)
+                self.relaxation = ISRelaxationEquations(
+                    self.grid, metric, self.coeffs, spectral_solver=self.spectral
+                )
             else:
                 self.relaxation = None
 
@@ -1360,7 +1362,21 @@ class SpectralISHydrodynamics:
         if self.conservation is not None:
             try:
                 conservation_rhs = self.conservation.evolution_equations()
-                explicit_rhs.update(conservation_rhs)
+                # Convert derivative names to field names for IMEX compatibility
+                # conservation returns {"drho_dt": ..., "dmom_dt": ...}
+                # but IMEX expects {"rho": ..., "u_mu": ...}
+                if "drho_dt" in conservation_rhs:
+                    explicit_rhs["rho"] = conservation_rhs["drho_dt"]
+                if "dmom_dt" in conservation_rhs and "drho_dt" in conservation_rhs:
+                    # Convert momentum density derivative to velocity derivative
+                    # dmom_dt = ∂_t(ρu^i), need to compute ∂_t(u^i) using product rule
+                    du_spatial_dt = self._convert_momentum_to_velocity_derivative(
+                        conservation_rhs["dmom_dt"], conservation_rhs["drho_dt"]
+                    )
+                    # Map spatial velocity derivative to four-velocity derivative
+                    du_dt = np.zeros_like(self.fields.u_mu)
+                    du_dt[..., 1:4] = du_spatial_dt  # Spatial components (indices 1,2,3)
+                    explicit_rhs["u_mu"] = du_dt
             except Exception as e:
                 physics_logger.log_physics_fallback(
                     "conservation_rhs_computation", str(e), "skip_conservation_terms"

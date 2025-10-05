@@ -1229,157 +1229,6 @@ class SpectralISHydrodynamics:
         # Convert final result back to velocity basis
         self._momentum_basis_to_fields(final_dict)
 
-    def _imex_rk2_step(self, dt: float) -> None:
-        """
-        ARS(2,2,2) IMEX Runge-Kutta scheme - Ascher, Ruuth, Spiteri (1997).
-
-        Implements the 2-stage, 2nd-order L-stable IMEX-RK scheme:
-
-        Explicit tableau (for F):        Implicit DIRK tableau (for G):
-        c̃ = [0, 1]                       c = [γ, 1]
-        Ã = [0  0]                       A = [γ    0  ]
-            [1  0]                           [1-γ  γ  ]
-        b̃ = [1/2, 1/2]                   b = [1-γ, γ]
-
-        where γ = 1 - 1/√2 ≈ 0.292893218
-
-        Stage equations:
-        Y₁ = y^n + h·γ·G(Y₁)                           [implicit]
-        Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) [mixed]
-
-        Final update:
-        y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂)
-        """
-        # ARS(2,2,2) parameter
-        h = dt
-        gamma = 1.0 - 1.0 / np.sqrt(2.0)  # ≈ 0.292893218
-
-        # Store initial state y^n
-        y_n_dict = self._copy_fields()
-
-        # === Stage 1: Y₁ = y^n + h·γ·G(Y₁) ===
-        Y1_dict = self._solve_implicit_stage(y_n_dict, gamma * h)
-        Y1_fields = self._config_from_dict(Y1_dict)
-
-        # Compute explicit RHS F(Y₁)
-        F_Y1_dict = self._compute_explicit_rhs_for_fields(Y1_fields)
-
-        # Compute implicit terms G(Y₁) from stage equation: h·γ·G(Y₁) = Y₁ - y^n
-        G_Y1_scaled_dict = self._add_fields(Y1_dict, y_n_dict, scale=-1.0)
-        G_Y1_dict = self._scale_fields(G_Y1_scaled_dict, scale=1.0 / (gamma * h))
-
-        # === Stage 2: Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
-        # Build RHS for stage 2: y^n + h·F(Y₁) + h·(1-γ)·G(Y₁)
-        rhs2_dict = self._add_fields(y_n_dict, F_Y1_dict, scale=h)
-        rhs2_dict = self._add_fields(rhs2_dict, G_Y1_dict, scale=h * (1.0 - gamma))
-
-        Y2_dict = self._solve_implicit_stage(rhs2_dict, gamma * h)
-        Y2_fields = self._config_from_dict(Y2_dict)
-
-        # Compute explicit RHS F(Y₂)
-        F_Y2_dict = self._compute_explicit_rhs_for_fields(Y2_fields)
-
-        # Compute implicit terms G(Y₂) from stage equation: h·γ·G(Y₂) = Y₂ - RHS₂
-        G_Y2_scaled_dict = self._add_fields(Y2_dict, rhs2_dict, scale=-1.0)
-        G_Y2_dict = self._scale_fields(G_Y2_scaled_dict, scale=1.0 / (gamma * h))
-
-        # === Final Update: y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
-        final_dict = y_n_dict.copy()
-        final_dict = self._add_fields(final_dict, F_Y1_dict, scale=h / 2.0)
-        final_dict = self._add_fields(final_dict, F_Y2_dict, scale=h / 2.0)
-        final_dict = self._add_fields(final_dict, G_Y1_dict, scale=h * (1.0 - gamma))
-        final_dict = self._add_fields(final_dict, G_Y2_dict, scale=h * gamma)
-
-        # Load final result into self.fields
-        self._restore_fields(final_dict)
-
-    def _compute_explicit_rhs_for_fields(
-        self, fields: "ISFieldConfiguration"
-    ) -> dict[str, np.ndarray]:
-        """
-        Compute explicit RHS terms F(Y) for specific field configuration.
-
-        Args:
-            fields: Field configuration to evaluate RHS at
-
-        Returns:
-            Dictionary of explicit right-hand side terms
-        """
-        # Temporarily store current fields and switch to input fields
-        original_fields = self.fields
-        self.fields = fields
-
-        try:
-            # Compute RHS using existing method
-            explicit_rhs = self._compute_explicit_rhs()
-            return explicit_rhs
-        finally:
-            # Restore original fields
-            self.fields = original_fields
-
-    def _compute_explicit_rhs(self) -> dict[str, np.ndarray]:
-        """
-        Compute explicit (nonlinear) right-hand side terms.
-
-        Returns dictionary with derivatives for each field.
-        """
-        explicit_rhs = {}
-
-        # Conservation law terms (advection, pressure gradients)
-        # TODO: Conservation laws are currently DISABLED in IMEX method
-        #
-        # REASON: Conservation laws require coupling between ρ and u evolution that
-        # is incompatible with IMEX operator splitting. The conversion from momentum
-        # density derivatives ∂_t(ρu^i) to velocity derivatives ∂_t(u^i) creates
-        # field configuration dependencies that make Newton-Krylov solver unstable.
-        #
-        # CURRENT LIMITATION: IMEX only evolves dissipative fluxes (Π, π, q).
-        # Hydrodynamic variables (ρ, u) remain frozen at initial values.
-        #
-        # WORKAROUND: Use split_step method for problems requiring hydrodynamic evolution
-        # (e.g., sound waves, shocks, flow). IMEX is only suitable for pure relaxation
-        # dynamics with fixed background.
-        #
-        # FUTURE FIX: Redesign IMEX to handle conservation laws via:
-        # - Operator splitting: IMEX for stiff terms + RK2 for conservation
-        # - Fully coupled implicit-explicit system
-        # - Different variable formulation (entropy variables)
-        #
-        # if self.conservation is not None:
-        #     try:
-        #         conservation_rhs = self.conservation.evolution_equations()
-        #         if "drho_dt" in conservation_rhs:
-        #             explicit_rhs["rho"] = conservation_rhs["drho_dt"]
-        #         if "dmom_dt" in conservation_rhs and "drho_dt" in conservation_rhs:
-        #             du_spatial_dt = self._convert_momentum_to_velocity_derivative_with_fields(
-        #                 conservation_rhs["dmom_dt"],
-        #                 conservation_rhs["drho_dt"],
-        #                 self.fields.rho,
-        #                 self.fields.u_mu[..., 1:4],
-        #             )
-        #             du_dt = np.zeros_like(self.fields.u_mu)
-        #             du_dt[..., 1:4] = du_spatial_dt
-        #             explicit_rhs["u_mu"] = du_dt
-        #     except Exception as e:
-        #         physics_logger.log_physics_fallback(
-        #             "conservation_rhs_computation", str(e), "skip_conservation_terms"
-        #         )
-
-        # Nonlinear relaxation source terms
-        if self.relaxation is not None:
-            try:
-                relaxation_rhs = self._compute_relaxation_sources()
-                explicit_rhs.update(relaxation_rhs)
-            except Exception as e:
-                physics_logger.log_physics_fallback(
-                    "relaxation_rhs_computation", str(e), "skip_relaxation_terms"
-                )
-
-        # Ensure all required fields have RHS terms
-        self._ensure_complete_rhs(explicit_rhs)
-
-        return explicit_rhs
-
     def _compute_relaxation_sources(self) -> dict[str, np.ndarray]:
         """
         Compute nonlinear source terms from Israel-Stewart relaxation equations.
@@ -1505,46 +1354,6 @@ class SpectralISHydrodynamics:
         if "dpi_dt_source" in rhs_terms and hasattr(self.fields, "pi_munu"):
             self.fields.pi_munu += dt * rhs_terms["dpi_dt_source"]
 
-    def _ensure_complete_rhs(self, rhs_terms: dict[str, np.ndarray]) -> None:
-        """
-        Ensure all required fields have RHS terms.
-
-        Adds zero terms for fields without explicit RHS.
-        """
-        # Check required fields and add zero RHS if missing
-        required_fields = ["drho_dt", "du_dt"]
-
-        for field_name in required_fields:
-            if field_name not in rhs_terms:
-                if field_name == "drho_dt" and hasattr(self.fields, "rho"):
-                    rhs_terms[field_name] = np.zeros_like(self.fields.rho)
-                elif field_name == "du_dt" and hasattr(self.fields, "u_mu"):
-                    rhs_terms[field_name] = np.zeros_like(self.fields.u_mu)
-
-    def _restore_fields(
-        self,
-        field_backup: dict[str, np.ndarray],
-        target_fields: Optional["ISFieldConfiguration"] = None,
-    ) -> None:
-        """
-        Restore field configuration from backup.
-
-        Args:
-            field_backup: Dictionary of field arrays to restore
-            target_fields: Target configuration object (defaults to self.fields)
-        """
-        target = target_fields if target_fields is not None else self.fields
-
-        for field_name, field_data in field_backup.items():
-            if hasattr(target, field_name):
-                field_attr = getattr(target, field_name)
-                if hasattr(field_attr, "shape") and field_attr.shape == field_data.shape:
-                    try:
-                        field_attr[:] = field_data
-                    except (ValueError, TypeError):
-                        # Handle read-only arrays by replacing the attribute
-                        setattr(target, field_name, field_data.copy())
-
     def _advance_conservation_laws(self, dt: float) -> None:
         """
         Advance conservation laws using physics-correct evolution equations.
@@ -1576,6 +1385,65 @@ class SpectralISHydrodynamics:
                 "conservation_evolution", error_msg, "fallback_conservation_advance"
             )
             self._fallback_conservation_advance(dt)
+
+    def _convert_momentum_to_velocity_derivative(
+        self,
+        dmom_dt: np.ndarray,
+        drho_dt: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert momentum density derivative to velocity derivative using current fields.
+
+        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
+        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+
+        This is CRITICAL for sound wave propagation and any flow where both
+        density and velocity change. Without this conversion, waves propagate
+        at incorrect speeds.
+
+        Args:
+            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
+            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
+
+        Returns:
+            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
+        """
+        return self._convert_momentum_to_velocity_derivative_with_fields(
+            dmom_dt, drho_dt, self.fields.rho, self.fields.u_mu[..., 1:4]
+        )
+
+    def _convert_momentum_to_velocity_derivative_with_fields(
+        self,
+        dmom_dt: np.ndarray,
+        drho_dt: np.ndarray,
+        rho: np.ndarray,
+        u_spatial: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert momentum density derivative to velocity derivative with explicit fields.
+
+        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
+        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+
+        Args:
+            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
+            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
+            rho: Energy density at evaluation point, shape (*grid.shape,)
+            u_spatial: Spatial velocity at evaluation point, shape (*grid.shape, 3)
+
+        Returns:
+            du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
+        """
+        # Avoid division by zero (use small epsilon where rho is tiny)
+        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
+
+        # Expand drho_dt to broadcast with spatial velocity
+        drho_dt_expanded = drho_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+
+        # du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+        du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
+
+        return du_dt
 
     def _fields_to_momentum_basis(self) -> dict[str, np.ndarray]:
         """
@@ -1615,22 +1483,31 @@ class SpectralISHydrodynamics:
         # Avoid division by zero (use small epsilon where rho is tiny)
         rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
 
-        # Update density
-        self.fields.rho[:] = rho
+        # Update density (handle read-only arrays in tests)
+        try:
+            self.fields.rho[:] = rho
+        except ValueError:
+            self.fields.rho.flags.writeable = True
+            self.fields.rho[:] = rho
 
         # Update four-velocity from momentum density
+        self.fields.u_mu.flags.writeable = True
         self.fields.u_mu[..., 0] = 1.0  # Time component (rest frame approximation)
         self.fields.u_mu[..., 1] = mom_dict["mom_x"] / rho_safe
         self.fields.u_mu[..., 2] = mom_dict["mom_y"] / rho_safe
         self.fields.u_mu[..., 3] = mom_dict["mom_z"] / rho_safe
 
         # Update dissipative fluxes (unchanged in momentum basis)
+        self.fields.Pi.flags.writeable = True
         self.fields.Pi[:] = mom_dict["Pi"]
+        self.fields.pi_munu.flags.writeable = True
         self.fields.pi_munu[:] = mom_dict["pi_munu"]
+        self.fields.q_mu.flags.writeable = True
         self.fields.q_mu[:] = mom_dict["q_mu"]
 
         # CRITICAL: Update pressure from equation of state after ρ changes
         # This ensures pressure gradients are correct for sound wave propagation
+        self.fields.pressure.flags.writeable = True
         self.fields.update_pressure_from_eos("radiation")
 
         # Update derived quantities (includes velocity normalization)
@@ -1983,16 +1860,6 @@ class SpectralISHydrodynamics:
             )
             return np.zeros_like(self.fields.rho)
 
-    def _copy_fields(self) -> dict[str, np.ndarray]:
-        """Create a copy of current field state."""
-        return {
-            "rho": self.fields.rho.copy(),
-            "Pi": self.fields.Pi.copy(),
-            "pi_munu": self.fields.pi_munu.copy(),
-            "q_mu": self.fields.q_mu.copy(),
-            "u_mu": self.fields.u_mu.copy(),
-        }
-
     def _add_fields(
         self,
         fields_base: dict[str, np.ndarray],
@@ -2076,39 +1943,9 @@ class SpectralISHydrodynamics:
         # Ensure pressure is set if rho is available (conformal EOS as fallback)
         if hasattr(new_fields, "rho") and np.any(new_fields.rho > 0):
             if not hasattr(new_fields, "pressure") or np.all(new_fields.pressure == 0):
-                new_fields.pressure = new_fields.rho / 3.0  # type: ignore[assignment]
+                new_fields.pressure = new_fields.rho / 3.0
 
         return new_fields
-
-    def _solve_implicit_stage(
-        self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
-    ) -> dict[str, np.ndarray]:
-        """
-        Solve implicit stage equation: (I - γ·dt·∂G/∂y)·Y = RHS for ARS(2,2,2).
-
-        This solves the nonlinear algebraic equation Y = RHS + γ·dt·G(Y) where G(Y)
-        represents the stiff terms (viscous diffusion and relaxation).
-
-        Args:
-            rhs_dict: Right-hand side field dictionary
-            gamma_dt: Product γ·dt where γ is ARS(2,2,2) parameter
-
-        Returns:
-            Solution dictionary Y
-        """
-        if abs(gamma_dt) < 1e-12:
-            # No implicit terms, return RHS directly
-            return {key: field.copy() for key, field in rhs_dict.items()}
-
-        try:
-            # Use Newton-Krylov iteration to solve the nonlinear system
-            return self._newton_krylov_solve(rhs_dict, gamma_dt)
-        except Exception as e:
-            warnings.warn(
-                f"Implicit stage solve failed: {e}. Using explicit approximation.", stacklevel=2
-            )
-            # Fallback: first-order explicit approximation
-            return self._explicit_approximation(rhs_dict, gamma_dt)
 
     def _newton_krylov_solve(
         self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
@@ -2293,7 +2130,7 @@ class SpectralISHydrodynamics:
         """
         Explicit approximation for implicit stage: Y ≈ RHS + γ·dt·G(RHS).
 
-        Used as fallback when implicit solver fails.
+        Used as fallback when Newton-Krylov solver fails in IMEX integration.
         """
         try:
             rhs_fields = self._config_from_dict(rhs_dict)

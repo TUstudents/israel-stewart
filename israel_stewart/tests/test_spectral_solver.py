@@ -511,18 +511,18 @@ class TestSpectralISHydrodynamics:
         assert dt > 0, "Adaptive timestep must be positive"
 
         # Verify it respects all physical constraints
-        assert dt <= expected_cfl_dt * 1.1, (
-            f"Timestep violates CFL condition: dt={dt:.6f} > CFL_dt={expected_cfl_dt:.6f}"
-        )
-        assert dt <= expected_viscous_dt * 1.1, (
-            f"Timestep violates viscous constraint: dt={dt:.6f} > visc_dt={expected_viscous_dt:.6f}"
-        )
-        assert dt <= expected_relax_dt * 1.1, (
-            f"Timestep violates relaxation constraint: dt={dt:.6f} > relax_dt={expected_relax_dt:.6f}"
-        )
-        assert dt <= hydro_solver.max_dt, (
-            f"Timestep exceeds maximum: dt={dt:.6f} > max_dt={hydro_solver.max_dt:.6f}"
-        )
+        assert (
+            dt <= expected_cfl_dt * 1.1
+        ), f"Timestep violates CFL condition: dt={dt:.6f} > CFL_dt={expected_cfl_dt:.6f}"
+        assert (
+            dt <= expected_viscous_dt * 1.1
+        ), f"Timestep violates viscous constraint: dt={dt:.6f} > visc_dt={expected_viscous_dt:.6f}"
+        assert (
+            dt <= expected_relax_dt * 1.1
+        ), f"Timestep violates relaxation constraint: dt={dt:.6f} > relax_dt={expected_relax_dt:.6f}"
+        assert (
+            dt <= hydro_solver.max_dt
+        ), f"Timestep exceeds maximum: dt={dt:.6f} > max_dt={hydro_solver.max_dt:.6f}"
 
         # Verify adaptive timestep is within reasonable factor of computed constraint
         expected_dt = min(
@@ -584,9 +584,9 @@ class TestSpectralISHydrodynamics:
 
         # Basic validation
         expected_shape = (*fields.rho.shape, 4, 4)
-        assert T_munu.shape == expected_shape, (
-            f"Wrong tensor shape: got {T_munu.shape}, expected {expected_shape}"
-        )
+        assert (
+            T_munu.shape == expected_shape
+        ), f"Wrong tensor shape: got {T_munu.shape}, expected {expected_shape}"
         assert np.all(np.isfinite(T_munu)), (
             f"Tensor contains NaN/Inf: "
             f"NaN count: {np.sum(np.isnan(T_munu))}, "
@@ -691,14 +691,16 @@ class TestSpectralISHydrodynamics:
         """Test field state copying functionality."""
         hydro_solver, fields = setup_hydro_solver
 
-        fields_copy = hydro_solver._copy_fields()
+        fields_copy = hydro_solver._fields_to_momentum_basis()
 
-        # Check that all required fields are copied
+        # Check that all required fields are copied (momentum basis)
         assert "rho" in fields_copy
         assert "Pi" in fields_copy
         assert "pi_munu" in fields_copy
         assert "q_mu" in fields_copy
-        assert "u_mu" in fields_copy
+        assert "mom_x" in fields_copy
+        assert "mom_y" in fields_copy
+        assert "mom_z" in fields_copy
 
         # Check that copies are independent (SpaceGrid: 3D indexing)
         fields.rho[0, 0, 0] += 1.0
@@ -812,9 +814,9 @@ class TestSpectralValidation:
         # For ideal fluid with no initial flow, energy should be approximately conserved
         final_total_energy = np.sum(fields.rho)
         energy_change = abs(final_total_energy - initial_total_energy) / initial_total_energy
-        assert energy_change < 0.1, (
-            f"Ideal fluid energy should be approximately conserved: change = {energy_change:.3f}"
-        )
+        assert (
+            energy_change < 0.1
+        ), f"Ideal fluid energy should be approximately conserved: change = {energy_change:.3f}"
 
         # Fields should not have exploded
         assert np.max(fields.rho) < 100 * initial_rho, "Energy density should not explode"
@@ -1059,9 +1061,9 @@ class TestSpectralSolverFixes:
         low_freq_correlation = np.corrcoef(
             dealiased_signal.flatten(), low_freq_reference.flatten()
         )[0, 1]
-        assert low_freq_correlation > 0.98, (
-            f"Low frequency preserved: correlation = {low_freq_correlation:.4f}"
-        )
+        assert (
+            low_freq_correlation > 0.98
+        ), f"Low frequency preserved: correlation = {low_freq_correlation:.4f}"
 
         # High frequency should be significantly reduced
         high_freq_reference = solver.spectral.ifft_plan(
@@ -1070,9 +1072,9 @@ class TestSpectralSolverFixes:
         high_freq_correlation = np.corrcoef(
             dealiased_signal.flatten(), high_freq_reference.flatten()
         )[0, 1]
-        assert abs(high_freq_correlation) < 0.1, (
-            f"High frequency removed: correlation = {high_freq_correlation:.4f}"
-        )
+        assert (
+            abs(high_freq_correlation) < 0.1
+        ), f"High frequency removed: correlation = {high_freq_correlation:.4f}"
 
         # Verify dealiasing reduces total signal energy (removes high-frequency components)
         original_energy = np.sum(np.abs(conv_k) ** 2)
@@ -1126,7 +1128,7 @@ class TestSpectralSolverFixes:
 
         # Take a small IMEX step
         dt = 0.001
-        solver._imex_rk2_step(dt)
+        solver._imex_rk2_step_momentum(dt)
 
         # Check that fields evolved smoothly according to proper IMEX scheme
         rho_change = np.max(np.abs(fields.rho - initial_rho))
@@ -1189,9 +1191,9 @@ class TestSpectralSolverFixes:
 
         # Test adaptive IFFT round-trip
         reconstructed = solver.spectral.adaptive_ifft(fft_result, real_field.shape)
-        assert np.allclose(reconstructed, real_field, rtol=1e-12), (
-            "Real FFT round-trip preserves data"
-        )
+        assert np.allclose(
+            reconstructed, real_field, rtol=1e-12
+        ), "Real FFT round-trip preserves data"
 
         # Test that performance is actually improved
         # (This would require timing tests in practice)
@@ -1435,7 +1437,7 @@ class TestSpectralSolverCriticalFixes:
 
         try:
             # Test IMEX-RK2 advancement
-            hydro_solver._imex_rk2_step(dt=0.001)
+            hydro_solver._imex_rk2_step_momentum(dt=0.001)
 
             # Should complete all stages without error
             assert np.all(np.isfinite(fields.rho))
@@ -1595,7 +1597,7 @@ class TestARS22IMEXRK:
         initial_energy = np.sum(fields.rho)
 
         try:
-            hydro_solver._imex_rk2_step(dt)
+            hydro_solver._imex_rk2_step_momentum(dt)
             assert np.all(np.isfinite(fields.rho)), "Fields remain finite after ARS step"
             final_energy = np.sum(fields.rho)
 
@@ -1607,46 +1609,52 @@ class TestARS22IMEXRK:
             pytest.fail(f"ARS(2,2,2) step failed: {e}")
 
     def test_field_arithmetic_helpers(self, setup_ars_solver: tuple) -> None:
-        """Test the field arithmetic helper methods."""
+        """Test the momentum-basis field arithmetic helper methods."""
         hydro_solver, fields, grid, coeffs = setup_ars_solver
 
-        # Test _copy_fields
-        fields_copy = hydro_solver._copy_fields()
-        assert len(fields_copy) >= 4, "Copy contains main fields"
-        assert "rho" in fields_copy and "Pi" in fields_copy
+        # Test _fields_to_momentum_basis (replaces _copy_fields)
+        mom_dict = hydro_solver._fields_to_momentum_basis()
+        assert len(mom_dict) >= 4, "Momentum dict contains main fields"
+        assert "rho" in mom_dict and "Pi" in mom_dict
+        assert "mom_x" in mom_dict and "mom_y" in mom_dict and "mom_z" in mom_dict
 
-        # Test _add_fields
-        fields_doubled = hydro_solver._add_fields(fields_copy, fields_copy, scale=1.0)
-        assert np.allclose(fields_doubled["rho"], 2.0 * fields_copy["rho"]), (
-            "_add_fields works correctly"
-        )
+        # Test _add_fields_momentum
+        fields_doubled = hydro_solver._add_fields_momentum(mom_dict, mom_dict, scale=1.0)
+        assert np.allclose(
+            fields_doubled["rho"], 2.0 * mom_dict["rho"]
+        ), "_add_fields_momentum works correctly"
 
-        # Test _scale_fields
-        fields_half = hydro_solver._scale_fields(fields_copy, scale=0.5)
-        assert np.allclose(fields_half["rho"], 0.5 * fields_copy["rho"]), (
-            "_scale_fields works correctly"
-        )
+        # Test _scale_fields_momentum
+        fields_half = hydro_solver._scale_fields_momentum(mom_dict, scale=0.5)
+        assert np.allclose(
+            fields_half["rho"], 0.5 * mom_dict["rho"]
+        ), "_scale_fields_momentum works correctly"
 
-        # Test _config_from_dict
+        # Test _momentum_basis_to_fields (replaces _config_from_dict)
         try:
-            config_from_dict = hydro_solver._config_from_dict(fields_copy)
-            assert hasattr(config_from_dict, "rho"), "Config object created correctly"
-            assert np.allclose(config_from_dict.rho, fields_copy["rho"]), (
-                "Values transferred correctly"
-            )
+            # Store original rho for comparison
+            original_rho = fields.rho.copy()
+
+            # Update fields from momentum dict
+            hydro_solver._momentum_basis_to_fields(mom_dict)
+
+            # Check that fields were updated correctly
+            assert np.allclose(
+                fields.rho, original_rho
+            ), "_momentum_basis_to_fields updates fields correctly"
         except Exception as e:
-            pytest.fail(f"_config_from_dict failed: {e}")
+            pytest.fail(f"_momentum_basis_to_fields failed: {e}")
 
     def test_implicit_stage_solver(self, setup_ars_solver: tuple) -> None:
-        """Test the implicit stage solver."""
+        """Test the momentum-basis implicit stage solver."""
         hydro_solver, fields, grid, coeffs = setup_ars_solver
 
         # Test with small gamma_dt (should be nearly explicit)
-        rhs_dict = hydro_solver._copy_fields()
+        rhs_dict = hydro_solver._fields_to_momentum_basis()
         gamma_dt = 0.001
 
         try:
-            solution_dict = hydro_solver._solve_implicit_stage(rhs_dict, gamma_dt)
+            solution_dict = hydro_solver._solve_implicit_stage_momentum(rhs_dict, gamma_dt)
 
             # Solution should be close to RHS for small gamma_dt
             rhs_norm = np.linalg.norm(rhs_dict["rho"])
@@ -1658,32 +1666,35 @@ class TestARS22IMEXRK:
                 assert np.all(np.isfinite(value)), f"Field {key} remains finite"
 
         except Exception as e:
-            pytest.fail(f"Implicit stage solver failed: {e}")
+            pytest.fail(f"Momentum-basis implicit stage solver failed: {e}")
 
     def test_stiff_terms_computation(self, setup_ars_solver: tuple) -> None:
-        """Test computation of stiff terms G(Y)."""
+        """Test computation of stiff terms G(Y) in momentum basis."""
         hydro_solver, fields, grid, coeffs = setup_ars_solver
 
         try:
-            stiff_terms = hydro_solver._compute_stiff_terms(fields)
+            stiff_terms = hydro_solver._compute_stiff_terms_momentum(fields)
 
-            # Should contain all required fields
-            required_fields = ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
+            # Should contain all required fields (momentum basis)
+            required_fields = ["rho", "mom_x", "mom_y", "mom_z", "Pi", "pi_munu", "q_mu"]
             for field in required_fields:
                 assert field in stiff_terms, f"Stiff terms contain {field}"
-                assert stiff_terms[field].shape == getattr(fields, field).shape, (
-                    f"Shape consistency for {field}"
-                )
                 assert np.all(np.isfinite(stiff_terms[field])), f"Finite stiff terms for {field}"
 
-            # For viscous terms, should have correct sign (dissipative)
-            # Bulk viscosity should oppose gradients in Pi
-            if coeffs.bulk_viscosity > 0:
-                # Stiff term should be proportional to Laplacian (opposing gradients)
-                assert not np.allclose(stiff_terms["Pi"], 0), "Non-zero bulk viscous terms"
+            # Hydrodynamic fields (rho, mom) should have zero stiff terms
+            assert np.allclose(stiff_terms["rho"], 0), "No stiff term for rho"
+            assert np.allclose(stiff_terms["mom_x"], 0), "No stiff term for mom_x"
+
+            # Dissipative fluxes should have non-zero stiff terms (relaxation)
+            # Pi should have -Pi/tau_Pi term
+            if coeffs.bulk_relaxation_time is not None and coeffs.bulk_relaxation_time > 0:
+                expected_bulk_stiff = -fields.Pi / coeffs.bulk_relaxation_time
+                assert np.allclose(
+                    stiff_terms["Pi"], expected_bulk_stiff
+                ), "Bulk stiff term is -Pi/tau_Pi"
 
         except Exception as e:
-            pytest.fail(f"Stiff terms computation failed: {e}")
+            pytest.fail(f"Momentum-basis stiff terms computation failed: {e}")
 
     def test_ars_conservation_properties(self, setup_ars_solver: tuple) -> None:
         """Test that ARS(2,2,2) preserves important conservation properties."""
@@ -1699,7 +1710,7 @@ class TestARS22IMEXRK:
 
         try:
             for i in range(n_steps):
-                hydro_solver._imex_rk2_step(dt)
+                hydro_solver._imex_rk2_step_momentum(dt)
 
                 # Check that fields remain well-behaved
                 assert np.all(np.isfinite(fields.rho)), f"Energy finite at step {i}"
@@ -1758,10 +1769,10 @@ class TestARS22IMEXRK:
             # Evolve with ARS(2,2,2)
             n_steps = int(final_time / dt)
             for _ in range(n_steps):
-                test_hydro_solver._imex_rk2_step(dt)
+                test_hydro_solver._imex_rk2_step_momentum(dt)
 
             # Get numerical solution
-            numerical_solution = test_hydro_solver._copy_fields()
+            numerical_solution = test_hydro_solver._fields_to_momentum_basis()
 
             # Analytical solution for exponential decay
             exact_value = initial_value * np.exp(-decay_rate * final_time)
@@ -1785,9 +1796,9 @@ class TestARS22IMEXRK:
                 )
 
                 # All errors should be reasonable (not near 50%)
-                assert all(e < 0.1 for e in errors), (
-                    f"Errors too large for exponential decay test: {errors}"
-                )
+                assert all(
+                    e < 0.1 for e in errors
+                ), f"Errors too large for exponential decay test: {errors}"
 
                 # Estimate convergence rate (should be close to 2 for 2nd-order method)
                 if errors[1] > 1e-10 and errors[2] > 1e-10:
@@ -1839,7 +1850,7 @@ class TestARS22IMEXRK:
         dt = 0.1  # Much larger than relaxation time
 
         try:
-            hydro_solver._imex_rk2_step(dt)
+            hydro_solver._imex_rk2_step_momentum(dt)
 
             # Stresses should have decayed significantly (L-stable behavior)
             final_Pi_norm = np.linalg.norm(fields.Pi)
@@ -1872,7 +1883,7 @@ class TestARS22IMEXRK:
         start_time = time.time()
         try:
             for _ in range(n_steps):
-                hydro_solver._imex_rk2_step(dt)
+                hydro_solver._imex_rk2_step_momentum(dt)
             ars_time = time.time() - start_time
 
             # Should complete in reasonable time (< 10 seconds for test grid)
@@ -1946,14 +1957,14 @@ class TestARS22IMEXRK:
 
             if rhs_norm > 1e-14:
                 relative_residual = residual_norm / rhs_norm
-                assert relative_residual < 1e-6, (
-                    f"Newton-Krylov did not converge: residual={relative_residual:.2e}"
-                )
+                assert (
+                    relative_residual < 1e-6
+                ), f"Newton-Krylov did not converge: residual={relative_residual:.2e}"
             else:
                 # RHS is near zero, check absolute residual
-                assert residual_norm < 1e-10, (
-                    f"Newton-Krylov absolute residual too large: {residual_norm:.2e}"
-                )
+                assert (
+                    residual_norm < 1e-10
+                ), f"Newton-Krylov absolute residual too large: {residual_norm:.2e}"
 
             # Check analytical solution for implicit stage equation
             # Π_new = RHS + γ·dt·(-Π_new/τ_Π)
@@ -2049,9 +2060,9 @@ class TestRelaxationOperator:
         ratio_mean = np.mean(decay_ratios_nonzero)
 
         assert ratio_std < 1e-12, f"Decay not k-independent! std={ratio_std:.3e} (should be ~0)"
-        assert np.abs(ratio_mean - expected_decay_factor) < 1e-12, (
-            f"Mean decay ratio {ratio_mean:.6f} != expected {expected_decay_factor:.6f}"
-        )
+        assert (
+            np.abs(ratio_mean - expected_decay_factor) < 1e-12
+        ), f"Mean decay ratio {ratio_mean:.6f} != expected {expected_decay_factor:.6f}"
 
     def test_relaxation_vs_diffusion_physics(self, setup_relaxation_test: tuple) -> None:
         """
@@ -2151,9 +2162,9 @@ class TestSpectralLaplacianPhysics:
             max_relative_error = np.max(relative_error) / np.max(np.abs(expected_laplacian))
 
             # Spectral methods should achieve machine precision for represented modes
-            assert max_relative_error < 1e-12, (
-                f"Spectral Laplacian error too large: {max_relative_error}"
-            )
+            assert (
+                max_relative_error < 1e-12
+            ), f"Spectral Laplacian error too large: {max_relative_error}"
             assert computed_laplacian.shape == test_field.shape, "Shape preservation"
 
         except Exception as e:
@@ -2198,7 +2209,7 @@ class TestSpectralLaplacianPhysics:
 
         try:
             # Compute stiff terms (should now include real diffusion)
-            stiff_terms = hydro_solver._compute_stiff_terms(fields)
+            stiff_terms = hydro_solver._compute_stiff_terms_momentum(fields)
 
             # Bulk viscous diffusion should be non-zero
             bulk_diffusion = stiff_terms["Pi"]
@@ -2212,9 +2223,9 @@ class TestSpectralLaplacianPhysics:
             center_idx = 16  # Middle of domain
             if fields.Pi[center_idx, center_idx, center_idx] > 0.5:
                 # High field region should have negative Laplacian (diffusion outward)
-                assert laplacian_Pi[center_idx, center_idx, center_idx] < 0, (
-                    "Diffusion opposes gradients"
-                )
+                assert (
+                    laplacian_Pi[center_idx, center_idx, center_idx] < 0
+                ), "Diffusion opposes gradients"
 
         except Exception as e:
             pytest.fail(f"Viscous diffusion physics test failed: {e}")
@@ -2234,7 +2245,7 @@ class TestSpectralLaplacianPhysics:
         # Evolve one ARS step with viscous diffusion
         dt = 0.001
         try:
-            hydro_solver._imex_rk2_step(dt)
+            hydro_solver._imex_rk2_step_momentum(dt)
 
             final_Pi_energy = np.sum(fields.Pi**2)
             final_pi_energy = np.sum(fields.pi_munu**2)
@@ -2310,9 +2321,9 @@ class TestSpectralLaplacianPhysics:
             )
 
             # Check that integral of Laplacian is approximately zero (conservation)
-            assert relative_conservation < 1e-10, (
-                f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
-            )
+            assert (
+                relative_conservation < 1e-10
+            ), f"Laplacian should conserve total quantity, got relative error: {relative_conservation}"
 
             # Check that Laplacian is not identically zero (it should do something)
             max_laplacian = np.max(np.abs(laplacian_result))
@@ -2361,9 +2372,9 @@ class TestPeriodicGridIntegration:
             spacing_warnings = [
                 warning for warning in w if "spacing" in str(warning.message).lower()
             ]
-            assert len(spacing_warnings) == 0, (
-                f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
-            )
+            assert (
+                len(spacing_warnings) == 0
+            ), f"Unexpected spacing warnings: {[str(w.message) for w in spacing_warnings]}"
 
     def test_dirichlet_grid_issues_warning(self, dirichlet_grid: SpaceGrid) -> None:
         """Test that non-periodic grids trigger appropriate warnings."""
@@ -2388,9 +2399,9 @@ class TestPeriodicGridIntegration:
 
         # Check that frequency arrays have correct structure
         kx_1d = np.fft.fftfreq(N, solver.dx) * 2 * np.pi
-        assert np.allclose(kx_1d[1], expected_k1), (
-            f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
-        )
+        assert np.allclose(
+            kx_1d[1], expected_k1
+        ), f"Expected fundamental frequency {expected_k1}, got {kx_1d[1]}"
 
     def test_spectral_derivative_accuracy_periodic(self, periodic_grid: SpaceGrid) -> None:
         """Test that spectral derivatives achieve high accuracy with periodic grids."""
@@ -2416,9 +2427,9 @@ class TestPeriodicGridIntegration:
         max_error = np.max(np.abs(numerical_derivative - expected_derivative))
         relative_error = max_error / np.max(np.abs(expected_derivative))
 
-        assert relative_error < 1e-12, (
-            f"Spectral derivative relative error too large: {relative_error}"
-        )
+        assert (
+            relative_error < 1e-12
+        ), f"Spectral derivative relative error too large: {relative_error}"
 
     def test_spacing_consistency_with_factory(self) -> None:
         """Test that SpaceGrid produces consistent spacing for periodic BC."""

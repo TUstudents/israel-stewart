@@ -1257,25 +1257,84 @@ class SpectralISHydrodynamics:
         """
         IMEX Runge-Kutta method: implicit spectral linear terms + explicit nonlinear terms.
 
-        Uses second-order IMEX scheme for optimal balance of stability and accuracy.
+        Uses second-order ARS(2,2,2) IMEX scheme with momentum-density formulation
+        for optimal balance of stability and accuracy. This method fully couples
+        conservation laws (ρ, momentum) with Israel-Stewart relaxation equations
+        (Π, π, q) by using momentum density mom_i = ρu^i as primary variables.
 
-        CURRENT LIMITATION: This method only evolves dissipative fluxes (Π, π, q).
-        Hydrodynamic variables (ρ, u) remain frozen. For problems requiring
-        hydrodynamic evolution (sound waves, shocks, flow), use split_step method.
+        IMEX splitting:
+        - Explicit: Conservation laws + relaxation sources
+        - Implicit: Linear relaxation terms (-Π/τ, -π/τ)
         """
-        # Warn user once about IMEX limitations
-        if not hasattr(self, "_imex_conservation_warning_shown"):
-            warnings.warn(
-                "IMEX method currently only evolves dissipative fluxes (Π, π, q). "
-                "Hydrodynamic variables (ρ, u) are frozen at initial values. "
-                "For sound waves and hydrodynamic problems, use method='split_step' instead.",
-                UserWarning,
-                stacklevel=3,
-            )
-            self._imex_conservation_warning_shown = True
+        # Second-order IMEX scheme with two stages in momentum basis
+        self._imex_rk2_step_momentum(dt)
 
-        # Second-order IMEX scheme with two stages
-        self._imex_rk2_step(dt)
+    def _imex_rk2_step_momentum(self, dt: float) -> None:
+        """
+        ARS(2,2,2) IMEX Runge-Kutta in momentum-density basis.
+
+        This method reformulates the Israel-Stewart evolution in momentum density
+        variables mom_i = ρu^i to avoid product rule conversion and field configuration
+        mismatches when coupling conservation laws with relaxation equations.
+
+        State vector: y = [ρ, mom_x, mom_y, mom_z, Π, π_00, π_01, ..., q_0, q_1, q_2, q_3]
+
+        IMEX splitting:
+        - Explicit F(y): Conservation laws + relaxation sources
+        - Implicit G(y): Linear relaxation terms (-Π/τ, -π/τ, -q/τ)
+
+        Stage equations (γ = 1 - 1/√2):
+        Y₁ = y^n + h·γ·G(Y₁)                           [implicit]
+        Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) [mixed]
+
+        Final update:
+        y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂)
+        """
+        h = dt
+        gamma = 1.0 - 1.0 / np.sqrt(2.0)
+
+        # Store initial state in momentum basis
+        y_n_dict = self._fields_to_momentum_basis()
+
+        # === Stage 1: Y₁ = y^n + h·γ·G(Y₁) ===
+        Y1_dict = self._solve_implicit_stage_momentum(y_n_dict, gamma * h)
+
+        # Convert back to velocity basis for RHS evaluation
+        self._momentum_basis_to_fields(Y1_dict)
+
+        # Compute explicit RHS F(Y₁)
+        F_Y1_dict = self._compute_explicit_rhs_momentum()
+
+        # Compute implicit terms G(Y₁) from stage equation: G(Y₁) = [Y₁ - y^n] / (γh)
+        G_Y1_scaled_dict = self._add_fields_momentum(Y1_dict, y_n_dict, scale=-1.0)
+        G_Y1_dict = self._scale_fields_momentum(G_Y1_scaled_dict, scale=1.0 / (gamma * h))
+
+        # === Stage 2: Y₂ = y^n + h·F(Y₁) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
+        # Compute RHS for implicit solve: y^n + h·F(Y₁) + h·(1-γ)·G(Y₁)
+        rhs2_dict = self._add_fields_momentum(y_n_dict, F_Y1_dict, scale=h)
+        rhs2_dict = self._add_fields_momentum(rhs2_dict, G_Y1_dict, scale=h * (1.0 - gamma))
+
+        Y2_dict = self._solve_implicit_stage_momentum(rhs2_dict, gamma * h)
+
+        # Convert Y₂ back to velocity basis
+        self._momentum_basis_to_fields(Y2_dict)
+
+        # Compute explicit RHS F(Y₂)
+        F_Y2_dict = self._compute_explicit_rhs_momentum()
+
+        # Compute implicit terms G(Y₂) from stage equation: G(Y₂) = [Y₂ - rhs2] / (γh)
+        G_Y2_scaled_dict = self._add_fields_momentum(Y2_dict, rhs2_dict, scale=-1.0)
+        G_Y2_dict = self._scale_fields_momentum(G_Y2_scaled_dict, scale=1.0 / (gamma * h))
+
+        # === Final Update: y^{n+1} = y^n + h/2·F(Y₁) + h/2·F(Y₂) + h·(1-γ)·G(Y₁) + h·γ·G(Y₂) ===
+        final_dict = y_n_dict.copy()
+        final_dict = self._add_fields_momentum(final_dict, F_Y1_dict, scale=h / 2.0)
+        final_dict = self._add_fields_momentum(final_dict, F_Y2_dict, scale=h / 2.0)
+        final_dict = self._add_fields_momentum(final_dict, G_Y1_dict, scale=h * (1.0 - gamma))
+        final_dict = self._add_fields_momentum(final_dict, G_Y2_dict, scale=h * gamma)
+
+        # Convert final result back to velocity basis
+        self._momentum_basis_to_fields(final_dict)
 
     def _imex_rk2_step(self, dt: float) -> None:
         """
@@ -1683,6 +1742,264 @@ class SpectralISHydrodynamics:
         du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
 
         return cast(np.ndarray, du_dt)
+
+    def _fields_to_momentum_basis(self) -> dict[str, np.ndarray]:
+        """
+        Convert ISFieldConfiguration to momentum-density basis.
+
+        Instead of evolving velocity u^i, we evolve momentum density mom_i = ρu^i.
+        This eliminates the need for product rule conversion and makes conservation
+        laws compatible with IMEX splitting.
+
+        Returns:
+            Dictionary with keys: rho, mom_x, mom_y, mom_z, Pi, pi_munu, q_mu
+        """
+        rho = self.fields.rho
+        u_spatial = self.fields.u_mu[..., 1:4]  # Spatial components (x, y, z)
+
+        return {
+            "rho": rho.copy(),
+            "mom_x": (rho * u_spatial[..., 0]).copy(),
+            "mom_y": (rho * u_spatial[..., 1]).copy(),
+            "mom_z": (rho * u_spatial[..., 2]).copy(),
+            "Pi": self.fields.Pi.copy(),
+            "pi_munu": self.fields.pi_munu.copy(),
+            "q_mu": self.fields.q_mu.copy(),
+        }
+
+    def _momentum_basis_to_fields(self, mom_dict: dict[str, np.ndarray]) -> None:
+        """
+        Update ISFieldConfiguration from momentum-density basis.
+
+        Converts momentum density mom_i back to velocity u^i = mom_i / ρ.
+
+        Args:
+            mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, Pi, pi_munu, q_mu
+        """
+        rho = mom_dict["rho"]
+
+        # Avoid division by zero (use small epsilon where rho is tiny)
+        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
+
+        # Update density
+        self.fields.rho[:] = rho
+
+        # Update four-velocity from momentum density
+        self.fields.u_mu[..., 0] = 1.0  # Time component (rest frame approximation)
+        self.fields.u_mu[..., 1] = mom_dict["mom_x"] / rho_safe
+        self.fields.u_mu[..., 2] = mom_dict["mom_y"] / rho_safe
+        self.fields.u_mu[..., 3] = mom_dict["mom_z"] / rho_safe
+
+        # Update dissipative fluxes (unchanged in momentum basis)
+        self.fields.Pi[:] = mom_dict["Pi"]
+        self.fields.pi_munu[:] = mom_dict["pi_munu"]
+        self.fields.q_mu[:] = mom_dict["q_mu"]
+
+        # CRITICAL: Update pressure from equation of state after ρ changes
+        # This ensures pressure gradients are correct for sound wave propagation
+        self.fields.update_pressure_from_eos("radiation")
+
+        # Update derived quantities (includes velocity normalization)
+        self._update_derived_fields()
+
+    def _add_fields_momentum(
+        self, base_dict: dict[str, np.ndarray], add_dict: dict[str, np.ndarray], scale: float = 1.0
+    ) -> dict[str, np.ndarray]:
+        """
+        Add field dictionaries in momentum basis: result = base + scale * add.
+
+        Args:
+            base_dict: Base field dictionary in momentum basis
+            add_dict: Fields to add (scaled)
+            scale: Scaling factor for add_dict
+
+        Returns:
+            New dictionary with combined fields
+        """
+        result = {}
+        for key in base_dict:
+            if key in add_dict:
+                result[key] = base_dict[key] + scale * add_dict[key]
+            else:
+                result[key] = base_dict[key].copy()
+        return result
+
+    def _scale_fields_momentum(
+        self, field_dict: dict[str, np.ndarray], scale: float
+    ) -> dict[str, np.ndarray]:
+        """Scale all fields in momentum-basis dictionary by a constant factor."""
+        return {key: scale * field_array for key, field_array in field_dict.items()}
+
+    def _compute_explicit_rhs_momentum(self) -> dict[str, np.ndarray]:
+        """
+        Compute explicit RHS F(y) in momentum-density basis.
+
+        This is the key function that makes IMEX work with conservation laws!
+        Instead of converting ∂_t(ρu^i) → ∂_t(u^i), we just use momentum density
+        directly. self.fields already has the correct u = mom/ρ relationship.
+
+        Returns:
+            Dictionary with explicit RHS terms for all fields
+        """
+        # Initialize all fields with zeros (defensive programming)
+        explicit_rhs = {
+            "rho": np.zeros_like(self.fields.rho),
+            "mom_x": np.zeros_like(self.fields.rho),
+            "mom_y": np.zeros_like(self.fields.rho),
+            "mom_z": np.zeros_like(self.fields.rho),
+            "Pi": np.zeros_like(self.fields.Pi),
+            "pi_munu": np.zeros_like(self.fields.pi_munu),
+            "q_mu": np.zeros_like(self.fields.q_mu),
+        }
+
+        # Conservation laws: Already return ∂_t ρ and ∂_t(ρu^i) = ∂_t(mom_i)
+        # This is PERFECT for momentum basis - no conversion needed!
+        if self.conservation is not None:
+            try:
+                conservation_rhs = self.conservation.evolution_equations()
+                # Energy density evolution
+                explicit_rhs["rho"] = conservation_rhs["drho_dt"]
+                # Momentum density evolution (dmom_dt is already ∂_t(ρu^i))
+                explicit_rhs["mom_x"] = conservation_rhs["dmom_dt"][..., 0]
+                explicit_rhs["mom_y"] = conservation_rhs["dmom_dt"][..., 1]
+                explicit_rhs["mom_z"] = conservation_rhs["dmom_dt"][..., 2]
+            except Exception as e:
+                physics_logger.log_physics_fallback(
+                    "conservation_momentum_rhs", str(e), "skip_conservation"
+                )
+                # Keep zero RHS (already initialized above)
+
+        # Relaxation sources: self.fields has u = mom/ρ, so sources computed correctly
+        if self.relaxation is not None:
+            try:
+                relaxation_rhs = self._compute_relaxation_sources()
+                explicit_rhs["Pi"] = relaxation_rhs.get("Pi", np.zeros_like(self.fields.Pi))
+                explicit_rhs["pi_munu"] = relaxation_rhs.get(
+                    "pi_munu", np.zeros_like(self.fields.pi_munu)
+                )
+                explicit_rhs["q_mu"] = relaxation_rhs.get("q_mu", np.zeros_like(self.fields.q_mu))
+            except Exception as e:
+                physics_logger.log_physics_fallback(
+                    "relaxation_momentum_rhs", str(e), "skip_relaxation"
+                )
+                # Keep zero RHS (already initialized above)
+
+        return explicit_rhs
+
+    def _compute_stiff_terms_momentum(
+        self, fields: "ISFieldConfiguration"
+    ) -> dict[str, np.ndarray]:
+        """
+        Compute stiff terms G(y) in momentum-density basis.
+
+        Only dissipative fluxes have stiff linear relaxation terms.
+        Hydrodynamic variables (ρ, mom) have no stiff terms.
+
+        Args:
+            fields: Field configuration to evaluate stiff terms at
+
+        Returns:
+            Dictionary with stiff RHS terms for all fields
+        """
+        stiff_terms = {}
+
+        # Hydrodynamic fields have NO stiff terms (only explicit conservation)
+        stiff_terms["rho"] = np.zeros_like(fields.rho)
+        stiff_terms["mom_x"] = np.zeros_like(fields.rho)
+        stiff_terms["mom_y"] = np.zeros_like(fields.rho)
+        stiff_terms["mom_z"] = np.zeros_like(fields.rho)
+
+        # Dissipative fluxes have stiff linear relaxation terms
+        if self.coeffs is not None:
+            # Bulk pressure relaxation: -Π/τ_Π
+            if hasattr(self.coeffs, "bulk_relaxation_time") and self.coeffs.bulk_relaxation_time:
+                stiff_terms["Pi"] = -fields.Pi / self.coeffs.bulk_relaxation_time
+            else:
+                stiff_terms["Pi"] = np.zeros_like(fields.Pi)
+
+            # Shear stress relaxation: -π^μν/τ_π
+            if hasattr(self.coeffs, "shear_relaxation_time") and self.coeffs.shear_relaxation_time:
+                stiff_terms["pi_munu"] = -fields.pi_munu / self.coeffs.shear_relaxation_time
+            else:
+                stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
+
+            # Heat flux relaxation: -q^μ/τ_q (usually not implemented yet)
+            stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+        else:
+            stiff_terms["Pi"] = np.zeros_like(fields.Pi)
+            stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
+            stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+
+        return stiff_terms
+
+    def _solve_implicit_stage_momentum(
+        self, rhs_dict: dict[str, np.ndarray], gamma_dt: float
+    ) -> dict[str, np.ndarray]:
+        """
+        Solve implicit stage equation in momentum-density basis.
+
+        Solves: Y = rhs + γ·dt·G(Y)
+
+        where G(Y) contains only stiff linear relaxation terms:
+        - G_ρ = 0 (no stiff term)
+        - G_mom = 0 (no stiff term)
+        - G_Π = -Π/τ_Π (bulk relaxation)
+        - G_π = -π/τ_π (shear relaxation)
+        - G_q = -q/τ_q (heat flux relaxation, if implemented)
+
+        For linear relaxation, this can be solved analytically:
+        Y = rhs / (1 + γ·dt/τ)
+
+        Args:
+            rhs_dict: Right-hand side in momentum basis
+            gamma_dt: Product γ·dt from IMEX scheme
+
+        Returns:
+            Solution Y in momentum basis
+        """
+        solution = {}
+
+        # Hydrodynamic fields have no stiff terms, so Y = rhs
+        solution["rho"] = rhs_dict["rho"].copy()
+        solution["mom_x"] = rhs_dict["mom_x"].copy()
+        solution["mom_y"] = rhs_dict["mom_y"].copy()
+        solution["mom_z"] = rhs_dict["mom_z"].copy()
+
+        # Dissipative fluxes: solve Y = rhs - (γ·dt/τ)·Y analytically
+        # Rearrange: Y·(1 + γ·dt/τ) = rhs => Y = rhs / (1 + γ·dt/τ)
+        if self.coeffs is not None:
+            # Bulk pressure: Y_Π = rhs_Π / (1 + γ·dt/τ_Π)
+            if (
+                hasattr(self.coeffs, "bulk_relaxation_time")
+                and self.coeffs.bulk_relaxation_time is not None
+                and self.coeffs.bulk_relaxation_time > 0
+            ):
+                tau_Pi = self.coeffs.bulk_relaxation_time
+                solution["Pi"] = rhs_dict["Pi"] / (1.0 + gamma_dt / tau_Pi)
+            else:
+                solution["Pi"] = rhs_dict["Pi"].copy()
+
+            # Shear stress: Y_π = rhs_π / (1 + γ·dt/τ_π)
+            if (
+                hasattr(self.coeffs, "shear_relaxation_time")
+                and self.coeffs.shear_relaxation_time is not None
+                and self.coeffs.shear_relaxation_time > 0
+            ):
+                tau_pi = self.coeffs.shear_relaxation_time
+                solution["pi_munu"] = rhs_dict["pi_munu"] / (1.0 + gamma_dt / tau_pi)
+            else:
+                solution["pi_munu"] = rhs_dict["pi_munu"].copy()
+
+            # Heat flux: Y_q = rhs_q / (1 + γ·dt/τ_q) (if implemented)
+            # Currently no heat flux relaxation, so Y_q = rhs_q
+            solution["q_mu"] = rhs_dict["q_mu"].copy()
+        else:
+            # No transport coefficients: Y = rhs
+            solution["Pi"] = rhs_dict["Pi"].copy()
+            solution["pi_munu"] = rhs_dict["pi_munu"].copy()
+            solution["q_mu"] = rhs_dict["q_mu"].copy()
+
+        return solution
 
     def _rk2_conservation_step(self, evolution_rhs: dict[str, np.ndarray], dt: float) -> None:
         """

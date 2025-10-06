@@ -1307,8 +1307,9 @@ class SpectralISHydrodynamics:
                     self.fields.q_mu.shape
                 )
 
-                # Only subtract linear stiff terms in IMEX mode
-                if self._integration_mode == "spectral_imex" and self.coeffs is not None:
+                # Only subtract linear stiff terms in IMEX and split-step modes
+                # Both modes handle linear relaxation separately (IMEX: implicit solve, split-step: exponential advance)
+                if self._integration_mode in ["spectral_imex", "split_step"] and self.coeffs is not None:
                     if getattr(self.coeffs, "bulk_relaxation_time", None):
                         dPi_dt += self.fields.Pi / self.coeffs.bulk_relaxation_time
                     if getattr(self.coeffs, "shear_relaxation_time", None):

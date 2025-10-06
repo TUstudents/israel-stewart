@@ -1179,10 +1179,11 @@ class NumericalSoundWaveBenchmark:
         dispersion_matrix = self.analytical._build_dispersion_matrix(omega_complex, wave_vector)
 
         # Find nullspace eigenvector: M·v = 0 where v = [δε, δv_x, δΠ, δπ_xx]
-        # Use SVD to find the smallest singular value's eigenvector
+        # Use eigenvalue decomposition for ill-conditioned matrices (better than SVD)
         try:
-            _, s, Vh = np.linalg.svd(dispersion_matrix)
-            eigenvector = Vh[-1, :]  # Last row = eigenvector for smallest singular value
+            eigenvalues, eigenvectors = np.linalg.eig(dispersion_matrix)
+            idx_min = np.argmin(np.abs(eigenvalues))
+            eigenvector = eigenvectors[:, idx_min]  # Eigenvector for smallest eigenvalue
 
             # Normalize for sin(kx) initial condition
             # For field ∝ sin(kx) at t=0, need eigenvector to be purely imaginary
@@ -1367,10 +1368,18 @@ class NumericalSoundWaveBenchmark:
             period = 2 * np.pi / analytical_freq
             simulation_time = max(simulation_time, n_periods * period)
 
-        # Determine timestep (CFL condition)
+        # Determine timestep (CFL condition + relaxation stability)
         dx = self.grid.spatial_spacing[0]
         sound_speed = analytical_mode.sound_speed
-        dt_cfl = dt_factor * dx / max(sound_speed, 0.1)
+        dt_cfl_wave = dt_factor * dx / max(sound_speed, 0.1)
+
+        # Add relaxation time constraint for stiff explicit integration
+        # Stability requires dt << min(τ_Π, τ_π) for explicit relaxation
+        dt_cfl_relax = 0.01 * min(
+            self.transport_coeffs.bulk_relaxation_time,
+            self.transport_coeffs.shear_relaxation_time
+        )
+        dt_cfl = min(dt_cfl_wave, dt_cfl_relax)
 
         # Monitor point for time series (at antinode of wave for maximum signal)
         # For sin(kx) wave, antinode is at x = π/(2k)

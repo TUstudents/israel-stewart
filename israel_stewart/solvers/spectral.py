@@ -1122,7 +1122,7 @@ class SpectralISHydrodynamics:
 
         Args:
             dt: Time step size
-            method: Integration method ('split_step', 'spectral_imex')
+            method: Integration method ('split_step', 'spectral_imex', 'rk4')
         """
 
         self._integration_mode = method
@@ -1130,6 +1130,8 @@ class SpectralISHydrodynamics:
             self._split_step_advance(dt)
         elif method == "spectral_imex":
             self._spectral_imex_advance(dt)
+        elif method == "rk4":
+            self._rk4_coupled_advance(dt)
         else:
             raise ValueError(f"Unknown time stepping method: {method}")
 
@@ -1144,9 +1146,11 @@ class SpectralISHydrodynamics:
         if self.conservation is not None:
             self._advance_conservation_laws(dt)
 
-        # Step 3: Advance Israel-Stewart relaxation terms
+        # Step 3: Advance Israel-Stewart relaxation SOURCE terms only
+        # NOTE: Linear relaxation (-Π/τ, -π/τ) is handled by advance_linear_terms
+        # We only apply the source terms here to avoid double-counting
         if self.relaxation is not None:
-            self._advance_relaxation_terms(dt)
+            self._advance_relaxation_sources_only(dt)
 
         # Step 4: Final linear diffusive step
         self.spectral.advance_linear_terms(self.fields, dt / 2)
@@ -1457,26 +1461,31 @@ class SpectralISHydrodynamics:
         """
         Convert momentum density derivative to velocity derivative with explicit fields.
 
-        Physics: d(ρu^i)/dt = ρ·du^i/dt + u^i·dρ/dt (product rule)
-        Solving: du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
+        Physics: d(h u^i)/dt = h·du^i/dt + u^i·dh/dt (product rule)
+        Solving: du^i/dt = (1/h)[d(h u^i)/dt - u^i·dh/dt]
+        where h = ε+p = 4/3 ε for radiation fluid.
 
         Args:
-            dmom_dt: Time derivative of momentum density d(ρu^i)/dt, shape (*grid.shape, 3)
-            drho_dt: Time derivative of energy density dρ/dt, shape (*grid.shape,)
-            rho: Energy density at evaluation point, shape (*grid.shape,)
+            dmom_dt: Time derivative of momentum density d(h u^i)/dt, shape (*grid.shape, 3)
+            drho_dt: Time derivative of energy density dε/dt, shape (*grid.shape,)
+            rho: Energy density ε at evaluation point, shape (*grid.shape,)
             u_spatial: Spatial velocity at evaluation point, shape (*grid.shape, 3)
 
         Returns:
             du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
         """
-        # Avoid division by zero (use small epsilon where rho is tiny)
-        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
+        # Enthalpy for radiation fluid: h = ε + p = 4/3 ε
+        h = 4.0 / 3.0 * rho
+        dh_dt = 4.0 / 3.0 * drho_dt
 
-        # Expand drho_dt to broadcast with spatial velocity
-        drho_dt_expanded = drho_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+        # Avoid division by zero
+        h_safe = np.where(np.abs(h) > 1e-14, h, 1e-14)
 
-        # du^i/dt = (1/ρ)[d(ρu^i)/dt - u^i·dρ/dt]
-        du_dt = (1.0 / rho_safe[..., np.newaxis]) * (dmom_dt - u_spatial * drho_dt_expanded)
+        # Expand dh_dt to broadcast with spatial velocity
+        dh_dt_expanded = dh_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+
+        # du^i/dt = (1/h)[d(h u^i)/dt - u^i·dh/dt]
+        du_dt = (1.0 / h_safe[..., np.newaxis]) * (dmom_dt - u_spatial * dh_dt_expanded)
 
         return du_dt
 
@@ -1484,7 +1493,7 @@ class SpectralISHydrodynamics:
         """
         Convert ISFieldConfiguration to momentum-density basis.
 
-        Instead of evolving velocity u^i, we evolve momentum density mom_i = ρu^i.
+        Instead of evolving velocity u^i, we evolve momentum density mom_i = h u^i.
         This eliminates the need for product rule conversion and makes conservation
         laws compatible with IMEX splitting.
 
@@ -1493,12 +1502,13 @@ class SpectralISHydrodynamics:
         """
         rho = self.fields.rho
         u_spatial = self.fields.u_mu[..., 1:4]  # Spatial components (x, y, z)
+        h = 4.0 / 3.0 * rho  # Enthalpy for radiation fluid
 
         return {
             "rho": rho.copy(),
-            "mom_x": (rho * u_spatial[..., 0]).copy(),
-            "mom_y": (rho * u_spatial[..., 1]).copy(),
-            "mom_z": (rho * u_spatial[..., 2]).copy(),
+            "mom_x": (h * u_spatial[..., 0]).copy(),
+            "mom_y": (h * u_spatial[..., 1]).copy(),
+            "mom_z": (h * u_spatial[..., 2]).copy(),
             "Pi": self.fields.Pi.copy(),
             "pi_munu": self.fields.pi_munu.copy(),
             "q_mu": self.fields.q_mu.copy(),
@@ -1508,15 +1518,16 @@ class SpectralISHydrodynamics:
         """
         Update ISFieldConfiguration from momentum-density basis.
 
-        Converts momentum density mom_i back to velocity u^i = mom_i / ρ.
+        Converts momentum density mom_i back to velocity u^i = mom_i / h.
 
         Args:
             mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, Pi, pi_munu, q_mu
         """
         rho = mom_dict["rho"]
+        h = 4.0 / 3.0 * rho  # Enthalpy for radiation fluid
 
-        # Avoid division by zero (use small epsilon where rho is tiny)
-        rho_safe = np.where(np.abs(rho) > 1e-14, rho, 1e-14)
+        # Avoid division by zero
+        h_safe = np.where(np.abs(h) > 1e-14, h, 1e-14)
 
         # Update density (handle read-only arrays in tests)
         try:
@@ -1528,9 +1539,9 @@ class SpectralISHydrodynamics:
         # Update four-velocity from momentum density
         self.fields.u_mu.flags.writeable = True
         self.fields.u_mu[..., 0] = 1.0  # Time component (rest frame approximation)
-        self.fields.u_mu[..., 1] = mom_dict["mom_x"] / rho_safe
-        self.fields.u_mu[..., 2] = mom_dict["mom_y"] / rho_safe
-        self.fields.u_mu[..., 3] = mom_dict["mom_z"] / rho_safe
+        self.fields.u_mu[..., 1] = mom_dict["mom_x"] / h_safe
+        self.fields.u_mu[..., 2] = mom_dict["mom_y"] / h_safe
+        self.fields.u_mu[..., 3] = mom_dict["mom_z"] / h_safe
 
         # Update dissipative fluxes (unchanged in momentum basis)
         self.fields.Pi.flags.writeable = True
@@ -1869,6 +1880,214 @@ class SpectralISHydrodynamics:
             self.relaxation.evolve_relaxation(self.fields, dt)
         except Exception as e:
             warnings.warn(f"Relaxation evolution failed: {e}", stacklevel=2)
+
+    def _advance_relaxation_sources_only(self, dt: float) -> None:
+        """
+        Advance Israel-Stewart relaxation equations with SOURCE terms only.
+
+        Excludes linear relaxation terms (-Π/τ, -π/τ, -q/τ) which are handled
+        separately by spectral exponential integrators. This prevents double-counting
+        in split-step methods.
+        """
+        if self.relaxation is None:
+            return
+
+        try:
+            # Compute full RHS
+            rhs_flat = self.relaxation.compute_relaxation_rhs(self.fields)
+
+            # Unpack
+            Pi_size = self.fields.Pi.size
+            pi_munu_size = self.fields.pi_munu.size
+            q_mu_size = self.fields.q_mu.size
+
+            dPi_dt = rhs_flat[:Pi_size].reshape(self.fields.Pi.shape)
+            dpi_munu_dt = rhs_flat[Pi_size : Pi_size + pi_munu_size].reshape(
+                self.fields.pi_munu.shape
+            )
+            dq_mu_dt = rhs_flat[Pi_size + pi_munu_size :].reshape(self.fields.q_mu.shape)
+
+            # Remove linear relaxation terms (these are handled by advance_linear_terms)
+            if self.coeffs is not None:
+                if getattr(self.coeffs, "bulk_relaxation_time", None):
+                    dPi_dt += self.fields.Pi / self.coeffs.bulk_relaxation_time
+
+                if getattr(self.coeffs, "shear_relaxation_time", None):
+                    dpi_munu_dt += self.fields.pi_munu / self.coeffs.shear_relaxation_time
+
+                if getattr(self.coeffs, "heat_relaxation_time", None):
+                    dq_mu_dt += self.fields.q_mu / self.coeffs.heat_relaxation_time
+
+            # Apply source terms only (explicit Euler)
+            self.fields.Pi += dt * dPi_dt
+            self.fields.pi_munu += dt * dpi_munu_dt
+            self.fields.q_mu += dt * dq_mu_dt
+
+        except Exception as e:
+            warnings.warn(f"Relaxation source evolution failed: {e}", stacklevel=2)
+
+    def _compute_full_coupled_rhs(self, fields: "ISFieldConfiguration") -> dict[str, np.ndarray]:
+        """
+        Compute complete RHS for fully-coupled Israel-Stewart equations.
+
+        This method computes ALL time derivatives simultaneously without operator
+        splitting, preserving the full coupling between conservation laws and
+        relaxation equations.
+
+        Returns:
+            Dictionary with time derivatives:
+            - 'drho_dt': Energy density derivative ∂_t ρ
+            - 'du_dt': Velocity derivatives ∂_t u^i (3-vector)
+            - 'dPi_dt': Bulk pressure derivative ∂_t Π
+            - 'dpi_munu_dt': Shear stress derivative ∂_t π^{μν}
+            - 'dq_mu_dt': Heat flux derivative ∂_t q^μ
+        """
+        # 1. Conservation laws (with current dissipative fields in stress-energy tensor)
+        if self.conservation is not None:
+            conservation_rhs = self.conservation.evolution_equations()
+            drho_dt = conservation_rhs.get("drho_dt", np.zeros_like(fields.rho))
+            dmom_dt = conservation_rhs.get("dmom_dt", np.zeros((*fields.rho.shape, 3)))
+
+            # Convert momentum density derivative to velocity derivative
+            # This accounts for: d(hu^i)/dt = h·du^i/dt + u^i·dh/dt
+            du_dt = self._convert_momentum_to_velocity_derivative(dmom_dt, drho_dt)
+        else:
+            drho_dt = np.zeros_like(fields.rho)
+            du_dt = np.zeros((*fields.rho.shape, 3))
+
+        # 2. Relaxation equations (FULL RHS - no splitting!)
+        # Unlike split-step/IMEX, we include all terms: -Π/τ AND -ζθ
+        if self.relaxation is not None:
+            relaxation_rhs = self.relaxation.compute_relaxation_rhs(fields)
+
+            # Unpack flattened relaxation RHS
+            Pi_size = fields.Pi.size
+            pi_munu_size = fields.pi_munu.size
+            q_mu_size = fields.q_mu.size
+
+            dPi_dt = relaxation_rhs[:Pi_size].reshape(fields.Pi.shape)
+            dpi_munu_dt = relaxation_rhs[Pi_size : Pi_size + pi_munu_size].reshape(
+                fields.pi_munu.shape
+            )
+            dq_mu_dt = relaxation_rhs[
+                Pi_size + pi_munu_size : Pi_size + pi_munu_size + q_mu_size
+            ].reshape(fields.q_mu.shape)
+        else:
+            dPi_dt = np.zeros_like(fields.Pi)
+            dpi_munu_dt = np.zeros_like(fields.pi_munu)
+            dq_mu_dt = np.zeros_like(fields.q_mu)
+
+        # NOTE: NO removal of linear terms here!
+        # For fully-coupled RK4, we want the complete RHS including -Π/τ, -π/τ
+        # Operator splitting corrections are NOT needed
+
+        return {
+            "drho_dt": drho_dt,
+            "du_dt": du_dt,
+            "dPi_dt": dPi_dt,
+            "dpi_munu_dt": dpi_munu_dt,
+            "dq_mu_dt": dq_mu_dt,
+        }
+
+    def _update_fields_from_rhs(
+        self,
+        rho_0: np.ndarray,
+        u_mu_0: np.ndarray,
+        Pi_0: np.ndarray,
+        pi_munu_0: np.ndarray,
+        q_mu_0: np.ndarray,
+        rhs: dict[str, np.ndarray],
+        dt: float,
+    ) -> None:
+        """
+        Update fields for RK4 intermediate stages.
+
+        Args:
+            rho_0: Initial energy density
+            u_mu_0: Initial four-velocity
+            Pi_0: Initial bulk pressure
+            pi_munu_0: Initial shear stress
+            q_mu_0: Initial heat flux
+            rhs: Dictionary of time derivatives
+            dt: Time step for this stage
+        """
+        self.fields.rho[:] = rho_0 + dt * rhs["drho_dt"]
+        self.fields.u_mu[..., 1:4] = u_mu_0[..., 1:4] + dt * rhs["du_dt"]
+        self.fields.Pi[:] = Pi_0 + dt * rhs["dPi_dt"]
+        self.fields.pi_munu[:] = pi_munu_0 + dt * rhs["dpi_munu_dt"]
+        self.fields.q_mu[:] = q_mu_0 + dt * rhs["dq_mu_dt"]
+
+        # Update pressure from equation of state
+        self.fields.update_pressure_from_eos("radiation")
+
+        # CRITICAL: Update u^0 to maintain four-velocity normalization
+        self.fields.normalize_four_velocity()
+
+    def _rk4_coupled_advance(self, dt: float) -> None:
+        """
+        4th-order Runge-Kutta for fully-coupled Israel-Stewart equations.
+
+        No operator splitting - all fields (ρ, u^i, Π, π^{μν}, q^μ) evolved together
+        as a coupled system. This preserves the full physics coupling and eliminates
+        operator splitting errors.
+
+        RK4 stages:
+            k1 = F(y_n)
+            k2 = F(y_n + dt/2 * k1)
+            k3 = F(y_n + dt/2 * k2)
+            k4 = F(y_n + dt * k3)
+            y_{n+1} = y_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+
+        This is O(dt⁴) accurate vs O(dt²) for split-step methods.
+        """
+        # Save initial state
+        rho_0 = self.fields.rho.copy()
+        u_mu_0 = self.fields.u_mu.copy()
+        Pi_0 = self.fields.Pi.copy()
+        pi_munu_0 = self.fields.pi_munu.copy()
+        q_mu_0 = self.fields.q_mu.copy()
+
+        # Stage 1: k1 = F(y_n)
+        k1 = self._compute_full_coupled_rhs(self.fields)
+
+        # Stage 2: k2 = F(y_n + dt/2 * k1)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k1, dt / 2)
+        k2 = self._compute_full_coupled_rhs(self.fields)
+
+        # Stage 3: k3 = F(y_n + dt/2 * k2)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k2, dt / 2)
+        k3 = self._compute_full_coupled_rhs(self.fields)
+
+        # Stage 4: k4 = F(y_n + dt * k3)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k3, dt)
+        k4 = self._compute_full_coupled_rhs(self.fields)
+
+        # Final update: y_{n+1} = y_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+        self.fields.rho[:] = rho_0 + (dt / 6) * (
+            k1["drho_dt"] + 2 * k2["drho_dt"] + 2 * k3["drho_dt"] + k4["drho_dt"]
+        )
+
+        u_update = (dt / 6) * (k1["du_dt"] + 2 * k2["du_dt"] + 2 * k3["du_dt"] + k4["du_dt"])
+        self.fields.u_mu[..., 1:4] = u_mu_0[..., 1:4] + u_update
+
+        self.fields.Pi[:] = Pi_0 + (dt / 6) * (
+            k1["dPi_dt"] + 2 * k2["dPi_dt"] + 2 * k3["dPi_dt"] + k4["dPi_dt"]
+        )
+
+        self.fields.pi_munu[:] = pi_munu_0 + (dt / 6) * (
+            k1["dpi_munu_dt"]
+            + 2 * k2["dpi_munu_dt"]
+            + 2 * k3["dpi_munu_dt"]
+            + k4["dpi_munu_dt"]
+        )
+
+        self.fields.q_mu[:] = q_mu_0 + (dt / 6) * (
+            k1["dq_mu_dt"] + 2 * k2["dq_mu_dt"] + 2 * k3["dq_mu_dt"] + k4["dq_mu_dt"]
+        )
+
+        # Update pressure and derived fields
+        self.fields.update_pressure_from_eos("radiation")
+        self._update_derived_fields()
 
     def _compute_expansion_scalar(self) -> np.ndarray:
         """

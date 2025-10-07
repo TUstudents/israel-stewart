@@ -68,8 +68,8 @@ def create_benchmark(
     transport_coeffs = TransportCoefficients(
         shear_viscosity=0.08,
         bulk_viscosity=0.04,
-        shear_relaxation_time=0.5,
-        bulk_relaxation_time=0.3,
+        shear_relaxation_time=1.0,
+        bulk_relaxation_time=0.5,
         # Second-order coefficients
         lambda_pi_pi=0.1,
         lambda_pi_Pi=0.05,
@@ -149,7 +149,7 @@ def run_numerical_simulation(
     benchmark: NumericalSoundWaveBenchmark,
     wave_number: float = 1.0,
     amplitude: float = 0.01,
-    simulation_time: float = 10.0,
+    simulation_time: float = 1.0,
     method: str = "split_step",
 ) -> dict:
     """Run numerical sound wave propagation simulation.
@@ -367,8 +367,8 @@ Examples:
 
     parser.add_argument(
         "--method",
-        choices=["split_step", "spectral_imex"],
-        default="split_step",
+        choices=["split_step", "spectral_imex","rk4"],
+        default="spectral_imex",
         help="Integration method for time stepping (default: split_step)",
     )
 

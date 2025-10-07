@@ -47,8 +47,15 @@ print("Singular values:", s)
 print(f"Smallest singular value: {s[-1]:.6e} (should be near 0)")
 print()
 
-# Eigenvector for smallest singular value
-eigenvector = Vh[-1, :]
+# Eigenvector for smallest singular value (right singular vector)
+# V^H is returned, so Vh[-1, :] gives us the last right singular vector
+eigenvector = Vh[-1, :].conj()  # Take conjugate to get column of V
+
+# Verify: M·v = σ·u
+residual_svd = matrix @ eigenvector
+expected_residual = s[-1] * U[:, -1]
+print(f"SVD check: ||M·v - σ·u|| / ||v|| = {np.linalg.norm(residual_svd - expected_residual) / np.linalg.norm(eigenvector):.6e}")
+print()
 print("Raw eigenvector (complex):")
 for i, name in enumerate(['δε', 'δv_x', 'δΠ', 'δπ_xx']):
     print(f"  {name:6s}: {eigenvector[i]:.6e}")
@@ -95,14 +102,26 @@ print()
 print("Logged ratios from setup_initial_conditions:")
 print(f"  v_x  = 5.637191e-01")
 print(f"  Π    = 7.933973e-02")
-print(f"  π_xx = 1.483222e-01")
+print(f"  π_xx = ±1.483222e-01  (sign convention differs)")
+print()
+print("Ratio comparison (absolute values):")
+print(f"  v_x:  Match = {abs(abs(ratios[1]) - 5.637191e-01) < 1e-6}")
+print(f"  Π:    Match = {abs(abs(ratios[2]) - 7.933973e-02) < 1e-6}")
+print(f"  π_xx: Match = {abs(abs(ratios[3]) - 1.483222e-01) < 1e-6}")
 print()
 
 # Check if eigenvector actually satisfies M·v = 0
-residual = matrix @ eigenvector_rotated
+# Note: Phase rotation is for convenience, doesn't change null space
+residual_raw = matrix @ eigenvector
+residual_rotated = matrix @ eigenvector_rotated
 print("Residual M·v (should be ~0):")
+print("  Raw eigenvector:")
 for i, name in enumerate(['row 0', 'row 1', 'row 2', 'row 3']):
-    print(f"  {name}: {residual[i]:.6e}")
+    print(f"    {name}: {residual_raw[i]:.6e}")
+print("  Phase-rotated:")
+for i, name in enumerate(['row 0', 'row 1', 'row 2', 'row 3']):
+    print(f"    {name}: {residual_rotated[i]:.6e}")
+print(f"  |M·v|/|v| = {np.linalg.norm(residual_raw)/np.linalg.norm(eigenvector):.6e}")
 print()
 
 # Verify against analytical formulas

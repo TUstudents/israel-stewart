@@ -67,7 +67,7 @@ class ConservationLaws:
     def stress_energy_tensor(self) -> np.ndarray:
         """
         Construct T^μν including all Israel-Stewart corrections:
-        T^μν = ρu^μu^ν + (p+Π)Δ^μν + π^μν + q^μu^ν + q^νu^μ
+        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν + π^μν + q^μu^ν + q^νu^μ
 
         Returns:
             Stress-energy tensor with shape (*grid.shape, 4, 4)
@@ -75,19 +75,21 @@ class ConservationLaws:
         f = self.fields
         grid_shape = f.grid.shape
 
-        # Initialize total stress-energy tensor
-        T_total = np.zeros((*grid_shape, 4, 4))
+        # Get metric tensor g^μν (inverse metric)
+        g_inv = self.metric.inverse
+        if g_inv.ndim == 2:
+            g_inv = np.broadcast_to(g_inv, (*grid_shape, 4, 4))
 
-        # Perfect fluid part: ρu^μu^ν
-        T_perfect = optimized_einsum("...,...i,...j->...ij", f.rho, f.u_mu, f.u_mu)
+        # Standard perfect fluid tensor: T_pf^μν = (ε+p)u^μu^ν + p g^μν
+        enthalpy = f.rho + f.pressure
+        u_outer = optimized_einsum("...,...i,...j->...ij", enthalpy, f.u_mu, f.u_mu)
+        p_metric = optimized_einsum("...,...ij->...ij", f.pressure, g_inv)
+        T_perfect = u_outer + p_metric
 
-        # Pressure term with projector Δ^μν = g^μν + u^μu^ν/c²
+        # Viscous corrections
         Delta = self._spatial_projector()
-        pressure_total = f.pressure + f.Pi  # p + bulk viscosity Π
-        T_pressure = optimized_einsum("...,...ij->...ij", pressure_total, Delta)
-
-        # Shear stress contribution π^μν
-        T_shear = f.pi_munu.copy()
+        T_bulk = optimized_einsum("...,...ij->...ij", f.Pi, Delta)  # Π Δ^μν
+        T_shear = f.pi_munu.copy()  # π^μν
 
         # Heat flux contribution: q^μu^ν + q^νu^μ (symmetric)
         T_heat_1 = optimized_einsum("...i,...j->...ij", f.q_mu, f.u_mu)
@@ -95,8 +97,7 @@ class ConservationLaws:
         T_heat = T_heat_1 + T_heat_2
 
         # Combine all contributions
-        T_total = T_perfect + T_pressure + T_shear + T_heat
-
+        T_total = T_perfect + T_bulk + T_shear + T_heat
         result: np.ndarray = T_total
         return result
 

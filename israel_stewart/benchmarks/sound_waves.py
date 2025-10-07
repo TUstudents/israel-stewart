@@ -183,6 +183,7 @@ class SoundWaveAnalysis:
         # Use robust root finding to solve det(M) = 0
         try:
             complex_roots = self._find_dispersion_roots(k_magnitude)
+            print(f"Complex roots for k={k_magnitude}: {complex_roots}")
 
             wave_modes = []
             for omega_complex in complex_roots:
@@ -418,7 +419,7 @@ class SoundWaveAnalysis:
         matrix[1, 0] = 1j * k * cs_squared  # δε coefficient
         matrix[1, 1] = -1j * omega * enthalpy  # δv_x coefficient
         matrix[1, 2] = 1j * k  # δΠ coefficient
-        matrix[1, 3] = 1j * k  # δπ_xx coefficient
+        matrix[1, 3] = -1j * k  # δπ_xx coefficient
 
         # Row 2: Bulk pressure relaxation equation
         # (1 - iωτ_Π)·δΠ + iζk·δv_x = 0
@@ -426,8 +427,8 @@ class SoundWaveAnalysis:
         matrix[2, 2] = 1.0 - 1j * omega * tau_Pi  # δΠ coefficient
 
         # Row 3: Shear stress relaxation equation
-        # (1 - iωτ_π)·δπ_xx + i·(4/3)ηk·δv_x = 0
-        matrix[3, 1] = 1j * (4.0 / 3.0) * eta * k  # δv_x coefficient
+        # (1 - iωτ_π)·δπ_xx - i·(4/3)ηk·δv_x = 0
+        matrix[3, 1] = -1j * (4.0 / 3.0) * eta * k  # δv_x coefficient
         matrix[3, 3] = 1.0 - 1j * omega * tau_pi  # δπ_xx coefficient
 
         return matrix
@@ -1179,11 +1180,12 @@ class NumericalSoundWaveBenchmark:
         dispersion_matrix = self.analytical._build_dispersion_matrix(omega_complex, wave_vector)
 
         # Find nullspace eigenvector: M·v = 0 where v = [δε, δv_x, δΠ, δπ_xx]
-        # Use eigenvalue decomposition for ill-conditioned matrices (better than SVD)
+        # Use SVD for numerical stability with nearly-singular matrices
         try:
-            eigenvalues, eigenvectors = np.linalg.eig(dispersion_matrix)
-            idx_min = np.argmin(np.abs(eigenvalues))
-            eigenvector = eigenvectors[:, idx_min]  # Eigenvector for smallest eigenvalue
+            U, s, Vh = np.linalg.svd(dispersion_matrix)
+            # SVD gives M = U @ diag(s) @ Vh, where Vh is V^H (conjugate transpose)
+            # Right singular vectors are columns of V, so we need Vh[-1, :].conj()
+            eigenvector = Vh[-1, :].conj()  # Eigenvector for smallest singular value
 
             # Normalize for sin(kx) initial condition
             # For field ∝ sin(kx) at t=0, need eigenvector to be purely imaginary
@@ -1219,7 +1221,10 @@ class NumericalSoundWaveBenchmark:
 
             logger = get_logger(__name__)
             logger.info(
-                f"Eigenmode ratios: v_x={v_x_ratio:.6e}, Π={Pi_ratio:.6e}, π_xx={pi_xx_ratio:.6e}"
+                f"Complex eigenmode ratios (v_x, Π, π_xx):\n"
+                f"v_x: {v_x_ratio:.3e}\n"
+                f"Π:   {Pi_ratio:.3e}\n"
+                f"π_xx: {pi_xx_ratio:.3e}"
             )
 
         except Exception as e:

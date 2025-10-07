@@ -207,7 +207,10 @@ class ISRelaxationEquations:
         )
 
         # First-order source: -zeta*theta
-        first_order = -self.coeffs.bulk_viscosity * theta
+        if self.coeffs.bulk_relaxation_time and self.coeffs.bulk_relaxation_time > 0:
+            first_order = -self.coeffs.bulk_viscosity * theta / self.coeffs.bulk_relaxation_time
+        else:
+            first_order = np.zeros_like(Pi)
 
         # Second-order nonlinear terms
         nonlinear = np.zeros_like(Pi)
@@ -252,7 +255,10 @@ class ISRelaxationEquations:
         )
 
         # First-order source: 2*eta*sigma^munu
-        first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu
+        if self.coeffs.shear_relaxation_time and self.coeffs.shear_relaxation_time > 0:
+            first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu / self.coeffs.shear_relaxation_time
+        else:
+            first_order = np.zeros_like(pi_munu)
 
         # Second-order terms
         nonlinear = np.zeros_like(pi_munu)

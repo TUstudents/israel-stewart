@@ -135,6 +135,7 @@ hydro.evolve(
 - Python 3.12+, ruff (linting/formatting), CC-BY-NC-SA-4.0 license
 - **Greek letters in docs**: Use UTF-8 (π, μ, ν, θ, ∇) not ASCII
 - **Logging**: `from israel_stewart.utils import get_logger`
+- **Shebang convention**: Use `#!/usr/bin/env -S uv run python` for executable run scripts (e.g., `run_*.py`). Do NOT use shebangs in verification/diagnostic scripts - run them explicitly with `uv run python script.py`
 - Israel-Stewart second-order viscous hydrodynamics, general covariance in curved spacetime
 
 ### SpaceGrid vs SpacetimeGrid

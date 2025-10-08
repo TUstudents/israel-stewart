@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if T^xx is computed correctly according to the eigenmode.
 
@@ -12,6 +11,7 @@ The Fourier mode k=8 should match the analytical prediction from the eigenmode.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -26,17 +26,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("T^xx VALUE CHECK")
-print("="*80)
+print("=" * 80)
 print()
 
 # Compute stress tensor
@@ -56,7 +54,7 @@ T_xx = T[..., 1, 1]
 # Manual computation
 T_xx_manual = h * v_x**2 + p + Pi + pi_xx
 
-print(f"At grid point (8, 0, 0):")
+print("At grid point (8, 0, 0):")
 print(f"  h·v_x²: {(h * v_x**2)[8, 0, 0]:.6e}  (kinetic, O(v²))")
 print(f"  p:      {p[8, 0, 0]:.6e}  (pressure)")
 print(f"  Π:      {Pi[8, 0, 0]:.6e}  (bulk)")
@@ -105,7 +103,7 @@ v_k = v_fft[k_idx, 0, 0]
 Pi_k = Pi_fft[k_idx, 0, 0]
 pi_k = pi_xx_fft[k_idx, 0, 0]
 
-print(f"Initial Fourier coefficients:")
+print("Initial Fourier coefficients:")
 print(f"  ρ_k:   {rho_k}")
 print(f"  v_k:   {v_k}")
 print(f"  Π_k:   {Pi_k}")
@@ -122,7 +120,7 @@ p_k = rho_k / 3.0
 
 T_xx_k_linear = p_k + Pi_k + pi_k
 
-print(f"Analytical prediction (linear theory):")
+print("Analytical prediction (linear theory):")
 print(f"  δp(k) = δρ(k)/3:  {p_k}")
 print(f"  δΠ(k):            {Pi_k}")
 print(f"  δπ_xx(k):         {pi_k}")
@@ -140,4 +138,4 @@ else:
     print(f"✗ T^xx(k) is WRONG by {error:.2f}%")
 
 print()
-print("="*80)
+print("=" * 80)

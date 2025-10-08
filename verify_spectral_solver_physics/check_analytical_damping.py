@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Check if the analytical damping prediction is actually correct for the given parameters.
 """
@@ -18,7 +17,7 @@ from israel_stewart.core.spacegrid import SpaceGrid
 # Create grid
 grid = SpaceGrid(
     coordinate_system="cartesian",
-    spatial_ranges=[(0.0, 2*np.pi)] * 3,
+    spatial_ranges=[(0.0, 2 * np.pi)] * 3,
     grid_points=(32, 32, 16),
     boundary_conditions="periodic",
 )
@@ -78,7 +77,11 @@ if modes:
     # For our case: ε₀ = 1, p₀ = 1/3, so ε₀ + p₀ = 4/3
 
     enthalpy = 4.0 / 3.0
-    gamma_NS = (transport_coeffs.bulk_viscosity + 4*transport_coeffs.shear_viscosity/3) * wave_number**2 / enthalpy
+    gamma_NS = (
+        (transport_coeffs.bulk_viscosity + 4 * transport_coeffs.shear_viscosity / 3)
+        * wave_number**2
+        / enthalpy
+    )
 
     print(f"Navier-Stokes damping (τ → 0): γ_NS = {gamma_NS:.6f}")
     print(f"Israel-Stewart damping:         γ_IS = {mode.attenuation:.6f}")
@@ -105,8 +108,8 @@ if modes:
 
     print("To compare with simulation:")
     print("  Run sound wave benchmark and measure amplitude ratio A(t)/A(0)")
-    print(f"  Current damping error: ~21% (dispersion matrix signs fixed)")
-    print(f"  Remaining issue: Eigenmode structure degradation during evolution")
+    print("  Current damping error: ~21% (dispersion matrix signs fixed)")
+    print("  Remaining issue: Eigenmode structure degradation during evolution")
 
 else:
     print("❌ Could not find analytical mode!")

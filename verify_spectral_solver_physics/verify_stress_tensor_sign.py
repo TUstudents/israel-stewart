@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Verify the sign of shear stress π^μν in the stress-energy tensor.
 

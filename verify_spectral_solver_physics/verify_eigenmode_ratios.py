@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Verify that the eigenmode ratios are correct by solving the dispersion matrix."""
 
 import numpy as np

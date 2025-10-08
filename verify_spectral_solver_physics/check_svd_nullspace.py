@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if the SVD eigenvector is actually a null vector of the dispersion matrix.
 
@@ -10,6 +9,7 @@ then M·v ≠ 0, and the initialized fields are not an exact eigenmode.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -27,9 +27,7 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 # Get analytical eigenmode
@@ -38,9 +36,9 @@ modes = benchmark.analytical.analyze_dispersion_relation(wave_vector)
 mode = modes[0]
 omega = complex(mode.frequency, -mode.attenuation)
 
-print("="*80)
+print("=" * 80)
 print("SVD NULLSPACE CHECK")
-print("="*80)
+print("=" * 80)
 print()
 print(f"Testing k={k}, ω={omega}")
 print()
@@ -101,9 +99,9 @@ for i in range(4):
     print(f"  Equation {i}: {rel_residual*100:.2f}% (abs residual: {abs(residual[i]):.2e})")
 
 print()
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 print("If M·v is very small (< 1e-12):")
 print("  - Eigenvector is accurate nullspace vector")
@@ -114,4 +112,4 @@ print("  - Dispersion matrix has numerical errors")
 print("  - OR: discretization doesn't exactly match analytical theory")
 print("  - Fields will drift immediately upon evolution")
 print()
-print("="*80)
+print("=" * 80)

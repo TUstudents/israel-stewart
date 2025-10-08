@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Test eigenmode preservation with different timesteps to verify convergence.
 
@@ -7,6 +6,7 @@ decrease as O(dt^4) for RK4.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -25,9 +25,9 @@ coeffs = TransportCoefficients(
 k = 8.0
 t_final = 0.1  # Short time for convergence test
 
-print("="*80)
+print("=" * 80)
 print("EIGENMODE CONVERGENCE TEST")
-print("="*80)
+print("=" * 80)
 print()
 print(f"Testing eigenmode preservation with k={k}, t_final={t_final}")
 print()
@@ -40,9 +40,7 @@ results = []
 for dt in timesteps:
     # Create fresh benchmark
     benchmark = NumericalSoundWaveBenchmark(
-        domain_size=2*np.pi,
-        grid_points=(32, 32, 16),
-        transport_coeffs=coeffs
+        domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
     )
     benchmark.setup_initial_conditions(wave_number=k)
 
@@ -73,13 +71,15 @@ for dt in timesteps:
     # Compute error
     error = abs(v_ratio - v_ratio_0) / abs(v_ratio_0)
 
-    results.append({
-        'dt': dt,
-        'n_steps': n_steps,
-        'v_ratio_0': v_ratio_0,
-        'v_ratio_final': v_ratio,
-        'error': error
-    })
+    results.append(
+        {
+            "dt": dt,
+            "n_steps": n_steps,
+            "v_ratio_0": v_ratio_0,
+            "v_ratio_final": v_ratio,
+            "error": error,
+        }
+    )
 
     print(f"dt = {dt:.4f}, n_steps = {n_steps:3d}:")
     print(f"  Initial: v/ρ = {v_ratio_0}")
@@ -87,18 +87,18 @@ for dt in timesteps:
     print(f"  Error: {error*100:.4f}%")
     print()
 
-print("="*80)
+print("=" * 80)
 print("CONVERGENCE ANALYSIS")
-print("="*80)
+print("=" * 80)
 print()
 
 # Check convergence rate
 if len(results) >= 2:
-    for i in range(len(results)-1):
-        dt1 = results[i]['dt']
-        dt2 = results[i+1]['dt']
-        err1 = results[i]['error']
-        err2 = results[i+1]['error']
+    for i in range(len(results) - 1):
+        dt1 = results[i]["dt"]
+        dt2 = results[i + 1]["dt"]
+        err1 = results[i]["error"]
+        err2 = results[i + 1]["error"]
 
         if err1 > 1e-14 and err2 > 1e-14:
             ratio = dt1 / dt2
@@ -107,20 +107,22 @@ if len(results) >= 2:
 
             print(f"dt: {dt1:.4f} → {dt2:.4f}  (factor of {ratio:.1f})")
             print(f"  Error: {err1*100:.4e}% → {err2*100:.4e}%")
-            print(f"  Reduction: {actual_reduction:.2f}× (expected {expected_reduction:.2f}× for RK4)")
+            print(
+                f"  Reduction: {actual_reduction:.2f}× (expected {expected_reduction:.2f}× for RK4)"
+            )
 
             if abs(actual_reduction - expected_reduction) / expected_reduction < 0.5:
-                print(f"  ✓ Consistent with O(dt^4) convergence")
+                print("  ✓ Consistent with O(dt^4) convergence")
             else:
-                print(f"  ⚠ Does not match O(dt^4)")
+                print("  ⚠ Does not match O(dt^4)")
             print()
 
-print("="*80)
+print("=" * 80)
 print("CONCLUSION")
-print("="*80)
+print("=" * 80)
 print()
 
-final_error = results[-1]['error'] * 100
+final_error = results[-1]["error"] * 100
 
 if final_error < 0.1:
     print(f"✓ EXCELLENT: Error = {final_error:.4f}% at dt={results[-1]['dt']}")
@@ -138,4 +140,4 @@ else:
     print("  Significant drift persists")
 
 print()
-print("="*80)
+print("=" * 80)

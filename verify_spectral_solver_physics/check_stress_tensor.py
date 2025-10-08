@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if stress-energy tensor is computed correctly for momentum conservation.
 
@@ -15,6 +14,7 @@ This script checks if the conservation equations use the correct momentum densit
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -31,17 +31,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("STRESS-ENERGY TENSOR CHECK")
-print("="*80)
+print("=" * 80)
 print()
 
 # Compute stress-energy tensor
@@ -67,7 +65,7 @@ pi_xx = benchmark.fields.pi_munu[k_idx, 0, 0, 1, 1]
 
 h = rho + p  # Enthalpy
 
-print(f"Field values:")
+print("Field values:")
 print(f"  ρ  = {rho:.6e}")
 print(f"  p  = {p:.6e}")
 print(f"  h  = {h:.6e}")
@@ -80,7 +78,7 @@ print()
 # In rest frame: T^0x = (ε+p)·u^0·u^x ≈ h·v_x (since u^0 ≈ 1, u^x ≈ v_x)
 T_0x_perfect = h * v_x
 
-print(f"T^0x components:")
+print("T^0x components:")
 print(f"  Perfect fluid (h·v_x): {T_0x_perfect:.6e}")
 print(f"  Actual T^0x:           {T_0x:.6e}")
 print(f"  Match: {np.allclose(T_0x, T_0x_perfect, rtol=1e-6)}")
@@ -90,7 +88,7 @@ print()
 T_xx_perfect = p  # In rest frame, spatial part of T^μν is p·g^ij
 T_xx_with_diss = T_xx_perfect + Pi + pi_xx
 
-print(f"T^xx components:")
+print("T^xx components:")
 print(f"  Perfect fluid (p):       {T_xx_perfect:.6e}")
 print(f"  + Bulk (Π):              {Pi:.6e}")
 print(f"  + Shear (π_xx):          {pi_xx:.6e}")
@@ -100,9 +98,9 @@ print(f"  Match: {np.allclose(T_xx, T_xx_with_diss, rtol=1e-6)}")
 print()
 
 # Now check the divergence
-print("="*80)
+print("=" * 80)
 print("MOMENTUM CONSERVATION")
-print("="*80)
+print("=" * 80)
 print()
 
 # The conservation equation is:
@@ -148,14 +146,16 @@ v_k = v_fft[k_idx_fft, 0, 0]
 h_0 = 4.0 / 3.0
 d_T0x_dt_analytical = h_0 * (-1j * omega * v_k)
 
-print(f"Analytical expectation:")
+print("Analytical expectation:")
 print(f"  ∂_t(T^0x)(k) = h₀·(-iω·v_k) = {d_T0x_dt_analytical}")
 print()
 
-print(f"Comparison:")
+print("Comparison:")
 print(f"  From ∇·T:     {-div_T_x_k}")
 print(f"  Analytical:   {d_T0x_dt_analytical}")
-print(f"  Ratio:        {-div_T_x_k / d_T0x_dt_analytical if abs(d_T0x_dt_analytical) > 1e-14 else 'N/A'}")
+print(
+    f"  Ratio:        {-div_T_x_k / d_T0x_dt_analytical if abs(d_T0x_dt_analytical) > 1e-14 else 'N/A'}"
+)
 print()
 
 if np.allclose(-div_T_x_k, d_T0x_dt_analytical, rtol=0.01):
@@ -165,4 +165,4 @@ else:
     print(f"✗ Conservation equation is WRONG by {error:.2f}%")
 
 print()
-print("="*80)
+print("=" * 80)

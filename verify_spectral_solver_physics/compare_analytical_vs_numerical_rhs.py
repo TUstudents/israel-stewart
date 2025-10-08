@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Compare analytical RHS (from dispersion matrix) vs numerical RHS (from solver).
 
@@ -11,6 +10,7 @@ If they don't match, we can see which component is wrong and diagnose the issue.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -27,17 +27,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("ANALYTICAL VS NUMERICAL RHS COMPARISON")
-print("="*80)
+print("=" * 80)
 print()
 
 # Get analytical eigenmode
@@ -108,39 +106,47 @@ dv_dt_numerical = dv_dt_numerical_fft[k_idx, 0, 0]
 dPi_dt_numerical = dPi_dt_numerical_fft[k_idx, 0, 0]
 dpi_dt_numerical = dpi_dt_numerical_fft[k_idx, 0, 0]
 
-print("="*80)
+print("=" * 80)
 print("RHS COMPARISON AT k=8")
-print("="*80)
+print("=" * 80)
 print()
 
 print("dρ/dt:")
 print(f"  Analytical: {drho_dt_analytical}")
 print(f"  Numerical:  {drho_dt_numerical}")
-print(f"  Ratio:      {drho_dt_numerical / drho_dt_analytical if abs(drho_dt_analytical) > 1e-14 else 'N/A'}")
+print(
+    f"  Ratio:      {drho_dt_numerical / drho_dt_analytical if abs(drho_dt_analytical) > 1e-14 else 'N/A'}"
+)
 print()
 
 print("dv_x/dt:")
 print(f"  Analytical: {dv_dt_analytical}")
 print(f"  Numerical:  {dv_dt_numerical}")
-print(f"  Ratio:      {dv_dt_numerical / dv_dt_analytical if abs(dv_dt_analytical) > 1e-14 else 'N/A'}")
+print(
+    f"  Ratio:      {dv_dt_numerical / dv_dt_analytical if abs(dv_dt_analytical) > 1e-14 else 'N/A'}"
+)
 print()
 
 print("dΠ/dt:")
 print(f"  Analytical: {dPi_dt_analytical}")
 print(f"  Numerical:  {dPi_dt_numerical}")
-print(f"  Ratio:      {dPi_dt_numerical / dPi_dt_analytical if abs(dPi_dt_analytical) > 1e-14 else 'N/A'}")
+print(
+    f"  Ratio:      {dPi_dt_numerical / dPi_dt_analytical if abs(dPi_dt_analytical) > 1e-14 else 'N/A'}"
+)
 print()
 
 print("dπ_xx/dt:")
 print(f"  Analytical: {dpi_dt_analytical}")
 print(f"  Numerical:  {dpi_dt_numerical}")
-print(f"  Ratio:      {dpi_dt_numerical / dpi_dt_analytical if abs(dpi_dt_analytical) > 1e-14 else 'N/A'}")
+print(
+    f"  Ratio:      {dpi_dt_numerical / dpi_dt_analytical if abs(dpi_dt_analytical) > 1e-14 else 'N/A'}"
+)
 print()
 
 # Check if ratios match
-print("="*80)
+print("=" * 80)
 print("RATIO ANALYSIS")
-print("="*80)
+print("=" * 80)
 print()
 
 # If eigenmode is preserved, all d(φ)/dt should have same ratio to φ
@@ -161,10 +167,10 @@ print()
 
 # Check consistency
 ratios_match = (
-    np.allclose(ratio_rho, -1j * omega, rtol=0.01) and
-    np.allclose(ratio_v, -1j * omega, rtol=0.01) and
-    np.allclose(ratio_Pi, -1j * omega, rtol=0.01) and
-    np.allclose(ratio_pi, -1j * omega, rtol=0.01)
+    np.allclose(ratio_rho, -1j * omega, rtol=0.01)
+    and np.allclose(ratio_v, -1j * omega, rtol=0.01)
+    and np.allclose(ratio_Pi, -1j * omega, rtol=0.01)
+    and np.allclose(ratio_pi, -1j * omega, rtol=0.01)
 )
 
 if ratios_match:
@@ -181,4 +187,4 @@ else:
     print(f"  π:  {abs((ratio_pi - (-1j * omega)) / (-1j * omega)) * 100:.2f}%")
 
 print()
-print("="*80)
+print("=" * 80)

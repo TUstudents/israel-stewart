@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Trace how momentum evolves to verify dissipative terms contribute correctly.
 

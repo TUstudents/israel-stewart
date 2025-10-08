@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Track how eigenmode ratios drift during evolution.
 
@@ -6,6 +5,7 @@ For a perfect eigenmode, the ratios (v/ρ, Π/ρ, π/ρ) should remain constant.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -23,9 +23,7 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 benchmark.setup_initial_conditions(wave_number=k)
 
@@ -35,9 +33,9 @@ modes = benchmark.analytical.analyze_dispersion_relation(wave_vector)
 mode = modes[0]
 omega = complex(mode.frequency, -mode.attenuation)
 
-print("="*80)
+print("=" * 80)
 print("EIGENMODE STRUCTURE PRESERVATION")
-print("="*80)
+print("=" * 80)
 print()
 print(f"Testing k={k}, ω={omega}")
 print()
@@ -72,9 +70,7 @@ for t in times:
     # Evolve to time t
     n_steps = int(t / dt)
     benchmark = NumericalSoundWaveBenchmark(
-        domain_size=2*np.pi,
-        grid_points=(32, 32, 16),
-        transport_coeffs=coeffs
+        domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
     )
     benchmark.setup_initial_conditions(wave_number=k)
 
@@ -113,18 +109,18 @@ for t in times:
     Pi_decay_error = abs(Pi_k - expected_Pi) / abs(expected_Pi) * 100
     pi_decay_error = abs(pi_k - expected_pi) / abs(expected_pi) * 100
 
-    print(f"  Individual field decay errors:")
+    print("  Individual field decay errors:")
     print(f"    ρ:  {rho_decay_error:.2f}%")
     print(f"    v:  {v_decay_error:.2f}%")
     print(f"    Π:  {Pi_decay_error:.2f}%")
     print(f"    π:  {pi_decay_error:.2f}%")
     print()
-    print("-"*80)
+    print("-" * 80)
     print()
 
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 print("If eigenmode structure is preserved:")
 print("  - Ratios should remain constant (errors < 1%)")
@@ -135,4 +131,4 @@ print("  - Ratios change over time")
 print("  - Individual fields don't follow exp(-iωt)")
 print("  - This causes RHS to become inaccurate")
 print()
-print("="*80)
+print("=" * 80)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if RHS remains correct throughout evolution.
 
@@ -6,6 +5,7 @@ The RHS was verified to be correct at t=0, but what about at later times?
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -23,9 +23,7 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 benchmark.setup_initial_conditions(wave_number=k)
 
@@ -35,9 +33,9 @@ modes = benchmark.analytical.analyze_dispersion_relation(wave_vector)
 mode = modes[0]
 omega = complex(mode.frequency, -mode.attenuation)
 
-print("="*80)
+print("=" * 80)
 print("RHS VERIFICATION DURING EVOLUTION")
-print("="*80)
+print("=" * 80)
 print()
 print(f"Testing k={k}, ω={omega}")
 print()
@@ -51,9 +49,7 @@ for t in times:
         # Evolve to time t
         n_steps = int(t / dt)
         benchmark = NumericalSoundWaveBenchmark(
-            domain_size=2*np.pi,
-            grid_points=(32, 32, 16),
-            transport_coeffs=coeffs
+            domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
         )
         benchmark.setup_initial_conditions(wave_number=k)
 
@@ -100,25 +96,39 @@ for t in times:
     expected_dpi_dt = -1j * omega * pi_k
 
     # Compute errors
-    rho_error = abs(drho_k_dt - expected_drho_dt) / abs(expected_drho_dt) if abs(expected_drho_dt) > 1e-14 else 0
-    v_error = abs(dv_k_dt - expected_dv_dt) / abs(expected_dv_dt) if abs(expected_dv_dt) > 1e-14 else 0
-    Pi_error = abs(dPi_k_dt - expected_dPi_dt) / abs(expected_dPi_dt) if abs(expected_dPi_dt) > 1e-14 else 0
-    pi_error = abs(dpi_xx_k_dt - expected_dpi_dt) / abs(expected_dpi_dt) if abs(expected_dpi_dt) > 1e-14 else 0
+    rho_error = (
+        abs(drho_k_dt - expected_drho_dt) / abs(expected_drho_dt)
+        if abs(expected_drho_dt) > 1e-14
+        else 0
+    )
+    v_error = (
+        abs(dv_k_dt - expected_dv_dt) / abs(expected_dv_dt) if abs(expected_dv_dt) > 1e-14 else 0
+    )
+    Pi_error = (
+        abs(dPi_k_dt - expected_dPi_dt) / abs(expected_dPi_dt)
+        if abs(expected_dPi_dt) > 1e-14
+        else 0
+    )
+    pi_error = (
+        abs(dpi_xx_k_dt - expected_dpi_dt) / abs(expected_dpi_dt)
+        if abs(expected_dpi_dt) > 1e-14
+        else 0
+    )
 
     print(f"t = {t:.3f}:")
-    print(f"  Field values:")
+    print("  Field values:")
     print(f"    ρ(k):    {rho_k}")
     print(f"    v(k):    {v_k}")
     print(f"    Π(k):    {Pi_k}")
     print(f"    π_xx(k): {pi_k}")
     print()
-    print(f"  RHS errors:")
+    print("  RHS errors:")
     print(f"    dρ/dt:    {rho_error*100:6.2f}%")
     print(f"    dv/dt:    {v_error*100:6.2f}%")
     print(f"    dΠ/dt:    {Pi_error*100:6.2f}%")
     print(f"    dπ_xx/dt: {pi_error*100:6.2f}%")
     print()
-    print("-"*80)
+    print("-" * 80)
     print()
 
-print("="*80)
+print("=" * 80)

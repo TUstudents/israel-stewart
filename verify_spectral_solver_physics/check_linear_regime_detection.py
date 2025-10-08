@@ -1,9 +1,9 @@
-#!/usr/bin/env python
 """
 Check if linear regime detection is working correctly in the fixed code.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -20,17 +20,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("LINEAR REGIME DETECTION CHECK")
-print("="*80)
+print("=" * 80)
 print()
 
 # Check perturbation amplitudes
@@ -40,14 +38,14 @@ u_spatial = benchmark.fields.u_mu[..., 1:4]
 max_rho_perturbation = np.max(np.abs(rho - 1.0))
 max_velocity = np.max(np.abs(u_spatial))
 
-print(f"Perturbation amplitudes:")
+print("Perturbation amplitudes:")
 print(f"  max |δρ| = {max_rho_perturbation:.6f}")
 print(f"  max |v|  = {max_velocity:.6f}")
 print()
 
 is_linear = (max_rho_perturbation < 0.1) and (max_velocity < 0.1)
 print(f"Linear regime detected: {is_linear}")
-print(f"  (threshold: |δρ| < 0.1 and |v| < 0.1)")
+print("  (threshold: |δρ| < 0.1 and |v| < 0.1)")
 print()
 
 if is_linear:
@@ -73,7 +71,7 @@ print("Testing one RHS evaluation...")
 rhs = benchmark.solver._compute_full_coupled_rhs(benchmark.fields)
 du_dt_actual = rhs["du_dt"]
 
-print(f"du^x/dt at (8, 0, 0):")
+print("du^x/dt at (8, 0, 0):")
 print(f"  Linear formula:  {du_dt_linear[8, 0, 0, 0]:.6e}")
 print(f"  Solver returns:  {du_dt_actual[8, 0, 0, 0]:.6e}")
 print(f"  Match:           {np.allclose(du_dt_linear[8, 0, 0, 0], du_dt_actual[8, 0, 0, 0])}")
@@ -86,4 +84,4 @@ else:
     print(f"  Difference: {np.max(np.abs(du_dt_linear - du_dt_actual)):.6e}")
 
 print()
-print("="*80)
+print("=" * 80)

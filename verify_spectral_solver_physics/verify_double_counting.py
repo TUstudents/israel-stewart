@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Verify if linear relaxation term is being double-counted in split_step."""
 
 import numpy as np

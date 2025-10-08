@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Verify that dissipative fields are initialized to correct eigenmode values."""
 
 import numpy as np

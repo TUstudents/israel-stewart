@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Trace the velocity RHS bug step by step.
 
@@ -12,6 +11,7 @@ This script traces through the momentum equation to find where the bug is.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -28,17 +28,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("VELOCITY RHS BUG TRACE")
-print("="*80)
+print("=" * 80)
 print()
 
 # Get analytical eigenmode
@@ -68,7 +66,7 @@ dmom_dt = conservation_rhs["dmom_dt"]
 dmom_dt_fft = np.fft.fftn(dmom_dt[..., 0])
 dmom_dt_k = dmom_dt_fft[k_idx, 0, 0]
 
-print(f"Step 1: Conservation equations")
+print("Step 1: Conservation equations")
 print(f"  d(h·v_x)/dt at k={k}: {dmom_dt_k}")
 print()
 
@@ -77,14 +75,14 @@ print()
 h_background = 4.0 / 3.0
 dv_dt_expected = dmom_dt_k / h_background
 
-print(f"Step 2: Convert momentum to velocity (linear regime)")
+print("Step 2: Convert momentum to velocity (linear regime)")
 print(f"  h₀ = {h_background}")
 print(f"  dv_x/dt (expected) = d(h·v)/dt / h₀ = {dv_dt_expected}")
 print()
 
 # Analytical expectation
 dv_dt_analytical = -1j * omega * v_k
-print(f"Step 3: Compare with analytical")
+print("Step 3: Compare with analytical")
 print(f"  dv/dt (analytical) = -iω·v = {dv_dt_analytical}")
 print(f"  dv/dt (from d(mom)/dt) = {dv_dt_expected}")
 print(f"  Match: {np.allclose(dv_dt_expected, dv_dt_analytical, rtol=0.01)}")
@@ -96,13 +94,13 @@ dv_dt_numerical = rhs["du_dt"][..., 0]
 dv_dt_numerical_fft = np.fft.fftn(dv_dt_numerical)
 dv_dt_numerical_k = dv_dt_numerical_fft[k_idx, 0, 0]
 
-print(f"Step 4: What solver returns")
+print("Step 4: What solver returns")
 print(f"  dv/dt (solver) = {dv_dt_numerical_k}")
 print()
 
-print("="*80)
+print("=" * 80)
 print("DIAGNOSIS")
-print("="*80)
+print("=" * 80)
 print()
 
 # Check each step
@@ -112,7 +110,9 @@ step3_ok = np.allclose(dv_dt_numerical_k, dv_dt_analytical, rtol=0.01)
 
 print(f"Step 1 (Conservation gives correct d(mom)/dt): {step1_ok}")
 if not step1_ok:
-    print(f"  Error: {abs((dmom_dt_k - dv_dt_analytical * h_background) / (dv_dt_analytical * h_background)) * 100:.2f}%")
+    print(
+        f"  Error: {abs((dmom_dt_k - dv_dt_analytical * h_background) / (dv_dt_analytical * h_background)) * 100:.2f}%"
+    )
 
 print(f"Step 2 (Conversion d(mom)/dt → dv/dt correct): {step2_ok}")
 if not step2_ok:
@@ -140,4 +140,4 @@ else:
     print("  → Bug must be in conservation equations (d(mom)/dt)")
 
 print()
-print("="*80)
+print("=" * 80)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if eigenmode ratios are preserved during evolution.
 

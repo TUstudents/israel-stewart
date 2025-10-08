@@ -39,7 +39,7 @@ class ConservationLaws:
         self,
         fields: ISFieldConfiguration,
         coefficients: Any = None,  # TODO: Replace with TransportCoefficients
-        spectral_solver: Optional[Any] = None,  # Allow passing in a spectral solver
+        spectral_solver: Any | None = None,  # Allow passing in a spectral solver
     ):
         """
         Initialize conservation laws.
@@ -216,9 +216,7 @@ class ConservationLaws:
             # Momentum conservation: ∂_t(ρu^j) = -∂_i T^ij
             for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
                 momentum_flux_vector = T[..., 1:4, j]  # Vector (T^1j, T^2j, T^3j)
-                dmom_dt[..., j - 1] = -self.spectral_solver.spatial_divergence(
-                    momentum_flux_vector
-                )
+                dmom_dt[..., j - 1] = -self.spectral_solver.spatial_divergence(momentum_flux_vector)
         else:
             # Fallback to grid-based vectorized derivatives for non-spectral solvers
             # Use grid.divergence() for better performance and consistency
@@ -230,9 +228,7 @@ class ConservationLaws:
             # Momentum conservation: ∂_t(ρu^j) = -∂_i T^ij
             for j in range(1, 4):  # j = 1, 2, 3 (momentum tensor components)
                 momentum_flux_vector = T[..., 1:4, j]  # Vector (T^1j, T^2j, T^3j)
-                dmom_dt[..., j - 1] = -self.fields.grid.divergence(
-                    momentum_flux_vector, order=2
-                )
+                dmom_dt[..., j - 1] = -self.fields.grid.divergence(momentum_flux_vector, order=2)
 
         # Add Christoffel symbol corrections if metric is not flat
         if self.metric and not self.metric.is_flat():
@@ -347,7 +343,7 @@ class ConservationLaws:
                 return self.spectral_solver.spatial_derivative(field, direction=direction)
 
         # Use grid gradient method (respects boundary conditions)
-        if hasattr(self.fields.grid, 'gradient') and field.ndim == 3:
+        if hasattr(self.fields.grid, "gradient") and field.ndim == 3:
             if direction >= len(coords):
                 raise ValueError(f"Direction {direction} exceeds coordinate dimensions")
             return self.fields.grid.gradient(field, axis=direction, order=2)

@@ -1187,80 +1187,63 @@ class NumericalSoundWaveBenchmark:
             # Right singular vectors are columns of V, so we need Vh[-1, :].conj()
             eigenvector = Vh[-1, :].conj()  # Eigenvector for smallest singular value
 
-            # Normalize for sin(kx) initial condition
-            # For field ∝ sin(kx) at t=0, need eigenvector to be purely imaginary
-            # Physical: Re[v·exp(ikx)] = Re(v)·cos(kx) - Im(v)·sin(kx)
-            # For sin(kx): Re(v) = 0, -Im(v) = amplitude
-            if abs(eigenvector[0]) > 1e-10:
-                # Normalize magnitude
-                eigenvector = eigenvector / abs(eigenvector[0])
+            # Normalize eigenvector so that the density perturbation (δε) is real.
+            # This sets the overall phase of the wave. A pure cos(kx) for δε means its
+            # complex amplitude is purely real.
+            if abs(eigenvector[0]) > 1e-12:
+                eigenvector /= eigenvector[0]
 
-                # Find phase rotation that makes entire eigenvector most imaginary
-                # (minimizes norm of real part)
-                best_phase = 0.0
-                min_real_norm = float("inf")
-
-                for test_phase in np.linspace(0, 2 * np.pi, 100):
-                    rotated = eigenvector * np.exp(1j * test_phase)
-                    real_norm = np.sum(np.abs(np.real(rotated)) ** 2)
-                    if real_norm < min_real_norm:
-                        min_real_norm = real_norm
-                        best_phase = test_phase
-
-                eigenvector = eigenvector * np.exp(1j * best_phase)
-
-                # Ensure correct sign: Im(v[0]) should be negative for sin(kx)
-                if np.imag(eigenvector[0]) > 0:
-                    eigenvector = -eigenvector
-
-            # Extract component ratios (all should now be ~purely imaginary)
-            # For sin(kx) with Im(v) < 0, the amplitude ratio is -Im(v)
-            v_x_ratio = -np.imag(eigenvector[1])
-            Pi_ratio = -np.imag(eigenvector[2])
-            pi_xx_ratio = -np.imag(eigenvector[3])
+            # The physical perturbation is Re(v * exp(ikx)) = Re(v)cos(kx) - Im(v)sin(kx)
+            # Our eigenvector v is now normalized such that v[0] (for δε) is 1+0j.
+            rho_ratio_complex = eigenvector[0]
+            v_x_ratio_complex = eigenvector[1]
+            Pi_ratio_complex = eigenvector[2]
+            pi_xx_ratio_complex = eigenvector[3]
 
             logger = get_logger(__name__)
             logger.info(
                 f"Complex eigenmode ratios (v_x, Π, π_xx):\n"
-                f"v_x: {v_x_ratio:.3e}\n"
-                f"Π:   {Pi_ratio:.3e}\n"
-                f"π_xx: {pi_xx_ratio:.3e}"
+                f"v_x: {v_x_ratio_complex:.3e}\n"
+                f"Π:   {Pi_ratio_complex:.3e}\n"
+                f"π_xx: {pi_xx_ratio_complex:.3e}"
             )
 
         except Exception as e:
             warnings.warn(
                 f"Failed to compute eigenmode structure: {e}. "
-                "Using Navier-Stokes approximation.",
+                "Using simplified initialization, which may be inaccurate.",
                 stacklevel=2,
             )
-            # Fallback to Navier-Stokes estimates
-            enthalpy = background_density + background_pressure
-            sound_speed = mode.sound_speed
-            v_x_ratio = sound_speed / enthalpy
-            Pi_ratio = -self.transport_coeffs.bulk_viscosity * wave_number * v_x_ratio
-            pi_xx_ratio = (
-                (4.0 / 3.0) * self.transport_coeffs.shear_viscosity * wave_number * v_x_ratio
+            # Fallback to simplified estimates which will not be a pure mode
+            self._setup_simple_initial_conditions(
+                wave_number, amplitude, background_density, background_pressure
             )
+            return
 
-        # Initialize fields with eigenmode structure
-        delta_rho = amplitude * np.sin(wave_number * X)
+        # Initialize fields with the full complex eigenmode structure
+        cos_kx = np.cos(wave_number * X)
+        sin_kx = np.sin(wave_number * X)
 
-        self.fields.rho[:] = background_density + delta_rho
-        self.fields.pressure[:] = (background_density + delta_rho) / 3.0  # P = ρ/3
+        def init_field(ratio_complex):
+            # Physical field is Re(v * exp(ikx))
+            # With v = Re(v) + i*Im(v), this is Re(v)cos(kx) - Im(v)sin(kx)
+            return amplitude * (np.real(ratio_complex) * cos_kx - np.imag(ratio_complex) * sin_kx)
 
-        # Velocity: use eigenmode ratio
-        delta_ux = amplitude * v_x_ratio * np.sin(wave_number * X)
+        self.fields.rho[:] = background_density + init_field(rho_ratio_complex)
+        self.fields.pressure[:] = self.fields.rho / 3.0  # P = ρ/3 for radiation
+
+        # Velocity
         self.fields.u_mu[:] = 0.0
         self.fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
-        self.fields.u_mu[..., 1] = delta_ux  # u^x = δu_x
+        self.fields.u_mu[..., 1] = init_field(v_x_ratio_complex)  # u^x = δu_x
 
-        # Dissipative fluxes: use eigenmode ratios
-        self.fields.Pi[:] = amplitude * Pi_ratio * np.sin(wave_number * X)
+        # Dissipative fluxes
+        self.fields.Pi[:] = init_field(Pi_ratio_complex)
 
         self.fields.pi_munu[:] = 0.0
-        delta_pi_xx = amplitude * pi_xx_ratio * np.sin(wave_number * X)
+        delta_pi_xx = init_field(pi_xx_ratio_complex)
         self.fields.pi_munu[..., 1, 1] = delta_pi_xx  # π_xx component
-        # Transverse components: π_yy = π_zz = -(1/2) * π_xx (traceless)
+        # Transverse components for tracelessness: π_yy = π_zz = -1/2 π_xx
         self.fields.pi_munu[..., 2, 2] = -0.5 * delta_pi_xx
         self.fields.pi_munu[..., 3, 3] = -0.5 * delta_pi_xx
 

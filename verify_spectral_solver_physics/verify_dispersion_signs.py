@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Verify the correct signs in the Israel-Stewart dispersion relation.
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if linear regime detection stays active throughout evolution.
 
@@ -7,6 +6,7 @@ which may introduce errors.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -24,15 +24,13 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("LINEAR REGIME DETECTION CHECK")
-print("="*80)
+print("=" * 80)
 print()
 print("Threshold: max_rho_pert < 0.1 AND max_velocity < 0.1")
 print()
@@ -46,9 +44,7 @@ for t in times:
         # Evolve to time t
         n_steps = int(t / dt)
         benchmark = NumericalSoundWaveBenchmark(
-            domain_size=2*np.pi,
-            grid_points=(32, 32, 16),
-            transport_coeffs=coeffs
+            domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
         )
         benchmark.setup_initial_conditions(wave_number=k)
 
@@ -67,7 +63,7 @@ for t in times:
     print(f"  Linear regime: {is_linear}")
 
     if not is_linear:
-        print(f"  ⚠ WARNING: Linear regime criteria VIOLATED!")
+        print("  ⚠ WARNING: Linear regime criteria VIOLATED!")
         if max_rho_pert >= 0.1:
             print(f"    - Density perturbation {max_rho_pert:.6f} >= 0.1")
         if max_velocity >= 0.1:
@@ -75,9 +71,9 @@ for t in times:
 
     print()
 
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 print("If linear regime is violated:")
 print("  - Solver switches to nonlinear momentum conversion")
@@ -87,4 +83,4 @@ print()
 print("If linear regime is maintained:")
 print("  - Problem must be elsewhere")
 print()
-print("="*80)
+print("=" * 80)

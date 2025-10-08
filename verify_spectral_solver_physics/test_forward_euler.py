@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Test eigenmode preservation with simple forward Euler.
 
@@ -7,6 +6,7 @@ evaluates RHS once per step) might work better.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -24,9 +24,7 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 benchmark.setup_initial_conditions(wave_number=k)
 
@@ -46,11 +44,11 @@ v_ratio_0 = v_k_0 / rho_k_0
 Pi_ratio_0 = Pi_k_0 / rho_k_0
 pi_ratio_0 = pi_k_0 / rho_k_0
 
-print("="*80)
+print("=" * 80)
 print("FORWARD EULER TEST")
-print("="*80)
+print("=" * 80)
 print()
-print(f"Initial eigenmode ratios:")
+print("Initial eigenmode ratios:")
 print(f"  v/ρ:  {v_ratio_0}")
 print(f"  Π/ρ:  {Pi_ratio_0}")
 print(f"  π/ρ:  {pi_ratio_0}")
@@ -100,9 +98,9 @@ for step in range(n_steps):
         print(f"  π/ρ  error: {abs(pi_ratio - pi_ratio_0)/abs(pi_ratio_0)*100:.2f}%")
         print()
 
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 print("If forward Euler works better than RK4:")
 print("  - Problem is in RK4's intermediate stages")
@@ -112,4 +110,4 @@ print("If forward Euler has same drift:")
 print("  - Problem is more fundamental")
 print("  - Could be in RHS computation or eigenmode itself")
 print()
-print("="*80)
+print("=" * 80)

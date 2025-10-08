@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Verify dispersion matrix against Israel-Stewart theory.
 

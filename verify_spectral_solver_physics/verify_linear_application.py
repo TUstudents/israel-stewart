@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Verify that linear relaxation is applied exactly once, not multiple times."""
 
 import numpy as np

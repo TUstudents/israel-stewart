@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Compare dispersion matrix prediction for ∂_x(T^xx) with numerical value.
 
@@ -9,6 +8,7 @@ This should match what we get from -∂_x(T^xx).
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -23,17 +23,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("DISPERSION MATRIX VS NUMERICAL")
-print("="*80)
+print("=" * 80)
 print()
 
 # Get analytical eigenmode
@@ -51,7 +49,7 @@ print()
 
 # Row 1 is the momentum equation
 print("Row 1 (momentum equation):")
-for i, name in enumerate(['δρ', 'δv_x', 'δΠ', 'δπ_xx']):
+for i, name in enumerate(["δρ", "δv_x", "δΠ", "δπ_xx"]):
     print(f"  Coeff of {name:6s}: {dispersion_matrix[1, i]}")
 print()
 
@@ -75,7 +73,7 @@ v_k = v_fft[k_idx, 0, 0]
 Pi_k = Pi_fft[k_idx, 0, 0]
 pi_k = pi_fft[k_idx, 0, 0]
 
-print(f"Initial Fourier coefficients:")
+print("Initial Fourier coefficients:")
 print(f"  δρ(k):    {rho_k}")
 print(f"  δv_x(k):  {v_k}")
 print(f"  δΠ(k):    {Pi_k}")
@@ -93,7 +91,7 @@ rhs_dispersion = -1j * k * (c_s_sq * rho_k + Pi_k - pi_k)
 # LHS of momentum equation
 lhs_dispersion = -1j * omega * h_0 * v_k
 
-print(f"Dispersion matrix momentum equation:")
+print("Dispersion matrix momentum equation:")
 print(f"  LHS: -iω·h₀·δv = {lhs_dispersion}")
 print(f"  RHS: -ik·(c_s²·δρ + δΠ - δπ_xx) = {rhs_dispersion}")
 print(f"  Balance check: {np.allclose(lhs_dispersion, rhs_dispersion, rtol=1e-6)}")
@@ -107,12 +105,12 @@ div_T_fft = np.fft.fftn(div_T)
 
 d_hv_dt_numerical = -div_T_fft[k_idx, 0, 0]
 
-print(f"Numerical simulation:")
+print("Numerical simulation:")
 print(f"  ∂_t(h·v)(k) = -∂_i(T^ix)(k) = {d_hv_dt_numerical}")
 print()
 
 # Compare with dispersion matrix
-print(f"Comparison:")
+print("Comparison:")
 print(f"  Dispersion matrix predicts: ∂_t(h·v) = -ik·(c_s²·δρ + δΠ - δπ_xx) = {rhs_dispersion}")
 print(f"  Numerical simulation gives: ∂_t(h·v) = -∂_i(T^ix)            = {d_hv_dt_numerical}")
 print(f"  Ratio: {d_hv_dt_numerical / rhs_dispersion if abs(rhs_dispersion) > 1e-14 else 'N/A'}")
@@ -129,7 +127,7 @@ T_xx_k = T_xx_fft[k_idx, 0, 0]
 
 T_xx_expected = rho_k / 3.0 + Pi_k + pi_k
 
-print(f"T^xx components:")
+print("T^xx components:")
 print(f"  δρ/3:       {rho_k / 3.0}")
 print(f"  δΠ:         {Pi_k}")
 print(f"  δπ_xx:      {pi_k}")
@@ -140,7 +138,7 @@ print()
 
 # And check ∂_x(T^xx) = ik·T^xx
 dT_xx_dx = 1j * k * T_xx_k
-print(f"Spatial derivative:")
+print("Spatial derivative:")
 print(f"  ∂_x(T^xx)(k) = ik·T^xx(k) = {dT_xx_dx}")
 print(f"  From dispersion: -ik·(c_s²·δρ + δΠ - δπ_xx) = {rhs_dispersion}")
 print()
@@ -153,9 +151,9 @@ else:
     print(f"  Error: {abs((dT_xx_dx - rhs_dispersion) / rhs_dispersion) * 100:.2f}%")
 
 print()
-print("="*80)
+print("=" * 80)
 print("DIAGNOSIS")
-print("="*80)
+print("=" * 80)
 print()
 
 # The key question: does ∂_x(T^xx) = ∂_x(p + Π + π) match ∂_x(c_s²·ρ + Π - π)?
@@ -166,21 +164,23 @@ print()
 # These differ by the SIGN of π!
 
 print("Expected from theory:")
-print(f"  ∂_x(T^xx) = ∂_x(p + Π + π_xx)")
-print(f"            = ik·(δρ/3 + δΠ + δπ_xx)")
+print("  ∂_x(T^xx) = ∂_x(p + Π + π_xx)")
+print("            = ik·(δρ/3 + δΠ + δπ_xx)")
 print(f"            = {1j * k * (rho_k/3 + Pi_k + pi_k)}")
 print()
 print("Dispersion matrix uses:")
-print(f"  ∂_x(...) = -ik·(c_s²·δρ + δΠ - δπ_xx)")
-print(f"           = -ik·(δρ/3 + δΠ - δπ_xx)")
+print("  ∂_x(...) = -ik·(c_s²·δρ + δΠ - δπ_xx)")
+print("           = -ik·(δρ/3 + δΠ - δπ_xx)")
 print(f"           = {-1j * k * (rho_k/3 + Pi_k - pi_k)}")
 print()
 
-if not np.allclose(1j * k * (rho_k/3 + Pi_k + pi_k), -1j * k * (rho_k/3 + Pi_k - pi_k), rtol=0.01):
+if not np.allclose(
+    1j * k * (rho_k / 3 + Pi_k + pi_k), -1j * k * (rho_k / 3 + Pi_k - pi_k), rtol=0.01
+):
     print("✗ SIGN ERROR: T^xx uses +π_xx but dispersion matrix uses -π_xx!")
     print("  This is the source of the 34% error")
 else:
     print("✓ Signs match")
 
 print()
-print("="*80)
+print("=" * 80)

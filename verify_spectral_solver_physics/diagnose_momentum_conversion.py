@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Diagnose momentum-to-velocity conversion bug in spectral solver.
 
@@ -15,6 +14,7 @@ This script verifies the hypothesis by comparing nonlinear vs linearized convers
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -31,17 +31,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("MOMENTUM-TO-VELOCITY CONVERSION DIAGNOSTIC")
-print("="*80)
+print("=" * 80)
 print()
 
 # Get initial state (perfect eigenmode)
@@ -50,7 +48,7 @@ u_mu = benchmark.fields.u_mu.copy()
 Pi = benchmark.fields.Pi.copy()
 pi_munu = benchmark.fields.pi_munu.copy()
 
-print(f"Initial perturbation amplitudes:")
+print("Initial perturbation amplitudes:")
 print(f"  |δρ| = {np.max(np.abs(rho - 1.0)):.6e}")
 print(f"  |δv| = {np.max(np.abs(u_mu[..., 1])):.6e}")
 print(f"  |Π|  = {np.max(np.abs(Pi)):.6e}")
@@ -69,7 +67,7 @@ print()
 
 # Current (buggy) conversion: nonlinear with perturbed h
 h_perturbed = rho + benchmark.fields.pressure  # ε + p
-dh_dt_perturbed = (4.0/3.0) * drho_dt  # For radiation: p = ε/3
+dh_dt_perturbed = (4.0 / 3.0) * drho_dt  # For radiation: p = ε/3
 u_spatial = u_mu[..., 1:4]
 
 h_safe = np.where(np.abs(h_perturbed) > 1e-14, h_perturbed, 1e-14)
@@ -84,7 +82,9 @@ du_dt_linear = dmom_dt / h_background
 print("Velocity time derivatives at (8, 0, 0):")
 print(f"  du^x/dt (nonlinear): {du_dt_nonlinear[8, 0, 0, 0]:.6e}")
 print(f"  du^x/dt (linear):    {du_dt_linear[8, 0, 0, 0]:.6e}")
-print(f"  Relative diff:       {abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0]) * 100:.2f}%")
+print(
+    f"  Relative diff:       {abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0]) * 100:.2f}%"
+)
 print()
 
 # Compute nonlinear correction term: -u·dh/dt / h
@@ -124,15 +124,17 @@ print(f"  Mode k=16: {np.abs(diff_fft[16, 0, 0]):.6e}  (2nd harmonic)")
 print(f"  Mode k=0:  {np.abs(diff_fft[0, 0, 0]):.6e}  (DC offset)")
 print()
 
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 
 # Check if 2nd harmonic is significant
 if np.abs(diff_fft[16, 0, 0]) > 1e-10:
     print("✗ PROBLEM: Nonlinear conversion creates significant 2nd harmonic")
-    print(f"  The term -u·dh/dt introduces k=16 mode with amplitude {np.abs(diff_fft[16, 0, 0]):.2e}")
+    print(
+        f"  The term -u·dh/dt introduces k=16 mode with amplitude {np.abs(diff_fft[16, 0, 0]):.2e}"
+    )
     print("  This couples the fundamental eigenmode to higher harmonics")
     print("  → Eigenmode structure degrades during evolution")
     print()
@@ -145,8 +147,13 @@ else:
     print("  2nd harmonic amplitude < 1e-10")
 
 print()
-if abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0]) > 0.01:
-    print(f"✗ Nonlinear correction changes du/dt by {abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0]) * 100:.1f}%")
+if (
+    abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0])
+    > 0.01
+):
+    print(
+        f"✗ Nonlinear correction changes du/dt by {abs(du_dt_nonlinear[8, 0, 0, 0] - du_dt_linear[8, 0, 0, 0]) / abs(du_dt_linear[8, 0, 0, 0]) * 100:.1f}%"
+    )
     print("  This is significant for eigenmode preservation")
 else:
     print("✓ Nonlinear correction is <1% of du/dt")
@@ -157,4 +164,4 @@ print("  For linear stability analysis and eigenmode tests:")
 print("  → Use linearized conversion: du/dt = d(h·u)/dt / h₀")
 print("  → Only use nonlinear conversion for large-amplitude flows")
 print()
-print("="*80)
+print("=" * 80)

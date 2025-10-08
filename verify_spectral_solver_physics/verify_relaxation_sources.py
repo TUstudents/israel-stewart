@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Verify relaxation equation source terms have correct signs and magnitudes."""
 
 import numpy as np

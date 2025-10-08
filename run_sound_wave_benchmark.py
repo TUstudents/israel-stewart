@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 Sound Wave Benchmark Runner
 
@@ -70,12 +70,24 @@ def create_benchmark(
         bulk_viscosity=0.04,
         shear_relaxation_time=1.0,
         bulk_relaxation_time=0.5,
-        # Second-order coefficients
-        lambda_pi_pi=0.1,
-        lambda_pi_Pi=0.05,
-        xi_1=0.2,
-        xi_2=0.1,
+        # Second-order coefficients (turned off for test)
+        lambda_pi_pi=0.0,
+        lambda_pi_Pi=0.0,
+        xi_1=0.0,
+        xi_2=0.0,
     )
+
+    logger.info("--------------------------------------------------------------------------------")
+    logger.info("Benchmark Parameters")
+    logger.info(f"  shear_viscosity (η):       {transport_coeffs.shear_viscosity}")
+    logger.info(f"  bulk_viscosity (ζ):        {transport_coeffs.bulk_viscosity}")
+    logger.info(f"  shear_relaxation_time (τ_π): {transport_coeffs.shear_relaxation_time}")
+    logger.info(f"  bulk_relaxation_time (τ_Π):  {transport_coeffs.bulk_relaxation_time}")
+    logger.info(f"  lambda_pi_pi:              {transport_coeffs.lambda_pi_pi}")
+    logger.info(f"  lambda_pi_Pi:              {transport_coeffs.lambda_pi_Pi}")
+    logger.info(f"  xi_1:                      {transport_coeffs.xi_1}")
+    logger.info(f"  xi_2:                      {transport_coeffs.xi_2}")
+    logger.info("--------------------------------------------------------------------------------")
 
     # Create numerical benchmark (it creates its own grid internally)
     numerical_benchmark = NumericalSoundWaveBenchmark(

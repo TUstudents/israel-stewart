@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Check if spurious harmonics are being excited during evolution.
 
@@ -7,6 +6,7 @@ they can interfere with the eigenmode and cause drift.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -24,15 +24,13 @@ coeffs = TransportCoefficients(
 
 k = 8.0
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("SPURIOUS HARMONIC CHECK")
-print("="*80)
+print("=" * 80)
 print()
 print(f"Fundamental: k={k}")
 print()
@@ -46,9 +44,7 @@ for t in times:
         # Evolve to time t
         n_steps = int(t / dt)
         benchmark = NumericalSoundWaveBenchmark(
-            domain_size=2*np.pi,
-            grid_points=(32, 32, 16),
-            transport_coeffs=coeffs
+            domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
         )
         benchmark.setup_initial_conditions(wave_number=k)
 
@@ -79,26 +75,34 @@ for t in times:
     k24_pi = abs(pi_fft[24, 0, 0])
 
     print(f"t = {t:.3f}:")
-    print(f"  ρ:  k=8: {k8_rho:.2e}  k=16: {k16_rho:.2e}  k=24: {k24_rho:.2e}  (ratio: {k16_rho/k8_rho:.2e}, {k24_rho/k8_rho:.2e})")
-    print(f"  v:  k=8: {k8_v:.2e}  k=16: {k16_v:.2e}  k=24: {k24_v:.2e}  (ratio: {k16_v/k8_v:.2e}, {k24_v/k8_v:.2e})")
-    print(f"  Π:  k=8: {k8_Pi:.2e}  k=16: {k16_Pi:.2e}  k=24: {k24_Pi:.2e}  (ratio: {k16_Pi/k8_Pi:.2e}, {k24_Pi/k8_Pi:.2e})")
-    print(f"  π:  k=8: {k8_pi:.2e}  k=16: {k16_pi:.2e}  k=24: {k24_pi:.2e}  (ratio: {k16_pi/k8_pi:.2e}, {k24_pi/k8_pi:.2e})")
+    print(
+        f"  ρ:  k=8: {k8_rho:.2e}  k=16: {k16_rho:.2e}  k=24: {k24_rho:.2e}  (ratio: {k16_rho/k8_rho:.2e}, {k24_rho/k8_rho:.2e})"
+    )
+    print(
+        f"  v:  k=8: {k8_v:.2e}  k=16: {k16_v:.2e}  k=24: {k24_v:.2e}  (ratio: {k16_v/k8_v:.2e}, {k24_v/k8_v:.2e})"
+    )
+    print(
+        f"  Π:  k=8: {k8_Pi:.2e}  k=16: {k16_Pi:.2e}  k=24: {k24_Pi:.2e}  (ratio: {k16_Pi/k8_Pi:.2e}, {k24_Pi/k8_Pi:.2e})"
+    )
+    print(
+        f"  π:  k=8: {k8_pi:.2e}  k=16: {k16_pi:.2e}  k=24: {k24_pi:.2e}  (ratio: {k16_pi/k8_pi:.2e}, {k24_pi/k8_pi:.2e})"
+    )
     print()
 
     # Check if spurious modes are growing relative to fundamental
     if t > 0:
         threshold = 1e-3  # 0.1% of fundamental
-        if k16_rho/k8_rho > threshold or k16_v/k8_v > threshold:
+        if k16_rho / k8_rho > threshold or k16_v / k8_v > threshold:
             print(f"  ⚠ WARNING: k=16 mode is significant (>{threshold*100:.1f}% of fundamental)")
-        if k24_rho/k8_rho > threshold or k24_v/k8_v > threshold:
+        if k24_rho / k8_rho > threshold or k24_v / k8_v > threshold:
             print(f"  ⚠ WARNING: k=24 mode is significant (>{threshold*100:.1f}% of fundamental)")
 
-    print("-"*80)
+    print("-" * 80)
     print()
 
-print("="*80)
+print("=" * 80)
 print("INTERPRETATION")
-print("="*80)
+print("=" * 80)
 print()
 print("Spurious harmonics can arise from:")
 print("  1. Nonlinear terms (even if small)")
@@ -110,4 +114,4 @@ print("  - They interfere with k=8 fundamental")
 print("  - Eigenmode structure is corrupted")
 print("  - RHS becomes inaccurate")
 print()
-print("="*80)
+print("=" * 80)

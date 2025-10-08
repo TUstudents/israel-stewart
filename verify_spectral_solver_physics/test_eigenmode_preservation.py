@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Quick test of eigenmode ratio preservation after the momentum conversion fix.
 
@@ -7,6 +6,7 @@ with the linearized momentum-to-velocity conversion.
 """
 
 import numpy as np
+
 from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
@@ -23,17 +23,15 @@ coeffs = TransportCoefficients(
 )
 
 benchmark = NumericalSoundWaveBenchmark(
-    domain_size=2*np.pi,
-    grid_points=(32, 32, 16),
-    transport_coeffs=coeffs
+    domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
 k = 8.0
 benchmark.setup_initial_conditions(wave_number=k)
 
-print("="*80)
+print("=" * 80)
 print("EIGENMODE RATIO PRESERVATION TEST (with fix)")
-print("="*80)
+print("=" * 80)
 print()
 
 # Get analytical eigenmode ratios
@@ -54,7 +52,7 @@ v_x_ratio_expected = eigenvector[1]
 Pi_ratio_expected = eigenvector[2]
 pi_xx_ratio_expected = eigenvector[3]
 
-print(f"Analytical Complex Eigenmode Ratios:")
+print("Analytical Complex Eigenmode Ratios:")
 print(f"  δv_x/δρ  = {v_x_ratio_expected.real:.4f} + {v_x_ratio_expected.imag:.4f}j")
 print(f"  δΠ/δρ    = {Pi_ratio_expected.real:.4f} + {Pi_ratio_expected.imag:.4f}j")
 print(f"  δπ_xx/δρ = {pi_xx_ratio_expected.real:.4f} + {pi_xx_ratio_expected.imag:.4f}j")
@@ -76,7 +74,7 @@ v_ratio_0 = v_k_0 / rho_k_0
 Pi_ratio_0 = Pi_k_0 / rho_k_0
 pi_ratio_0 = pi_k_0 / rho_k_0
 
-print(f"Initial ratios (t=0):")
+print("Initial ratios (t=0):")
 print(f"  v_x/ρ  = {v_ratio_0.real:.4f} + {v_ratio_0.imag:.4f}j")
 print(f"  Π/ρ    = {Pi_ratio_0.real:.4f} + {Pi_ratio_0.imag:.4f}j")
 print(f"  π_xx/ρ = {pi_ratio_0.real:.4f} + {pi_ratio_0.imag:.4f}j")
@@ -86,7 +84,7 @@ print()
 dx = benchmark.grid.spatial_spacing[0]
 dt = min(
     0.5 * dx / max(mode.sound_speed, 0.1),
-    0.05 * min(coeffs.bulk_relaxation_time, coeffs.shear_relaxation_time)
+    0.05 * min(coeffs.bulk_relaxation_time, coeffs.shear_relaxation_time),
 )
 
 t_final = 0.5  # Short time test
@@ -120,24 +118,38 @@ print()
 
 # Compute percentage changes
 v_real_change = abs((v_ratio.real - v_ratio_0.real) / v_ratio_0.real) * 100
-v_imag_change = abs((v_ratio.imag - v_ratio_0.imag) / abs(v_ratio_0.imag)) * 100 if abs(v_ratio_0.imag) > 1e-10 else 0
+v_imag_change = (
+    abs((v_ratio.imag - v_ratio_0.imag) / abs(v_ratio_0.imag)) * 100
+    if abs(v_ratio_0.imag) > 1e-10
+    else 0
+)
 Pi_real_change = abs((Pi_ratio.real - Pi_ratio_0.real) / Pi_ratio_0.real) * 100
-Pi_imag_change = abs((Pi_ratio.imag - Pi_ratio_0.imag) / abs(Pi_ratio_0.imag)) * 100 if abs(Pi_ratio_0.imag) > 1e-10 else 0
+Pi_imag_change = (
+    abs((Pi_ratio.imag - Pi_ratio_0.imag) / abs(Pi_ratio_0.imag)) * 100
+    if abs(Pi_ratio_0.imag) > 1e-10
+    else 0
+)
 pi_real_change = abs((pi_ratio.real - pi_ratio_0.real) / pi_ratio_0.real) * 100
-pi_imag_change = abs((pi_ratio.imag - pi_ratio_0.imag) / abs(pi_ratio_0.imag)) * 100 if abs(pi_ratio_0.imag) > 1e-10 else 0
+pi_imag_change = (
+    abs((pi_ratio.imag - pi_ratio_0.imag) / abs(pi_ratio_0.imag)) * 100
+    if abs(pi_ratio_0.imag) > 1e-10
+    else 0
+)
 
-print(f"Ratio changes:")
+print("Ratio changes:")
 print(f"  v_x  real: {v_real_change:.2f}%  imag: {v_imag_change:.2f}%")
 print(f"  Π    real: {Pi_real_change:.2f}%  imag: {Pi_imag_change:.2f}%")
 print(f"  π_xx real: {pi_real_change:.2f}%  imag: {pi_imag_change:.2f}%")
 print()
 
 # Overall assessment
-max_change = max(v_real_change, v_imag_change, Pi_real_change, Pi_imag_change, pi_real_change, pi_imag_change)
+max_change = max(
+    v_real_change, v_imag_change, Pi_real_change, Pi_imag_change, pi_real_change, pi_imag_change
+)
 
-print("="*80)
+print("=" * 80)
 print("ASSESSMENT")
-print("="*80)
+print("=" * 80)
 print()
 
 if max_change < 1.0:
@@ -158,4 +170,4 @@ else:
     print("  → Fix did not resolve the drift")
 
 print()
-print("="*80)
+print("=" * 80)

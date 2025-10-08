@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test the sign of expansion scalar for a simple velocity field."""
 
 import sys
@@ -84,7 +83,7 @@ rhs = benchmark.solver.relaxation.compute_relaxation_rhs(benchmark.fields)
 
 # Extract bulk RHS (first part of vector)
 nx, ny, nz = benchmark.grid_points
-dPi_dt = rhs[:nx*ny*nz].reshape(nx, ny, nz)
+dPi_dt = rhs[: nx * ny * nz].reshape(nx, ny, nz)
 
 print("Bulk RHS (dΠ/dt from sources only, no linear term):")
 print(f"  dΠ/dt at x=0:   {dPi_dt[0, 16, 8]:.6e}")
@@ -108,7 +107,7 @@ print()
 if np.sign(expected_dPi_NS) == np.sign(actual_dPi_at_0):
     ratio = actual_dPi_at_0 / expected_dPi_NS
     print(f"✓ Source term sign is CORRECT (ratio: {ratio:.2f})")
-    print(f"  Difference due to IS coupling terms (λ_πΠ, ξ_Π, etc.)")
+    print("  Difference due to IS coupling terms (λ_πΠ, ξ_Π, etc.)")
 else:
     print("✗ Source term sign is WRONG!")
     print("  Expected and actual have opposite signs")

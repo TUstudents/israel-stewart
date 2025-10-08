@@ -18,7 +18,7 @@ This is a sophisticated Python implementation of relativistic hydrodynamics usin
 ## Core Modules
 
 **Spatial Grids (`core/`)**:
-- `spacegrid.py`: **NEW** - Pure 3D spatial grid (recommended for all simulations)
+- `spacegrid.py`: Pure 3D spatial grid (recommended for all simulations)
 - `spacetime_grid.py`: Legacy 4D grid (kept for backward compatibility, metadata only)
 - `fields.py`: ISFieldConfiguration with pure 3D field storage
 - `metrics.py`: Spacetime metrics and Christoffel symbols
@@ -35,7 +35,7 @@ This is a sophisticated Python implementation of relativistic hydrodynamics usin
 - `tensors.py`: Consolidated imports for backward compatibility
 
 **Utilities (`utils/`)**:
-- `streaming.py`: **NEW** - Buffered snapshot writing with constant memory
+- `streaming.py`: Buffered snapshot writing with constant memory
 - `io.py`: HDF5 trajectory I/O utilities
 - `logging_config.py`: Structured logging with performance tracking
 - `visualization.py`: Plotting utilities
@@ -136,6 +136,7 @@ hydro.evolve(
 - **Greek letters in docs**: Use UTF-8 (π, μ, ν, θ, ∇) not ASCII
 - **Logging**: `from israel_stewart.utils import get_logger`
 - **Shebang convention**: Use `#!/usr/bin/env -S uv run python` for executable run scripts (e.g., `run_*.py`). Do NOT use shebangs in verification/diagnostic scripts - run them explicitly with `uv run python script.py`
+- **Sign convention**: Convention B (Landau-Lifshitz) for stress tensor: `T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν - π^μν + q^μu^ν + q^νu^μ`. The MINUS sign treats π^μν as dissipative correction opposing flow, matching dispersion matrix convention.
 - Israel-Stewart second-order viscous hydrodynamics, general covariance in curved spacetime
 
 ### SpaceGrid vs SpacetimeGrid
@@ -195,14 +196,40 @@ grid = SpaceGrid(..., grid_points=(64, 64, 64))  # Missing boundary_conditions
 
 **Why**: FFT assumes periodicity. Dirichlet: `dx = L/(N-1)`, Periodic: `dx = L/N`. Wrong spacing shifts wavenumbers by `(N-1)/N`, causing systematic derivative errors. See `EXPANSION_SCALAR_BUG_FIX.md`.
 
+### Linear Regime Detection
+
+**For small perturbations, use linearized momentum conversion to avoid spurious harmonics:**
+
+The spectral solver automatically detects linear regime when:
+- `|δρ| < 0.1` (density perturbation < 10% of background)
+- `|v| < 0.1` (velocity perturbation small)
+
+**Why this matters**: The nonlinear momentum-to-velocity conversion `du/dt = [d(h·u)/dt - u·dh/dt]/h` creates spurious 2nd harmonics in the linear regime. When conditions are met, the solver uses linearized form `du/dt = d(h·u)/dt / h₀` where h₀ = 4/3 is the background enthalpy for radiation fluid.
+
+**Implementation**: `israel_stewart/solvers/spectral.py:_convert_momentum_to_velocity_derivative_with_fields()`
+
 ### Testing Guidelines
 
 **When tests fail, investigate the root cause instead of weakening assertions!**
 
 - Use exact validation for spectral methods (error < 1e-10), not weak correlations
-- Create diagnostic scripts for complex bugs (see `debug_expansion_scalar.py`, `debug_fft_simple.py`)
+- Create diagnostic scripts for complex bugs (see `verify_spectral_solver_physics/` for examples)
 - Verify boundary conditions in all spectral solver tests
 - Check error patterns - specific ratios like 15/16 reveal underlying issues
+
+#### Numerical Truncation vs Bugs
+
+**Know when to accept small drift vs investigate:**
+
+- **RHS at t=0**: Demand exact accuracy (< 1e-10 error). If RHS doesn't match analytical prediction initially, investigate.
+- **Long-time eigenmode evolution**: Accept small drift (~6-8% at t=0.1 on 32³ grid). This is expected numerical truncation from discretization, not a bug.
+- **Convergence test**: If error scales as O(dt^4) for RK4, it's truncation. If error increases with smaller timesteps, investigate.
+- **Error patterns**: Specific ratios (e.g., 15/16, 63/64) or systematic biases indicate bugs in spacing/indexing, not truncation.
+
+**Diagnostic tools**: Use scripts in `verify_spectral_solver_physics/` to compare numerical vs analytical RHS, track eigenmode structure, check for spurious harmonics. Example:
+```bash
+uv run python verify_spectral_solver_physics/compare_analytical_vs_numerical_rhs.py
+```
 
 ## Workflow
 
@@ -224,8 +251,7 @@ grid = SpaceGrid(..., grid_points=(64, 64, 64))  # Missing boundary_conditions
 **Completed Physics:**
 - ✅ **Conservation Laws**: ∇_μ T^μν = 0 (31 tests)
 - ✅ **Relaxation Equations**: IS second-order (Π, π^μν, q^μ), all couplings (λ_ππ, λ_πΠ, λ_πq, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (30+ tests)
-- ✅ **Spectral Solver**: FFT-based, 72% coverage, 58/59 tests
+- ✅ **Spectral Solver**: FFT-based with linear regime detection, periodic boundary conditions
+- ✅ **Benchmarks**: Bjorken flow, sound wave propagation, equilibration dynamics (executable via `run_*.py` scripts)
 
-**Next**: Transport coefficients (T/ρ-dependent viscosities), Benchmarks (Bjorken, sound waves)
-
-**Key Features**: Automatic index tracking, Einstein summation (opt_einsum), metric signatures, 3+1 decomposition, Christoffel symbols, covariant derivatives (arbitrary rank), curved spacetime, 90+ tests
+**Key Features**: Automatic index tracking, Einstein summation (opt_einsum), metric signatures, 3+1 decomposition, Christoffel symbols, covariant derivatives (arbitrary rank), curved spacetime, comprehensive validation suite

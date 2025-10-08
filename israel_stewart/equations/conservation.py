@@ -67,7 +67,11 @@ class ConservationLaws:
     def stress_energy_tensor(self) -> np.ndarray:
         """
         Construct T^μν including all Israel-Stewart corrections:
-        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν + π^μν + q^μu^ν + q^νu^μ
+        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν - π^μν + q^μu^ν + q^νu^μ
+
+        NOTE: The shear stress has a MINUS sign. This is Convention B in the
+        literature (Landau-Lifshitz), which treats π^μν as a dissipative correction
+        that opposes the flow. The dispersion matrix uses this convention.
 
         Returns:
             Stress-energy tensor with shape (*grid.shape, 4, 4)
@@ -97,7 +101,8 @@ class ConservationLaws:
         T_heat = T_heat_1 + T_heat_2
 
         # Combine all contributions
-        T_total = T_perfect + T_bulk + T_shear + T_heat
+        # NOTE: Shear stress has MINUS sign (Convention B: dissipative correction)
+        T_total = T_perfect + T_bulk - T_shear + T_heat
         result: np.ndarray = T_total
         return result
 

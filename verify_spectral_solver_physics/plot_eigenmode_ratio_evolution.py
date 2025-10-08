@@ -15,9 +15,15 @@ from israel_stewart.core.fields import TransportCoefficients
 coeffs = TransportCoefficients(
     shear_viscosity=0.08,
     bulk_viscosity=0.04,
-    shear_relaxation_time=0.5,
-    bulk_relaxation_time=0.3
+    shear_relaxation_time=1.0,
+    bulk_relaxation_time=0.5,
+    lambda_pi_pi=0.0, # Zero out second-order terms for linear analysis
+    lambda_pi_Pi=0.0,
+    xi_1=0.0,
+    xi_2=0.0,
 )
+
+print(f"INFO: Using Transport Coefficients: {coeffs}")
 
 benchmark = NumericalSoundWaveBenchmark(
     domain_size=2*np.pi,

@@ -1465,6 +1465,10 @@ class SpectralISHydrodynamics:
         Solving: du^i/dt = (1/h)[d(h u^i)/dt - u^i·dh/dt]
         where h = ε+p = 4/3 ε for radiation fluid.
 
+        IMPORTANT: For small perturbations (linear regime), the nonlinear coupling
+        term -u·dh/dt creates spurious 2nd harmonics that break eigenmode structure.
+        We use linearized conversion du/dt ≈ d(h·u)/dt / h₀ when perturbations are small.
+
         Args:
             dmom_dt: Time derivative of momentum density d(h u^i)/dt, shape (*grid.shape, 3)
             drho_dt: Time derivative of energy density dε/dt, shape (*grid.shape,)
@@ -1474,18 +1478,35 @@ class SpectralISHydrodynamics:
         Returns:
             du_dt: Time derivative of spatial velocity du^i/dt, shape (*grid.shape, 3)
         """
-        # Enthalpy for radiation fluid: h = ε + p = 4/3 ε
-        h = 4.0 / 3.0 * rho
-        dh_dt = 4.0 / 3.0 * drho_dt
+        # Background enthalpy for radiation fluid: h₀ = 4/3
+        h_background = 4.0 / 3.0
 
-        # Avoid division by zero
-        h_safe = np.where(np.abs(h) > 1e-14, h, 1e-14)
+        # Detect linear regime: max perturbation < 10%
+        # For radiation fluid at rest: ρ₀ = 1, so |δρ| = |ρ - 1|
+        max_rho_perturbation = np.max(np.abs(rho - 1.0))
+        max_velocity = np.max(np.abs(u_spatial))
 
-        # Expand dh_dt to broadcast with spatial velocity
-        dh_dt_expanded = dh_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+        # Linearization is valid when both density and velocity perturbations are small
+        is_linear_regime = (max_rho_perturbation < 0.1) and (max_velocity < 0.1)
 
-        # du^i/dt = (1/h)[d(h u^i)/dt - u^i·dh/dt]
-        du_dt = (1.0 / h_safe[..., np.newaxis]) * (dmom_dt - u_spatial * dh_dt_expanded)
+        if is_linear_regime:
+            # Linear regime: ignore nonlinear coupling term
+            # du/dt = d(h·u)/dt / h₀
+            du_dt = dmom_dt / h_background
+        else:
+            # Nonlinear regime: use exact product rule
+            # du/dt = [d(h·u)/dt - u·dh/dt] / h
+            h = 4.0 / 3.0 * rho
+            dh_dt = 4.0 / 3.0 * drho_dt
+
+            # Avoid division by zero
+            h_safe = np.where(np.abs(h) > 1e-14, h, 1e-14)
+
+            # Expand dh_dt to broadcast with spatial velocity
+            dh_dt_expanded = dh_dt[..., np.newaxis]  # Shape: (*grid.shape, 1)
+
+            # Full nonlinear conversion
+            du_dt = (1.0 / h_safe[..., np.newaxis]) * (dmom_dt - u_spatial * dh_dt_expanded)
 
         return du_dt
 

@@ -386,9 +386,9 @@ class SoundWaveAnalysis:
 
         For plane wave exp(-iωt + ikx), the linearized equations are:
         1. Energy conservation: (-iω)·δε + ik·(ε₀+p₀)·δv_x = 0
-        2. Momentum conservation: ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ + ik·δπ_xx = 0
+        2. Momentum conservation: ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ - ik·δπ_xx = 0
         3. Bulk relaxation: (1 - iωτ_Π)·δΠ + iζk·δv_x = 0
-        4. Shear relaxation: (1 - iωτ_π)·δπ_xx + i·(4/3)ηk·δv_x = 0
+        4. Shear relaxation: (1 - iωτ_π)·δπ_xx - i·(4/3)ηk·δv_x = 0
         """
         k = np.linalg.norm(wave_vector)
 
@@ -415,7 +415,7 @@ class SoundWaveAnalysis:
         matrix[0, 1] = 1j * k * enthalpy  # δv_x coefficient
 
         # Row 1: Momentum conservation ∂_μ T^μx = 0
-        # ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ + ik·δπ_xx = 0
+        # ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ - ik·δπ_xx = 0
         matrix[1, 0] = 1j * k * cs_squared  # δε coefficient
         matrix[1, 1] = -1j * omega * enthalpy  # δv_x coefficient
         matrix[1, 2] = 1j * k  # δΠ coefficient

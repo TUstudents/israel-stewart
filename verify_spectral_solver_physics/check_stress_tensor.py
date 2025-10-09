@@ -84,14 +84,14 @@ print(f"  Actual T^0x:           {T_0x:.6e}")
 print(f"  Match: {np.allclose(T_0x, T_0x_perfect, rtol=1e-6)}")
 print()
 
-# T^xx components
+# T^xx components (Convention B: T^μν = ... + ΠΔ^μν - π^μν)
 T_xx_perfect = p  # In rest frame, spatial part of T^μν is p·g^ij
-T_xx_with_diss = T_xx_perfect + Pi + pi_xx
+T_xx_with_diss = T_xx_perfect + Pi - pi_xx
 
-print("T^xx components:")
+print("T^xx components (Convention B):")
 print(f"  Perfect fluid (p):       {T_xx_perfect:.6e}")
 print(f"  + Bulk (Π):              {Pi:.6e}")
-print(f"  + Shear (π_xx):          {pi_xx:.6e}")
+print(f"  - Shear (π_xx):          {-pi_xx:.6e}")
 print(f"  Total (expected):        {T_xx_with_diss:.6e}")
 print(f"  Actual T^xx:             {T_xx:.6e}")
 print(f"  Match: {np.allclose(T_xx, T_xx_with_diss, rtol=1e-6)}")

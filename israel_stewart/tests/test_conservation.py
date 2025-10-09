@@ -128,13 +128,14 @@ class TestStressEnergyTensor:
         np.testing.assert_allclose(T[..., 1, 1], expected_T11, rtol=1e-12)
 
     def test_shear_stress_contribution(self, simple_fields: ISFieldConfiguration) -> None:
-        """Test shear stress contribution."""
+        """Test shear stress contribution with Convention B sign."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
 
         # Check off-diagonal components with shear stress
-        # T^12 should include π^12
-        expected_T12 = 0.05  # π^12
+        # Convention B (Landau-Lifshitz): T = ... - π^μν (MINUS sign)
+        # For rest frame: T^12 = -π^12 = -0.05
+        expected_T12 = -0.05  # -π^12 (Convention B)
         np.testing.assert_allclose(T[..., 1, 2], expected_T12, rtol=1e-12)
         np.testing.assert_allclose(T[..., 2, 1], expected_T12, rtol=1e-12)
 

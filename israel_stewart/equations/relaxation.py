@@ -198,17 +198,33 @@ class ISRelaxationEquations:
         return np.concatenate([dPi_dt.flatten(), dpi_munu_dt.reshape(-1), dq_mu_dt.reshape(-1)])
 
     def _bulk_rhs(self, Pi: np.ndarray, pi_munu: np.ndarray, theta: np.ndarray) -> np.ndarray:
-        """Compute bulk pressure evolution."""
-        # Linear relaxation term
+        """
+        Compute bulk pressure evolution RHS.
+
+        Israel-Stewart equation: dΠ/dt = -Π/τ_Π - ζθ
+
+        IMPORTANT: For IMEX time integration, the linear term -Π/τ_Π is handled
+        implicitly, so the spectral solver adds it back to get the explicit part.
+        This function computes the FULL RHS including both linear and source terms.
+        The IMEX splitting is done in spectral.py, not here.
+
+        Returns:
+            Full RHS: -Π/τ_Π - ζθ + (second-order terms)
+        """
+        # Linear relaxation term: -Π/τ_Π
         linear = (
             -Pi / self.coeffs.bulk_relaxation_time
             if self.coeffs.bulk_relaxation_time
             else np.zeros_like(Pi)
         )
 
-        # First-order source: -zeta*theta
-        if self.coeffs.bulk_relaxation_time and self.coeffs.bulk_relaxation_time > 0:
-            first_order = -self.coeffs.bulk_viscosity * theta / self.coeffs.bulk_relaxation_time
+        # First-order source: -ζ*θ
+        # NOTE: This is the PHYSICAL source term from bulk viscosity.
+        # It should NOT be divided by τ_Π (that would make viscosity depend on relaxation time!)
+        # The analytical dispersion relation uses form: τ_Π·dΠ/dt + Π = -ζθ
+        # Dividing by τ_Π: dΠ/dt = -Π/τ_Π - ζθ (this form, not -ζθ/τ_Π)
+        if self.coeffs.bulk_viscosity:
+            first_order = -self.coeffs.bulk_viscosity * theta
         else:
             first_order = np.zeros_like(Pi)
 
@@ -246,17 +262,33 @@ class ISRelaxationEquations:
         omega_munu: np.ndarray,
         nabla_T: np.ndarray,
     ) -> np.ndarray:
-        """Compute shear tensor evolution."""
-        # Linear relaxation
+        """
+        Compute shear stress tensor evolution RHS.
+
+        Israel-Stewart equation: dπ^μν/dt = -π^μν/τ_π + 2η*σ^μν
+
+        IMPORTANT: For IMEX time integration, the linear term -π/τ_π is handled
+        implicitly, so the spectral solver adds it back to get the explicit part.
+        This function computes the FULL RHS including both linear and source terms.
+        The IMEX splitting is done in spectral.py, not here.
+
+        Returns:
+            Full RHS: -π^μν/τ_π + 2η*σ^μν + (second-order terms)
+        """
+        # Linear relaxation: -π^μν/τ_π
         linear = (
             -pi_munu / self.coeffs.shear_relaxation_time
             if self.coeffs.shear_relaxation_time
             else np.zeros_like(pi_munu)
         )
 
-        # First-order source: 2*eta*sigma^munu
-        if self.coeffs.shear_relaxation_time and self.coeffs.shear_relaxation_time > 0:
-            first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu / self.coeffs.shear_relaxation_time
+        # First-order source: 2η*σ^μν
+        # NOTE: This is the PHYSICAL source term from shear viscosity.
+        # It should NOT be divided by τ_π (that would make viscosity depend on relaxation time!)
+        # The analytical dispersion relation uses form: τ_π·dπ/dt + π = 2ησ
+        # Dividing by τ_π: dπ/dt = -π/τ_π + 2ησ (this form, not 2ησ/τ_π)
+        if self.coeffs.shear_viscosity:
+            first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu
         else:
             first_order = np.zeros_like(pi_munu)
 

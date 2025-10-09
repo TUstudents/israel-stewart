@@ -51,8 +51,8 @@ h = rho + p
 # T^xx components
 T_xx = T[..., 1, 1]
 
-# Manual computation
-T_xx_manual = h * v_x**2 + p + Pi + pi_xx
+# Manual computation (Convention B: T^μν = ... - π^μν)
+T_xx_manual = h * v_x**2 + p + Pi - pi_xx
 
 print("At grid point (8, 0, 0):")
 print(f"  h·v_x²: {(h * v_x**2)[8, 0, 0]:.6e}  (kinetic, O(v²))")
@@ -113,12 +113,12 @@ print()
 # For radiation fluid: p = ρ/3, so δp = δρ/3
 p_k = rho_k / 3.0
 
-# T^xx in Fourier space (linearized):
-# T^xx = p₀ + δp + δΠ + δπ_xx + h₀·(v_x)²
+# T^xx in Fourier space (linearized, Convention B):
+# T^xx = p₀ + δp + δΠ - δπ_xx + h₀·(v_x)²
 # The k=8 mode only has oscillating parts (δp, δΠ, δπ_xx)
 # Kinetic term h₀·v² is second order, gives k=16 mode
 
-T_xx_k_linear = p_k + Pi_k + pi_k
+T_xx_k_linear = p_k + Pi_k - pi_k
 
 print("Analytical prediction (linear theory):")
 print(f"  δp(k) = δρ(k)/3:  {p_k}")

@@ -2044,7 +2044,9 @@ class SpectralISHydrodynamics:
         # Update pressure from equation of state
         self.fields.update_pressure_from_eos("radiation")
 
-        # CRITICAL: Update u^0 to maintain four-velocity normalization
+        # Update u^0 to maintain normalization constraint g_μν u^μ u^ν = -1
+        # This computes u^0 = sqrt(1 + |u_spatial|²) from updated spatial velocity
+        # This is NECESSARY for intermediate stages to have consistent field states
         self.fields.normalize_four_velocity()
 
     def _rk4_coupled_advance(self, dt: float) -> None:

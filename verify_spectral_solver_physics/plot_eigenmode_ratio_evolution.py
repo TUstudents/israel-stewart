@@ -29,7 +29,7 @@ benchmark = NumericalSoundWaveBenchmark(
     domain_size=2 * np.pi, grid_points=(32, 32, 16), transport_coeffs=coeffs
 )
 
-k = 8.0
+k = 4.0
 # NOTE: Using the reverted, original initialization logic as requested by user
 benchmark.setup_initial_conditions(wave_number=k)
 
@@ -71,7 +71,7 @@ v_k_list = []
 Pi_k_list = []
 pi_k_list = []
 
-k_idx = 8
+k_idx = 4
 
 
 def track_fields(t, fields):

@@ -20,7 +20,7 @@ from ..core.memory_optimization import (
 )
 from ..core.performance import monitor_performance, profile_operation
 from ..core.tensor_utils import optimized_einsum
-from ..utils.logging_config import get_logger, performance_logger, physics_logger
+from ..utils.logging_config import get_logger, performance_logger
 
 if TYPE_CHECKING:
     from ..core.fields import ISFieldConfiguration, TransportCoefficients
@@ -87,6 +87,10 @@ class SpectralISolver:
         # Use grid spacing directly (now correct for periodic boundaries)
         self.dx, self.dy, self.dz = grid.spatial_spacing
 
+        # Check Israel-Stewart regime of applicability
+        if coeffs is not None:
+            self._check_regime_of_applicability()
+
         # Precompute FFT plans for efficiency
         self.fft_plan = np.fft.fftn
         self.ifft_plan = np.fft.ifftn
@@ -111,6 +115,71 @@ class SpectralISolver:
 
         # Pre-allocate common array shapes
         self._precompute_workspaces()
+
+    def _check_regime_of_applicability(self) -> None:
+        """
+        Check if the simulation parameters are within Israel-Stewart regime of applicability.
+
+        Israel-Stewart hydrodynamics is valid when |τω| ≲ 1, where τ is the relaxation
+        time and ω is the characteristic frequency. For spectral modes, ω ≈ k·c_s.
+
+        Warns if maximum wavenumber exceeds regime limit.
+
+        Reference:
+            Wagner & Gavassino, "The regime of applicability of Israel-Stewart hydrodynamics"
+            (2024), arXiv:2309.14828v2
+        """
+        if self.coeffs is None:
+            return
+
+        # Get maximum wavenumber from grid
+        kx_max = np.pi / self.dx  # Nyquist frequency
+        ky_max = np.pi / self.dy
+        kz_max = np.pi / self.dz
+        k_max = np.sqrt(kx_max**2 + ky_max**2 + kz_max**2)
+
+        # Speed of sound for radiation fluid (conformal EOS: p = ε/3)
+        c_s = 1.0 / np.sqrt(3.0)
+
+        # Estimate maximum frequency
+        omega_max = k_max * c_s
+
+        # Get maximum relaxation time
+        tau_max = max(
+            self.coeffs.shear_relaxation_time,
+            self.coeffs.bulk_relaxation_time,
+        )
+
+        # Compute regime parameter
+        regime_param = abs(tau_max * omega_max)
+
+        # Log and warn based on severity
+        logger = get_logger(__name__)
+
+        if regime_param > 1.0:
+            warnings.warn(
+                f"Maximum |τω| = {regime_param:.2f} > 1. Outside Israel-Stewart regime of applicability. "
+                f"(k_max = {k_max:.2f}, τ_max = {tau_max:.3f}, c_s = {c_s:.3f}). "
+                f"Results may be unphysical with instabilities at high wavenumbers. "
+                f"Consider reducing k_max (coarser grid) or relaxation times. "
+                f"See Wagner & Gavassino (2024) and HIGH_K_INSTABILITY_RESOLUTION.md.",
+                category=UserWarning,
+                stacklevel=3,
+            )
+            logger.warning(
+                f"Regime violation: |τω| = {regime_param:.2f} > 1 "
+                f"(k_max={k_max:.2f}, ω_max={omega_max:.2f}, τ_max={tau_max:.3f})"
+            )
+        elif regime_param > 0.7:
+            logger.info(
+                f"|τω| = {regime_param:.2f} approaching regime boundary (limit: 1.0). "
+                f"Results may be less accurate at highest wavenumbers. "
+                f"(k_max={k_max:.2f}, ω_max={omega_max:.2f}, τ_max={tau_max:.3f})"
+            )
+        else:
+            logger.debug(
+                f"|τω| = {regime_param:.2f} < 0.7. Well within Israel-Stewart regime."
+            )
 
     def _precompute_workspaces(self) -> None:
         """Pre-allocate common workspace arrays for memory optimization."""

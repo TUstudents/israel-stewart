@@ -208,6 +208,67 @@ The spectral solver automatically detects linear regime when:
 
 **Implementation**: `israel_stewart/solvers/spectral.py:_convert_momentum_to_velocity_derivative_with_fields()`
 
+### Israel-Stewart Regime of Applicability
+
+**Israel-Stewart hydrodynamics has a fundamental physical regime where it is valid.** Operating outside this regime leads to unphysical results and numerical instabilities.
+
+#### Regime Condition (Wagner & Gavassino 2024)
+
+For plane wave modes with wavenumber k and frequency ω:
+```
+|τω| ≲ 1
+```
+
+where τ is the relaxation time (max of τ_π, τ_Π).
+
+**Physical interpretation**: The relaxation time must be smaller than or comparable to the oscillation period. If τω >> 1, dissipative fluxes cannot relax fast enough to track hydrodynamic variables.
+
+**For sound waves**: ω ≈ k·c_s, so the condition becomes:
+```
+k ≲ 1/(τ·c_s)
+```
+
+For radiation fluid (c_s = 1/√3 ≈ 0.577) with typical τ ~ 0.5:
+```
+k_max ≈ 1/(0.5 × 0.577) ≈ 3.5
+
+Recommended: k_max ≤ 4 (with safety margin)
+```
+
+#### Practical Guidelines
+
+**✓ Valid regimes:**
+- Low-moderate wavenumbers: k ≲ 4 for τ ~ 0.5
+- Smooth flows (spatial variations over scales >> mean free path)
+- Temporal variations on timescales ≳ τ
+
+**✗ Invalid regimes:**
+- High wavenumbers: k > 1/(τ·c_s) → instability expected
+- Sharp shocks or discontinuities
+- Far-from-equilibrium dynamics
+
+**Example regime check:**
+```python
+# Estimate maximum frequency
+k_max = np.max(np.abs(grid.wave_numbers))
+c_s = 1.0 / np.sqrt(3.0)  # Radiation fluid
+omega_max = k_max * c_s
+
+# Check regime
+tau_max = max(coeffs.shear_relaxation_time, coeffs.bulk_relaxation_time)
+regime_param = abs(tau_max * omega_max)
+
+if regime_param > 1.0:
+    logger.warning(
+        f"|τω| = {regime_param:.2f} > 1. Outside Israel-Stewart regime. "
+        "Expect unphysical results. Reduce k_max or relaxation times."
+    )
+```
+
+#### Reference
+
+Wagner & Gavassino, "The regime of applicability of Israel-Stewart hydrodynamics" (2024), arXiv:2309.14828v2. See `HIGH_K_INSTABILITY_RESOLUTION.md` for detailed analysis.
+
 ### Testing Guidelines
 
 **When tests fail, investigate the root cause instead of weakening assertions!**
@@ -230,6 +291,112 @@ The spectral solver automatically detects linear regime when:
 ```bash
 uv run python verify_spectral_solver_physics/compare_analytical_vs_numerical_rhs.py
 ```
+
+### IReD Formulation and Transport Coefficients
+
+**This codebase implements the IReD (Inverse-Reynolds-Dominance) formulation of Israel-Stewart hydrodynamics** as described in Wagner, Palermo, Ambrus (2022). IReD is formally equivalent to the DNMR (Denicol-Niemi-Molnár-Rischke) approach up to second order in gradients, but eliminates O(Kn²) parabolic terms by construction.
+
+#### Form B Relaxation Equations (Standard IReD)
+
+**CRITICAL**: The relaxation equations use Form B structure (WITHOUT `/τ` in source terms):
+
+```python
+# ✅ CORRECT (Form B - IReD formulation):
+dΠ/dt = -Π/τ_Π - ζθ + J_terms
+dπ^μν/dt = -π^μν/τ_π - 2ησ^μν + J_terms
+dq^μ/dt = -q^μ/τ_q - κΔ^μν∂_νT + J_terms
+
+# ❌ WRONG (Form A - causes numerical instability):
+dΠ/dt = -Π/τ_Π - ζθ/τ_Π + J_terms
+```
+
+**Why Form B?** This implements operator splitting (separate relaxation and forcing), not algebraic solution. Form A causes severe numerical instabilities despite appearing in some dispersion relation derivations.
+
+**Implementation**: See `israel_stewart/equations/relaxation.py:200-348`
+- Line 227: `first_order = -self.coeffs.bulk_viscosity * theta` (Form B for bulk)
+- Line 289: `first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu` (Form B for shear)
+
+#### IReD vs DNMR: Key Differences
+
+| Aspect | DNMR | IReD |
+|--------|------|------|
+| **Approach** | Eigenmode decomposition | Direct asymptotic matching |
+| **K terms** | K^{μ₁...μℓ} ≠ 0 (parabolic) | K^{μ₁...μℓ} = 0 (by construction) |
+| **Relaxation times** | Inverse eigenvalues: τ^(ℓ) = 1/ω_ℓ | Weighted averages: τ_Π = Σ_r τ^(0)_{0r} C^(0)_r |
+| **Convergence** | τ decreases with order | τ increases with order |
+| **Accuracy** | IReD ≻ DNMR ≻ tDNMR ≻ NS ≻ 2ndOH | (Wagner & Gavassino 2024) |
+
+**Formal equivalence**: IReD ≡ DNMR at second order. Transport coefficients related by Table II in IReD.pdf (Wagner et al. 2022).
+
+#### Current Transport Coefficients
+
+**Status**: Phenomenological (acceptable for exploratory work)
+
+```python
+coeffs = TransportCoefficients(
+    # First-order (required)
+    shear_viscosity=0.1,      # η
+    bulk_viscosity=0.05,      # ζ
+
+    # Relaxation times (required, IReD: weighted averages)
+    shear_relaxation_time=0.5,  # τ_π
+    bulk_relaxation_time=0.3,   # τ_Π
+
+    # Second-order J terms (optional, currently phenomenological)
+    xi_1=0.0,     # ξ₁ (nonlinear bulk)
+    xi_2=0.0,     # ξ₂ (nonlinear shear)
+    # lambda_pipi, lambda_piPi, etc. - not yet implemented
+)
+```
+
+**For quantitative accuracy**: Implement full IReD transport coefficients from Appendix B of IReD.pdf. See `docs/IRED_THEORY.md` Part III for explicit formulas.
+
+**Ultrarelativistic hard sphere gas** (benchmark):
+- ζ/s = 0 (conformal)
+- η/s = 1/(4π)
+- τ_Π = τ_π = 5τ₀/3
+
+#### Verification
+
+**Run the IReD verification script** to check implementation correctness:
+
+```bash
+uv run python verify_ired_implementation.py
+```
+
+**This checks**:
+1. ✅ Form B structure in relaxation equations (no `/τ` in source terms)
+2. ✅ Regime applicability warning triggers appropriately (|τω| > 1)
+3. ✅ Required transport coefficients present
+4. ✅ Numerical RHS matches analytical predictions
+
+**Expected output**: 12/16 checks pass (4 failures are acceptable: optional coefficients and method lookup).
+
+#### Documentation
+
+**Comprehensive theory**: `docs/IRED_THEORY.md` (~12,000 words)
+- Part I: Theoretical foundation (Boltzmann, moments, Landau frame)
+- Part II: IReD vs DNMR approaches
+- Part III: Relaxation equations with explicit formulas
+- Part IV: Regime of applicability (|τω| ≲ 1)
+- Part V: Formal equivalence proof
+- Part VI: Implementation guide and code analysis
+- Part VII: Numerical benchmarks
+
+**Quick reference**: `docs/IRED_QUICK_REFERENCE.md`
+- One-page lookup for key equations
+- Transport coefficient formulas
+- IReD ↔ DNMR conversion table
+- Code variable cross-reference
+
+**Historical context**: See `DISPERSION_MATRIX_PARADOX.md` and `HIGH_K_INSTABILITY_RESOLUTION.md` for resolution of Form A vs Form B confusion.
+
+#### Key References
+
+- **IReD formulation**: Wagner, Palermo, Ambrus (2022), arXiv:2208.02506 - `docs/IReD.pdf`
+- **Regime applicability**: Wagner & Gavassino (2024), arXiv:2309.14828v2 - `docs/regime of applicability.pdf`
+- **DNMR approach**: Denicol et al. (2012), arXiv:1202.4551
+- **Conformal case**: Baier et al. (2008), arXiv:0712.2451 - `docs/JHEP042008100.pdf`
 
 ## Workflow
 

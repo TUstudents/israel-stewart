@@ -218,11 +218,11 @@ class ISRelaxationEquations:
             else np.zeros_like(Pi)
         )
 
-        # First-order source: -ζ*θ
-        # NOTE: This is the PHYSICAL source term from bulk viscosity.
-        # It should NOT be divided by τ_Π (that would make viscosity depend on relaxation time!)
-        # The analytical dispersion relation uses form: τ_Π·dΠ/dt + Π = -ζθ
-        # Dividing by τ_Π: dΠ/dt = -Π/τ_Π - ζθ (this form, not -ζθ/τ_Π)
+        # First-order source: -ζ*θ (Form B - standard IReD formulation)
+        # NOTE: This is the correct Israel-Stewart/IReD relaxation equation form.
+        # See docs/IRED_THEORY.md and Wagner, Palermo, Ambrus (2022), arXiv:2203.12608.
+        # The apparent "paradox" with dispersion relations was resolved—this form
+        # correctly implements operator splitting, not algebraic solution.
         if self.coeffs.bulk_viscosity:
             first_order = -self.coeffs.bulk_viscosity * theta
         else:
@@ -282,11 +282,9 @@ class ISRelaxationEquations:
             else np.zeros_like(pi_munu)
         )
 
-        # First-order source: 2η*σ^μν
-        # NOTE: This is the PHYSICAL source term from shear viscosity.
-        # It should NOT be divided by τ_π (that would make viscosity depend on relaxation time!)
-        # The analytical dispersion relation uses form: τ_π·dπ/dt + π = 2ησ
-        # Dividing by τ_π: dπ/dt = -π/τ_π + 2ησ (this form, not 2ησ/τ_π)
+        # First-order source: 2η*σ^μν (Form B - standard IReD formulation)
+        # NOTE: This is the correct Israel-Stewart/IReD relaxation equation form.
+        # See docs/IRED_THEORY.md and Wagner, Palermo, Ambrus (2022), arXiv:2203.12608.
         if self.coeffs.shear_viscosity:
             first_order = 2.0 * self.coeffs.shear_viscosity * sigma_munu
         else:

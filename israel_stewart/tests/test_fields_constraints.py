@@ -17,7 +17,7 @@ from israel_stewart.core import (
     FLRWMetric,
     MilneMetric,
     MinkowskiMetric,
-    SpacetimeGrid,
+    SpaceGrid,
 )
 from israel_stewart.core.fields import ISFieldConfiguration
 
@@ -26,13 +26,13 @@ class TestNoneMetricConstraints:
     """Test constraint enforcement with None metric (default Minkowski case)."""
 
     @pytest.fixture
-    def default_grid(self) -> SpacetimeGrid:
-        """Create SpacetimeGrid with None metric (most common case)."""
-        return SpacetimeGrid(
+    def default_grid(self) -> SpaceGrid:
+        """Create SpaceGrid with None metric (most common case, pure 3D)."""
+        return SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(3, 3, 3, 3),
+            grid_points=(3, 3, 3),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",
             metric=None,  # Default Minkowski case
         )
 
@@ -54,7 +54,7 @@ class TestNoneMetricConstraints:
         # Set non-trivial dissipative fields
         field_config.Pi.fill(0.01)  # Bulk pressure
         field_config.pi_munu[..., 0, 1] = 0.005  # Shear component
-        field_config.q_mu[..., 1] = 0.002  # Heat flux
+        field_config.V_mu[..., 1] = 0.002  # Particle diffusion current
 
         # This should NOT crash (was the main bug)
         try:
@@ -106,21 +106,21 @@ class TestNoneMetricConstraints:
         trace = np.einsum("...ii,i->...", field_config.pi_munu, g_diag)
         np.testing.assert_allclose(trace, 0.0, atol=1e-14)
 
-    def test_heat_flux_projection_none_metric(self, field_config):
-        """Test heat flux projection with None metric."""
-        # Set non-orthogonal heat flux
-        field_config.q_mu[..., 0] = 0.1  # Time component (should be projected out)
-        field_config.q_mu[..., 1] = 0.05  # Spatial component
-        field_config.q_mu[..., 2] = 0.03  # Spatial component
+    def test_diffusion_current_projection_none_metric(self, field_config):
+        """Test particle diffusion current projection with None metric."""
+        # Set non-orthogonal diffusion current
+        field_config.V_mu[..., 0] = 0.1  # Time component (should be projected out)
+        field_config.V_mu[..., 1] = 0.05  # Spatial component
+        field_config.V_mu[..., 2] = 0.03  # Spatial component
 
         field_config.apply_constraints()
 
-        # Verify orthogonality: q^μ u_μ = 0
+        # Verify orthogonality: V^μ u_μ = 0 (Landau frame)
         # In Minkowski: u_μ = (-u^0, u^1, u^2, u^3)
         u_lower = field_config.u_mu.copy()
         u_lower[..., 0] *= -1  # Lower time index in mostly-plus
 
-        dot_product = np.einsum("...i,...i->...", field_config.q_mu, u_lower)
+        dot_product = np.einsum("...i,...i->...", field_config.V_mu, u_lower)
         np.testing.assert_allclose(dot_product, 0.0, atol=1e-14)
 
 
@@ -128,24 +128,24 @@ class TestSymbolicMetricConstraints:
     """Test constraint enforcement with symbolic metrics (SymPy matrices)."""
 
     @pytest.fixture
-    def milne_grid(self) -> SpacetimeGrid:
-        """Create SpacetimeGrid with Milne metric (symbolic)."""
-        return SpacetimeGrid(
-            coordinate_system="milne",
-            time_range=(0.1, 1.0),  # τ > 0 for Milne coordinates
+    def milne_grid(self) -> SpaceGrid:
+        """Create SpaceGrid with Milne metric (symbolic, pure 3D)."""
+        return SpaceGrid(
+            coordinate_system="cartesian",  # Grid discretization is Cartesian
             spatial_ranges=[(-1.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(3, 3, 3, 3),
-            metric=MilneMetric(),
+            grid_points=(3, 3, 3),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",
+            metric=MilneMetric(),  # Metric defines the spacetime geometry
         )
 
     @pytest.fixture
-    def flrw_grid(self) -> SpacetimeGrid:
-        """Create SpacetimeGrid with FLRW metric (symbolic)."""
-        return SpacetimeGrid(
+    def flrw_grid(self) -> SpaceGrid:
+        """Create SpaceGrid with FLRW metric (symbolic, pure 3D)."""
+        return SpaceGrid(
             coordinate_system="spherical",
-            time_range=(0.1, 1.0),
             spatial_ranges=[(0.1, 1.0), (0.0, np.pi), (0.0, 2 * np.pi)],
-            grid_points=(3, 3, 3, 3),
+            grid_points=(3, 3, 3),  # Pure 3D: (nr, nθ, nφ)
+            boundary_conditions="periodic",
             metric=FLRWMetric(),
         )
 
@@ -164,7 +164,7 @@ class TestSymbolicMetricConstraints:
         # Set dissipative fields
         field_config.Pi.fill(0.01)
         field_config.pi_munu[..., 1, 2] = 0.005
-        field_config.q_mu[..., 2] = 0.002
+        field_config.V_mu[..., 2] = 0.002
 
         # This should NOT crash (was the symbolic metric bug)
         try:
@@ -192,7 +192,7 @@ class TestSymbolicMetricConstraints:
         # Set dissipative fields
         field_config.Pi.fill(0.01)
         field_config.pi_munu[..., 0, 3] = 0.003
-        field_config.q_mu[..., 1] = 0.001
+        field_config.V_mu[..., 1] = 0.001
 
         # Should work without ndim AttributeError
         field_config.apply_constraints()
@@ -221,13 +221,13 @@ class TestNumericalMetricConstraints:
     """Test constraint enforcement with numerical metrics (NumPy arrays)."""
 
     @pytest.fixture
-    def minkowski_grid(self) -> SpacetimeGrid:
-        """Create SpacetimeGrid with explicit MinkowskiMetric."""
-        return SpacetimeGrid(
+    def minkowski_grid(self) -> SpaceGrid:
+        """Create SpaceGrid with explicit MinkowskiMetric (pure 3D)."""
+        return SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(3, 3, 3, 3),
+            grid_points=(3, 3, 3),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",
             metric=MinkowskiMetric(),
         )
 
@@ -241,7 +241,7 @@ class TestNumericalMetricConstraints:
         field_config.u_mu[..., 1] = 0.2
         field_config.Pi.fill(0.01)
         field_config.pi_munu[..., 1, 2] = 0.005
-        field_config.q_mu[..., 2] = 0.002
+        field_config.V_mu[..., 2] = 0.002
 
         # Should work fine (numerical metrics have ndim)
         field_config.apply_constraints()
@@ -258,19 +258,17 @@ class TestEdgeCasesAndRegression:
     """Test edge cases and regression prevention."""
 
     def test_backward_compatibility(self):
-        """Ensure fixes don't break existing functionality."""
+        """Ensure fixes don't break existing functionality with pure 3D grids."""
         # Test various grid configurations that should still work
         configs = [
             # None metric (most common case)
-            SpacetimeGrid("cartesian", (0, 1), [(0, 1), (0, 1), (0, 1)], (2, 2, 2, 2), None),
+            SpaceGrid("cartesian", [(0, 1), (0, 1), (0, 1)], (2, 2, 2), None, "periodic"),
             # Explicit Minkowski
-            SpacetimeGrid(
-                "cartesian", (0, 1), [(0, 1), (0, 1), (0, 1)], (2, 2, 2, 2), MinkowskiMetric()
+            SpaceGrid(
+                "cartesian", [(0, 1), (0, 1), (0, 1)], (2, 2, 2), MinkowskiMetric(), "periodic"
             ),
-            # Symbolic metric
-            SpacetimeGrid(
-                "milne", (0.1, 1), [(-1, 1), (0, 1), (0, 1)], (2, 2, 2, 2), MilneMetric()
-            ),
+            # Symbolic metric (Cartesian grid with Milne geometry)
+            SpaceGrid("cartesian", [(-1, 1), (0, 1), (0, 1)], (2, 2, 2), MilneMetric(), "periodic"),
         ]
 
         for grid in configs:
@@ -284,7 +282,7 @@ class TestEdgeCasesAndRegression:
 
     def test_constraint_methods_accessible(self):
         """Test that individual constraint methods are accessible and functional."""
-        grid = SpacetimeGrid("cartesian", (0, 1), [(0, 1), (0, 1), (0, 1)], (3, 3, 3, 3))
+        grid = SpaceGrid("cartesian", [(0, 1), (0, 1), (0, 1)], (3, 3, 3), None, "periodic")
         field_config = ISFieldConfiguration(grid)
 
         # Set initial conditions
@@ -293,12 +291,12 @@ class TestEdgeCasesAndRegression:
         field_config.u_mu[..., 1] = 0.1
         field_config.Pi.fill(0.01)
         field_config.pi_munu[..., 1, 2] = 0.005
-        field_config.q_mu[..., 2] = 0.002
+        field_config.V_mu[..., 2] = 0.002
 
         # Test that individual constraint methods work
         field_config._normalize_four_velocity()
         field_config._project_shear_tensor()
-        field_config._project_heat_flux()
+        field_config._project_diffusion_current()
 
         # Should not crash and should apply some constraints
         # Check four-velocity normalization
@@ -309,8 +307,8 @@ class TestEdgeCasesAndRegression:
 
     def test_minimal_grid_constraints(self):
         """Test constraints work on minimal grids."""
-        # Very small grid
-        grid = SpacetimeGrid("cartesian", (0, 1), [(0, 1), (0, 1), (0, 1)], (2, 2, 2, 2))
+        # Very small grid (pure 3D)
+        grid = SpaceGrid("cartesian", [(0, 1), (0, 1), (0, 1)], (2, 2, 2), None, "periodic")
         field_config = ISFieldConfiguration(grid)
 
         field_config.rho.fill(1.0)

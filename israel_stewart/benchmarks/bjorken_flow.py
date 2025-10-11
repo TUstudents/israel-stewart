@@ -420,11 +420,11 @@ class BjorkenBenchmark:
         fields.u_mu[:] = 0.0
         fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
 
-        # Initialize dissipative fluxes to zero
+        # Initialize dissipative fluxes to zero (Landau frame)
         fields.Pi[:] = 0.0
         fields.pi_munu[:] = 0.0
-        if hasattr(fields, "q_mu"):
-            fields.q_mu[:] = 0.0
+        if hasattr(fields, "V_mu"):
+            fields.V_mu[:] = 0.0
 
     def _record_solution_state(
         self, fields: ISFieldConfiguration, solutions: dict[str, list[float]]

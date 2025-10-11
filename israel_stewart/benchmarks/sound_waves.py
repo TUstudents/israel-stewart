@@ -151,10 +151,10 @@ class SoundWaveAnalysis:
         fields.u_mu.fill(0.0)
         fields.u_mu[..., 0] = 1.0  # u^t = 1 in rest frame
 
-        # Zero dissipative fluxes
+        # Zero dissipative fluxes (Landau frame)
         fields.Pi.fill(0.0)
         fields.pi_munu.fill(0.0)
-        fields.q_mu.fill(0.0)
+        fields.V_mu.fill(0.0)  # Particle diffusion current
 
         return fields
 
@@ -415,11 +415,11 @@ class SoundWaveAnalysis:
         matrix[0, 1] = 1j * k * enthalpy  # δv_x coefficient
 
         # Row 1: Momentum conservation ∂_μ T^μx = 0
-        # ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ - ik·δπ_xx = 0
+        # For (-,+,+,+) signature: ik·c_s²·δε - iω·(ε₀+p₀)·δv_x + ik·δΠ + ik·δπ_xx = 0
         matrix[1, 0] = 1j * k * cs_squared  # δε coefficient
         matrix[1, 1] = -1j * omega * enthalpy  # δv_x coefficient
         matrix[1, 2] = 1j * k  # δΠ coefficient
-        matrix[1, 3] = -1j * k  # δπ_xx coefficient
+        matrix[1, 3] = 1j * k  # δπ_xx coefficient (PLUS sign for (-,+,+,+) signature)
 
         # Row 2: Bulk pressure relaxation equation
         # (1 - iωτ_Π)·δΠ + iζk·δv_x = 0
@@ -428,7 +428,8 @@ class SoundWaveAnalysis:
 
         # Row 3: Shear stress relaxation equation
         # (1 - iωτ_π)·δπ_xx - i·(4/3)ηk·δv_x = 0
-        matrix[3, 1] = -1j * (4.0 / 3.0) * eta * k  # δv_x coefficient
+        # Note: Both bulk and shear should have consistent sign structure
+        matrix[3, 1] = +1j * (4.0 / 3.0) * eta * k  # δv_x coefficient (PLUS to match bulk)
         matrix[3, 3] = 1.0 - 1j * omega * tau_pi  # δπ_xx coefficient
 
         return matrix
@@ -1247,9 +1248,9 @@ class NumericalSoundWaveBenchmark:
         self.fields.pi_munu[..., 2, 2] = -0.5 * delta_pi_xx
         self.fields.pi_munu[..., 3, 3] = -0.5 * delta_pi_xx
 
-        # Heat flux: q^μ = 0 for adiabatic sound wave
-        if hasattr(self.fields, "q_mu"):
-            self.fields.q_mu[:] = 0.0
+        # Particle diffusion current: V^μ = 0 for isentropic sound wave (Landau frame)
+        if hasattr(self.fields, "V_mu"):
+            self.fields.V_mu[:] = 0.0
 
     def _setup_simple_initial_conditions(
         self,
@@ -1312,9 +1313,9 @@ class NumericalSoundWaveBenchmark:
         self.fields.pi_munu[:] = 0.0
         self.fields.pi_munu[..., 0, 0] = pi_xx_amplitude * np.sin(k_x * X)
 
-        # Heat flux (zero for isentropic sound waves in radiation fluid)
-        if hasattr(self.fields, "q_mu"):
-            self.fields.q_mu[:] = 0.0
+        # Particle diffusion current (zero for isentropic sound waves, Landau frame)
+        if hasattr(self.fields, "V_mu"):
+            self.fields.V_mu[:] = 0.0
 
     def run_simulation(
         self,
@@ -1364,8 +1365,7 @@ class NumericalSoundWaveBenchmark:
         # Add relaxation time constraint for stiff explicit integration
         # Stability requires dt << min(τ_Π, τ_π) for explicit relaxation
         dt_cfl_relax = 0.01 * min(
-            self.transport_coeffs.bulk_relaxation_time,
-            self.transport_coeffs.shear_relaxation_time
+            self.transport_coeffs.bulk_relaxation_time, self.transport_coeffs.shear_relaxation_time
         )
         dt_cfl = min(dt_cfl_wave, dt_cfl_relax)
 

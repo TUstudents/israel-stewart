@@ -13,6 +13,7 @@ import pytest
 from israel_stewart.core.fields import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.metrics import MilneMetric, MinkowskiMetric
 from israel_stewart.core.spacegrid import SpaceGrid
+from israel_stewart.core.spacetime_grid import SpacetimeGrid
 from israel_stewart.equations.relaxation import ISRelaxationEquations
 
 
@@ -22,12 +23,12 @@ class TestTransportCoefficientsEnhanced:
     def test_basic_initialization(self) -> None:
         """Test basic transport coefficient initialization."""
         coeffs = TransportCoefficients(
-            shear_viscosity=0.1, bulk_viscosity=0.05, thermal_conductivity=0.02
+            shear_viscosity=0.1, bulk_viscosity=0.05, diffusion_coefficient=0.02
         )
 
         assert coeffs.shear_viscosity == 0.1
         assert coeffs.bulk_viscosity == 0.05
-        assert coeffs.thermal_conductivity == 0.02
+        assert coeffs.diffusion_coefficient == 0.02
 
         # Check default second-order coefficients
         assert coeffs.lambda_pi_pi == 0.0
@@ -127,7 +128,7 @@ class TestISFieldConfigurationEnhanced:
         # Set some test dissipative fields
         config.Pi = np.random.rand(*config.grid.shape)  # type: ignore[assignment]
         config.pi_munu = np.random.rand(*config.grid.shape, 4, 4)  # type: ignore[assignment]
-        config.q_mu = np.random.rand(*config.grid.shape, 4)  # type: ignore[assignment]
+        config.V_mu = np.random.rand(*config.grid.shape, 4)  # type: ignore[assignment]
 
         # Test round-trip conversion
         dissipative_vector = config.to_dissipative_vector()
@@ -139,7 +140,7 @@ class TestISFieldConfigurationEnhanced:
         # Verify fields are preserved
         assert np.allclose(config.Pi, config2.Pi)
         assert np.allclose(config.pi_munu, config2.pi_munu)
-        assert np.allclose(config.q_mu, config2.q_mu)
+        assert np.allclose(config.V_mu, config2.V_mu)
 
     def test_dissipative_field_count(self, setup_field_config: ISFieldConfiguration) -> None:
         """Test dissipative field counting."""
@@ -149,7 +150,7 @@ class TestISFieldConfigurationEnhanced:
         expected_count = (
             1 * grid_size  # Π
             + 16 * grid_size  # π^μν (4×4 tensor)
-            + 4 * grid_size  # q^μ (4-vector)
+            + 4 * grid_size  # V^μ (4-vector)
         )
 
         assert config.dissipative_field_count == expected_count
@@ -184,10 +185,10 @@ class TestISRelaxationEquations:
         coeffs = TransportCoefficients(
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
-            thermal_conductivity=0.02,
+            diffusion_coefficient=0.02,
             shear_relaxation_time=0.5,
             bulk_relaxation_time=0.3,
-            heat_relaxation_time=0.4,
+            diffusion_relaxation_time=0.4,
             # Second-order coefficients
             lambda_pi_pi=0.1,
             lambda_pi_Pi=0.05,
@@ -211,7 +212,7 @@ class TestISRelaxationEquations:
         # Check symbolic equations are built
         assert "bulk" in relaxation.symbolic_eqs
         assert "shear_00" in relaxation.symbolic_eqs
-        assert "heat_0" in relaxation.symbolic_eqs
+        assert "diffusion_0" in relaxation.symbolic_eqs
 
     def test_relaxation_rhs_computation(self, setup_relaxation_system: tuple) -> None:
         """Test relaxation equation RHS computation."""
@@ -226,7 +227,7 @@ class TestISRelaxationEquations:
         # Small dissipative fluxes
         fields.Pi.fill(0.01)
         fields.pi_munu.fill(0.005)
-        fields.q_mu.fill(0.002)
+        fields.V_mu.fill(0.002)
 
         # Compute RHS
         rhs = relaxation.compute_relaxation_rhs(fields)
@@ -261,7 +262,7 @@ class TestISRelaxationEquations:
         # Setup test fields
         fields.pi_munu.fill(0.05)
         fields.Pi.fill(0.02)
-        fields.q_mu.fill(0.01)
+        fields.V_mu.fill(0.01)
 
         theta = np.ones(grid.shape) * 0.3
         sigma_munu = np.ones((*grid.shape, 4, 4)) * 0.1
@@ -271,7 +272,7 @@ class TestISRelaxationEquations:
         dpi_dt = relaxation._shear_rhs(
             fields.pi_munu,
             fields.Pi,
-            fields.q_mu,
+            fields.V_mu,
             theta,
             sigma_munu,
             omega_munu,
@@ -292,7 +293,7 @@ class TestISRelaxationEquations:
         # Initial state
         fields.Pi.fill(0.1)
         fields.pi_munu.fill(0.05)
-        fields.q_mu.fill(0.02)
+        fields.V_mu.fill(0.02)
 
         # Set thermodynamic background
         fields.rho.fill(1.0)
@@ -303,7 +304,7 @@ class TestISRelaxationEquations:
         # Store initial state
         Pi_initial = fields.Pi.copy()
         pi_initial = fields.pi_munu.copy()
-        q_initial = fields.q_mu.copy()
+        V_initial = fields.V_mu.copy()
 
         # Evolve
         dt = 0.01
@@ -312,12 +313,12 @@ class TestISRelaxationEquations:
         # Fields should change
         assert not np.allclose(fields.Pi, Pi_initial)
         assert not np.allclose(fields.pi_munu, pi_initial)
-        assert not np.allclose(fields.q_mu, q_initial)
+        assert not np.allclose(fields.V_mu, V_initial)
 
         # Fields should remain finite
         assert np.all(np.isfinite(fields.Pi))
         assert np.all(np.isfinite(fields.pi_munu))
-        assert np.all(np.isfinite(fields.q_mu))
+        assert np.all(np.isfinite(fields.V_mu))
 
     def test_implicit_evolution(self, setup_relaxation_system: tuple) -> None:
         """Test implicit evolution method."""
@@ -326,7 +327,7 @@ class TestISRelaxationEquations:
         # Setup initial state
         fields.Pi.fill(0.1)
         fields.pi_munu.fill(0.05)
-        fields.q_mu.fill(0.02)
+        fields.V_mu.fill(0.02)
 
         # Thermodynamic background
         fields.rho.fill(1.0)
@@ -352,7 +353,7 @@ class TestISRelaxationEquations:
         # Setup
         fields.Pi.fill(0.1)
         fields.pi_munu.fill(0.05)
-        fields.q_mu.fill(0.02)
+        fields.V_mu.fill(0.02)
         fields.rho.fill(1.0)
         fields.pressure.fill(0.33)
         fields.temperature.fill(1.0)
@@ -379,7 +380,7 @@ class TestISRelaxationEquations:
         # Setup realistic field state
         fields.Pi.fill(0.1)
         fields.pi_munu.fill(0.05)
-        fields.q_mu.fill(0.02)
+        fields.V_mu.fill(0.02)
 
         stability = relaxation.stability_analysis(fields)
 
@@ -393,7 +394,7 @@ class TestISRelaxationEquations:
         # Validate values
         assert stability["relaxation_times"]["tau_pi"] == 0.5
         assert stability["relaxation_times"]["tau_Pi"] == 0.3
-        assert stability["relaxation_times"]["tau_q"] == 0.4
+        assert stability["relaxation_times"]["tau_V"] == 0.4
 
         assert stability["recommended_dt"] > 0
         assert isinstance(stability["is_stiff"], bool)
@@ -440,10 +441,10 @@ class TestRelaxationPhysics:
         coeffs = TransportCoefficients(
             shear_viscosity=0.1,
             bulk_viscosity=0.05,
-            thermal_conductivity=0.02,
+            diffusion_coefficient=0.02,
             shear_relaxation_time=0.1,  # Fast relaxation
             bulk_relaxation_time=0.1,
-            heat_relaxation_time=0.1,
+            diffusion_relaxation_time=0.1,
         )
 
         relaxation = ISRelaxationEquations(grid, metric, coeffs)
@@ -459,11 +460,11 @@ class TestRelaxationPhysics:
         # Initial dissipative fluxes
         fields.Pi.fill(0.1)
         fields.pi_munu.fill(0.05)
-        fields.q_mu.fill(0.02)
+        fields.V_mu.fill(0.02)
 
         initial_Pi = np.mean(np.abs(fields.Pi))
         initial_pi = np.mean(np.abs(fields.pi_munu))
-        initial_q = np.mean(np.abs(fields.q_mu))
+        initial_V = np.mean(np.abs(fields.V_mu))
 
         # Evolve for several relaxation times
         dt = 0.01
@@ -472,12 +473,12 @@ class TestRelaxationPhysics:
 
         final_Pi = np.mean(np.abs(fields.Pi))
         final_pi = np.mean(np.abs(fields.pi_munu))
-        final_q = np.mean(np.abs(fields.q_mu))
+        final_V = np.mean(np.abs(fields.V_mu))
 
         # Should decay significantly
         assert final_Pi < 0.1 * initial_Pi
         assert final_pi < 0.1 * initial_pi
-        assert final_q < 0.1 * initial_q
+        assert final_V < 0.1 * initial_V
 
     def test_second_order_coupling_effects(self) -> None:
         """Test that second-order couplings affect evolution."""

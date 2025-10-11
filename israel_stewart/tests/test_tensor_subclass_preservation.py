@@ -100,7 +100,7 @@ class TestCopyMethodPreservation(TestTensorFieldSubclassPreservation):
         assert isinstance(copied, type(sample_viscous_tensor))
 
         # Functionality preservation
-        assert hasattr(copied, "heat_flux_part")
+        assert hasattr(copied, "heat_flux_part")  # Note: method name unchanged (extraction formula)
         assert hasattr(copied, "bulk_part")
         assert hasattr(copied, "shear_part")
 
@@ -215,7 +215,9 @@ class TestTensorAlgebraPreservation(TestTensorFieldSubclassPreservation):
         # Test transpose
         transposed = sample_viscous_tensor.transpose()
         assert isinstance(transposed, ViscousStressTensor)
-        assert hasattr(transposed, "heat_flux_part")
+        assert hasattr(
+            transposed, "heat_flux_part"
+        )  # Note: method name unchanged (extraction formula)
 
         # Test symmetrize
         symmetrized = sample_viscous_tensor.symmetrize()
@@ -301,7 +303,7 @@ class TestMethodChaining(TestTensorFieldSubclassPreservation):
 
         # Should still be ViscousStressTensor
         assert isinstance(result, ViscousStressTensor)
-        assert hasattr(result, "heat_flux_part")
+        assert hasattr(result, "heat_flux_part")  # Note: method name unchanged (extraction formula)
         assert hasattr(result, "bulk_part")
 
     def test_mixed_operation_chaining(self, sample_fourvector: FourVector) -> None:

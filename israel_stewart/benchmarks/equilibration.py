@@ -233,8 +233,8 @@ class EquilibrationAnalysis:
         new_fields.u_mu[:] = fields.u_mu[:]
         new_fields.Pi[:] = fields.Pi[:]
         new_fields.pi_munu[:] = fields.pi_munu[:]
-        if hasattr(fields, "q_mu"):
-            new_fields.q_mu[:] = fields.q_mu[:]
+        if hasattr(fields, "V_mu"):
+            new_fields.V_mu[:] = fields.V_mu[:]
 
         return new_fields
 
@@ -461,11 +461,11 @@ class RelaxationTimeAnalysis:
         fields.four_velocity.fill_zero()
         fields.four_velocity.data[..., 0] = 1.0
 
-        # Non-equilibrium initial conditions for dissipative fluxes
+        # Non-equilibrium initial conditions for dissipative fluxes (Landau frame)
         fields.Pi.fill(0.1 * p)  # Initial bulk pressure
         fields.pi_munu.fill_zero()
         fields.pi_munu.data[..., 1, 1] = 0.05 * p  # Initial shear
-        fields.q_mu.fill_zero()
+        fields.V_mu.fill_zero()  # Particle diffusion current (Landau frame)
 
         return fields
 
@@ -851,12 +851,12 @@ class EquilibrationBenchmark:
         fields.four_velocity.fill_zero()
         fields.four_velocity.data[..., 0] = 1.0
 
-        # Add non-equilibrium perturbations
+        # Add non-equilibrium perturbations (Landau frame)
         fields.Pi.fill(perturbation * p)
         fields.pi_munu.fill_zero()
         fields.pi_munu.data[..., 1, 1] = perturbation * p * 0.5
         fields.pi_munu.data[..., 2, 2] = -perturbation * p * 0.5
-        fields.q_mu.fill_zero()
+        fields.V_mu.fill_zero()  # Particle diffusion current (Landau frame)
 
         return fields
 

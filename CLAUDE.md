@@ -136,7 +136,7 @@ hydro.evolve(
 - **Greek letters in docs**: Use UTF-8 (π, μ, ν, θ, ∇) not ASCII
 - **Logging**: `from israel_stewart.utils import get_logger`
 - **Shebang convention**: Use `#!/usr/bin/env -S uv run python` for executable run scripts (e.g., `run_*.py`). Do NOT use shebangs in verification/diagnostic scripts - run them explicitly with `uv run python script.py`
-- **Sign convention**: Convention B (Landau-Lifshitz) for stress tensor: `T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν - π^μν + q^μu^ν + q^νu^μ`. The MINUS sign treats π^μν as dissipative correction opposing flow, matching dispersion matrix convention.
+- **Sign convention** (CRITICAL): For (-,+,+,+) signature: `T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν + π^μν + q^μu^ν + q^νu^μ`. ALL dissipative terms have PLUS signs. This follows from IReD paper eq. (5) after metric conversion (see `docs/IRED_THEORY.md` Section 1.3).
 - Israel-Stewart second-order viscous hydrodynamics, general covariance in curved spacetime
 
 ### SpaceGrid vs SpacetimeGrid

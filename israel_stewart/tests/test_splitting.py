@@ -62,7 +62,7 @@ class TestOperatorSplittingBase:
         # Small dissipative fluxes
         fields.Pi.fill(0.01)
         fields.pi_munu.fill(0.005)
-        fields.q_mu.fill(0.002)
+        fields.V_mu.fill(0.002)
 
         return fields
 

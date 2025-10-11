@@ -66,7 +66,7 @@ class TestImplicitSolverBase:
         # Small dissipative fluxes
         fields.Pi.fill(0.01)
         fields.pi_munu.fill(0.005)
-        fields.q_mu.fill(0.002)
+        fields.V_mu.fill(0.002)
 
         return fields
 
@@ -81,8 +81,8 @@ class TestImplicitSolverBase:
         if hasattr(fields, "pi_munu") and fields.pi_munu is not None:
             rhs["pi_munu"] = -fields.pi_munu / 0.5  # -pi^munu/tau_pi
 
-        if hasattr(fields, "q_mu") and fields.q_mu is not None:
-            rhs["q_mu"] = -fields.q_mu / 0.4  # -q^mu/tau_q
+        if hasattr(fields, "V_mu") and fields.V_mu is not None:
+            rhs["V_mu"] = -fields.V_mu / 0.4  # -V^mu/tau_V
 
         return rhs
 

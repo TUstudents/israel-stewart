@@ -697,7 +697,7 @@ class TestSpectralISHydrodynamics:
         assert "rho" in fields_copy
         assert "Pi" in fields_copy
         assert "pi_munu" in fields_copy
-        assert "q_mu" in fields_copy
+        assert "V_mu" in fields_copy
         assert "mom_x" in fields_copy
         assert "mom_y" in fields_copy
         assert "mom_z" in fields_copy
@@ -1356,7 +1356,7 @@ class TestSpectralSolverCriticalFixes:
         # Ensure fields have correct tensor shapes
         fields.Pi = np.random.rand(*grid.shape) * 0.1
         fields.pi_munu = np.random.rand(*grid.shape, 4, 4) * 0.05
-        fields.q_mu = np.random.rand(*grid.shape, 4) * 0.01
+        fields.V_mu = np.random.rand(*grid.shape, 4) * 0.01
 
         coeffs = TransportCoefficients(
             shear_viscosity=0.1,
@@ -1381,10 +1381,10 @@ class TestSpectralSolverCriticalFixes:
             assert fields_k["pi_munu"].shape == fields.pi_munu.shape
             assert fields_k["pi_munu"].dtype == complex
 
-            # Verify that heat flux transform worked
-            assert "q_mu" in fields_k
-            assert fields_k["q_mu"].shape == fields.q_mu.shape
-            assert fields_k["q_mu"].dtype == complex
+            # Verify that particle diffusion current transform worked
+            assert "V_mu" in fields_k
+            assert fields_k["V_mu"].shape == fields.V_mu.shape
+            assert fields_k["V_mu"].dtype == complex
 
         except IndexError as e:
             pytest.fail(f"Tensor indexing failed: {e}")
@@ -1397,7 +1397,7 @@ class TestSpectralSolverCriticalFixes:
         fields_malformed = ISFieldConfiguration(grid)
         fields_malformed.Pi = np.random.rand(*grid.shape)
         fields_malformed.pi_munu = np.random.rand(*grid.shape, 3, 3)  # Wrong shape
-        fields_malformed.q_mu = np.random.rand(*grid.shape, 3)  # Wrong shape
+        fields_malformed.V_mu = np.random.rand(*grid.shape, 3)  # Wrong shape
 
         # Should not raise IndexError, but should issue warnings
         with pytest.warns(UserWarning, match="incompatible with 4x4 indices"):
@@ -1474,9 +1474,9 @@ class TestSpectralSolverCriticalFixes:
 
             # Should preserve shapes and remain finite
             assert fields.pi_munu.shape[-2:] == (4, 4)
-            assert fields.q_mu.shape[-1] == 4
+            assert fields.V_mu.shape[-1] == 4
             assert np.all(np.isfinite(fields.pi_munu))
-            assert np.all(np.isfinite(fields.q_mu))
+            assert np.all(np.isfinite(fields.V_mu))
 
         except IndexError as e:
             pytest.fail(f"Fourier transform failed with tensor indexing error: {e}")
@@ -1497,9 +1497,9 @@ class TestSpectralSolverCriticalFixes:
 
             # Should handle tensors without IndexError
             assert "pi_munu" in fields_k
-            assert "q_mu" in fields_k
+            assert "V_mu" in fields_k
             assert np.all(np.isfinite(fields_k["pi_munu"]))
-            assert np.all(np.isfinite(fields_k["q_mu"]))
+            assert np.all(np.isfinite(fields_k["V_mu"]))
 
         except IndexError as e:
             pytest.fail(f"Implicit solver failed with tensor indexing error: {e}")
@@ -1520,7 +1520,7 @@ class TestSpectralSolverCriticalFixes:
                 # Check stability after each step
                 assert np.all(np.isfinite(fields.Pi)), f"Bulk pressure finite at step {i}"
                 assert np.all(np.isfinite(fields.pi_munu)), f"Shear tensor finite at step {i}"
-                assert np.all(np.isfinite(fields.q_mu)), f"Heat flux finite at step {i}"
+                assert np.all(np.isfinite(fields.V_mu)), f"Diffusion current finite at step {i}"
 
             # Fields should have evolved under viscous effects
             Pi_change = np.abs(fields.Pi - initial_Pi).max()
@@ -1570,9 +1570,9 @@ class TestARS22IMEXRK:
         fields.pi_munu[..., 1, 1] = 0.005 * np.sin(X + Y)
         fields.pi_munu[..., 2, 2] = -0.005 * np.sin(X + Y)  # Traceless
 
-        # Heat flux (small)
-        fields.q_mu = np.zeros((*grid.shape, 4))
-        fields.q_mu[..., 1] = 0.002 * np.cos(X - Y)
+        # Particle diffusion current (small)
+        fields.V_mu = np.zeros((*grid.shape, 4))
+        fields.V_mu[..., 1] = 0.002 * np.cos(X - Y)
 
         coeffs = TransportCoefficients(
             shear_viscosity=0.1,
@@ -1676,7 +1676,7 @@ class TestARS22IMEXRK:
             stiff_terms = hydro_solver._compute_stiff_terms_momentum(fields)
 
             # Should contain all required fields (momentum basis)
-            required_fields = ["rho", "mom_x", "mom_y", "mom_z", "Pi", "pi_munu", "q_mu"]
+            required_fields = ["rho", "mom_x", "mom_y", "mom_z", "Pi", "pi_munu", "V_mu"]
             for field in required_fields:
                 assert field in stiff_terms, f"Stiff terms contain {field}"
                 assert np.all(np.isfinite(stiff_terms[field])), f"Finite stiff terms for {field}"
@@ -1761,7 +1761,7 @@ class TestARS22IMEXRK:
             test_fields.pressure.fill(0.33)  # Equilibrium pressure
             test_fields.Pi.fill(initial_value)  # Initial bulk pressure (will decay)
             test_fields.pi_munu.fill(0.0)
-            test_fields.q_mu.fill(0.0)
+            test_fields.V_mu.fill(0.0)
 
             # Create solver instance
             test_hydro_solver = SpectralISHydrodynamics(grid, test_fields, coeffs)
@@ -1928,7 +1928,7 @@ class TestARS22IMEXRK:
             "rho": fields.rho.copy(),  # Required for complete field configuration
             "Pi": Pi_initial.copy(),  # RHS from explicit stage
             "pi_munu": np.zeros_like(fields.pi_munu),
-            "q_mu": np.zeros_like(fields.u_mu),
+            "V_mu": np.zeros_like(fields.u_mu),
             "u_mu": fields.u_mu.copy(),  # Required for complete field configuration
         }
 

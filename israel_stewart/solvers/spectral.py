@@ -593,11 +593,11 @@ class SpectralISolver:
 #                     "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
 #                 )
 
-        # Fallback: simplified exponential relaxation
-        # ∂Π/∂τ ≈ -Π/τ_Π (linear relaxation only)
-        relaxation_factor = np.exp(-dt / relaxation_time) if relaxation_time > 0 else 0.0
+                # Fallback: simplified exponential relaxation
+                # ∂Π/∂τ ≈ -Π/τ_Π (linear relaxation only)
+                relaxation_factor = np.exp(-dt / relaxation_time) if relaxation_time > 0 else 0.0
 
-        return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], relaxation_factor * bulk_field)
+                return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], relaxation_factor * bulk_field)
 
     @monitor_performance("laplacian")
     def laplacian(self, field: np.ndarray) -> np.ndarray[Any, np.dtype[np.floating[Any]]]:
@@ -1724,10 +1724,8 @@ class SpectralISHydrodynamics:
                 explicit_rhs["mom_y"] = conservation_rhs["dmom_dt"][..., 1]
                 explicit_rhs["mom_z"] = conservation_rhs["dmom_dt"][..., 2]
             except Exception as e:
-#                 # physics_logger.log_physics_fallback(
-#                     "conservation_momentum_rhs", str(e), "skip_conservation"
-#                 )
                 # Keep zero RHS (already initialized above)
+                pass
 
         # Relaxation sources: self.fields has u = mom/ρ, so sources computed correctly
         if self.relaxation is not None:
@@ -1739,10 +1737,8 @@ class SpectralISHydrodynamics:
                 )
                 explicit_rhs["V_mu"] = relaxation_rhs.get("V_mu", np.zeros_like(self.fields.V_mu))
             except Exception as e:
-#                 # physics_logger.log_physics_fallback(
-#                     "relaxation_momentum_rhs", str(e), "skip_relaxation"
-#                 )
                 # Keep zero RHS (already initialized above)
+                pass
 
         return explicit_rhs
 

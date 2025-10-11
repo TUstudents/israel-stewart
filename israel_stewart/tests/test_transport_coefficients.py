@@ -36,14 +36,14 @@ class TestKineticTheoryModel:
         kappa = self.model.thermal_conductivity(self.T, self.rho)
         tau_pi = self.model.shear_relaxation_time(self.T, self.rho)
         tau_Pi = self.model.bulk_relaxation_time(self.T, self.rho)
-        tau_q = self.model.heat_relaxation_time(self.T, self.rho)
+        tau_V = self.model.diffusion_relaxation_time(self.T, self.rho)
 
         assert eta > 0, f"Shear viscosity should be positive, got {eta}"
         assert zeta >= 0, f"Bulk viscosity should be non-negative, got {zeta}"
-        assert kappa > 0, f"Thermal conductivity should be positive, got {kappa}"
+        assert kappa > 0, f"Diffusion coefficient should be positive, got {kappa}"
         assert tau_pi > 0, f"Shear relaxation time should be positive, got {tau_pi}"
         assert tau_Pi >= 0, f"Bulk relaxation time should be non-negative, got {tau_Pi}"
-        assert tau_q > 0, f"Heat relaxation time should be positive, got {tau_q}"
+        assert tau_V > 0, f"Diffusion relaxation time should be positive, got {tau_V}"
 
     def test_temperature_scaling(self):
         """Test correct temperature scaling of coefficients."""
@@ -90,7 +90,7 @@ class TestKineticTheoryModel:
         assert zeta == 0.0, f"Monatomic gas should have zero bulk viscosity, got {zeta}"
 
     def test_wiedemann_franz_relation(self):
-        """Test approximate Wiedemann-Franz relation for thermal conductivity."""
+        """Test approximate Wiedemann-Franz relation for diffusion coefficient."""
         eta = self.model.shear_viscosity(self.T, self.rho)
         kappa = self.model.thermal_conductivity(self.T, self.rho)
 
@@ -99,7 +99,7 @@ class TestKineticTheoryModel:
 
         assert (
             abs(kappa - expected_kappa) / expected_kappa < 1e-10
-        ), f"Thermal conductivity doesn't match kinetic theory: expected {expected_kappa}, got {kappa}"
+        ), f"Diffusion coefficient doesn't match kinetic theory: expected {expected_kappa}, got {kappa}"
 
     def test_relaxation_time_consistency(self):
         """Test that relaxation times are consistent with first-order coefficients."""
@@ -143,16 +143,16 @@ class TestQCDInspiredModel:
             kappa = self.model.thermal_conductivity(T, self.rho)
             tau_pi = self.model.shear_relaxation_time(T, self.rho)
             tau_Pi = self.model.bulk_relaxation_time(T, self.rho)
-            tau_q = self.model.heat_relaxation_time(T, self.rho)
+            tau_V = self.model.diffusion_relaxation_time(T, self.rho)
 
             assert eta > 0, f"Shear viscosity should be positive at T={T}, got {eta}"
             assert zeta >= 0, f"Bulk viscosity should be non-negative at T={T}, got {zeta}"
-            assert kappa > 0, f"Thermal conductivity should be positive at T={T}, got {kappa}"
+            assert kappa > 0, f"Diffusion coefficient should be positive at T={T}, got {kappa}"
             assert tau_pi > 0, f"Shear relaxation time should be positive at T={T}, got {tau_pi}"
             assert (
                 tau_Pi >= 0
             ), f"Bulk relaxation time should be non-negative at T={T}, got {tau_Pi}"
-            assert tau_q > 0, f"Heat relaxation time should be positive at T={T}, got {tau_q}"
+            assert tau_V > 0, f"Diffusion relaxation time should be positive at T={T}, got {tau_V}"
 
     def test_kss_bound(self):
         """Test that η/s respects the KSS bound."""
@@ -234,10 +234,10 @@ class TestTransportCoefficientCalculator:
         # Check that all attributes exist and are reasonable
         assert hasattr(coeffs, "shear_viscosity")
         assert hasattr(coeffs, "bulk_viscosity")
-        assert hasattr(coeffs, "thermal_conductivity")
+        assert hasattr(coeffs, "diffusion_coefficient")
         assert hasattr(coeffs, "shear_relaxation_time")
         assert hasattr(coeffs, "bulk_relaxation_time")
-        assert hasattr(coeffs, "heat_relaxation_time")
+        assert hasattr(coeffs, "diffusion_relaxation_time")
 
         # Second-order coefficients
         assert hasattr(coeffs, "lambda_pi_pi")
@@ -247,7 +247,7 @@ class TestTransportCoefficientCalculator:
 
         # Check values are reasonable
         assert coeffs.shear_viscosity > 0
-        assert coeffs.thermal_conductivity > 0
+        assert coeffs.diffusion_coefficient > 0
         assert coeffs.shear_relaxation_time > 0
 
     def test_second_order_coefficients(self):
@@ -354,8 +354,8 @@ class TestPhysicalConsistency:
                 ), f"Shear relaxation time non-positive at T={T}"
                 assert coeffs.bulk_relaxation_time >= 0, f"Bulk relaxation time negative at T={T}"
                 assert (
-                    coeffs.heat_relaxation_time > 0
-                ), f"Heat relaxation time non-positive at T={T}"
+                    coeffs.diffusion_relaxation_time > 0
+                ), f"Diffusion relaxation time non-positive at T={T}"
 
     def test_dimensional_analysis(self):
         """Test dimensional consistency of coefficients."""
@@ -395,10 +395,10 @@ class TestPhysicalConsistency:
         # All coefficients should be physically reasonable
         assert coeffs.shear_viscosity > 0
         assert coeffs.bulk_viscosity >= 0
-        assert coeffs.thermal_conductivity > 0
+        assert coeffs.diffusion_coefficient > 0
         assert coeffs.shear_relaxation_time > 0
         assert coeffs.bulk_relaxation_time >= 0
-        assert coeffs.heat_relaxation_time > 0
+        assert coeffs.diffusion_relaxation_time > 0
 
 
 if __name__ == "__main__":

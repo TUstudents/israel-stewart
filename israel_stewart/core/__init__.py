@@ -60,6 +60,7 @@ from .metrics import (
     MinkowskiMetric,
     SchwarzschildMetric,
 )
+from .spacegrid import SpaceGrid
 from .spacetime_grid import (
     AdaptiveMeshRefinement,
     SpacetimeGrid,
@@ -126,6 +127,7 @@ __all__ = [
     "FieldValidationError",
     "ISFieldConfiguration",
     # Grids
+    "SpaceGrid",
     "SpacetimeGrid",
     "AdaptiveMeshRefinement",
     "create_cartesian_grid",

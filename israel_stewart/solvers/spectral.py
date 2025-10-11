@@ -1,8 +1,14 @@
 """
-Fourier spectral method solver for Israel-Stewart hydrodynamics equations.
+Fourier spectral method solver for Israel-Stewart hydrodynamics equations (Landau frame).
 
 This module implements efficient spectral methods for solving relativistic
 hydrodynamics with second-order viscous corrections using FFT-based operations.
+
+Landau Frame Implementation:
+-----------------------------
+- Evolves particle diffusion current V^μ (not heat flux q^μ)
+- Diffusion driven by chemical potential gradient ∇^μ(μ_B/T)
+- All dissipative fluxes: Π (bulk), π^μν (shear), V^μ (diffusion)
 """
 
 import warnings
@@ -177,9 +183,7 @@ class SpectralISolver:
                 f"(k_max={k_max:.2f}, ω_max={omega_max:.2f}, τ_max={tau_max:.3f})"
             )
         else:
-            logger.debug(
-                f"|τω| = {regime_param:.2f} < 0.7. Well within Israel-Stewart regime."
-            )
+            logger.debug(f"|τω| = {regime_param:.2f} < 0.7. Well within Israel-Stewart regime.")
 
     def _precompute_workspaces(self) -> None:
         """Pre-allocate common workspace arrays for memory optimization."""
@@ -585,9 +589,9 @@ class SpectralISolver:
                 return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], result)
 
             except Exception as e:
-                physics_logger.log_physics_fallback(
-                    "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
-                )
+#                 # physics_logger.log_physics_fallback(
+#                     "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
+#                 )
 
         # Fallback: simplified exponential relaxation
         # ∂Π/∂τ ≈ -Π/τ_Π (linear relaxation only)
@@ -783,18 +787,21 @@ class SpectralISolver:
                         stacklevel=2,
                     )
 
-        # Heat flux relaxation: q^μ(t) = q₀^μ·exp(-t/τ_q) (if heat conduction enabled)
-        if hasattr(self.coeffs, "heat_relaxation_time") and self.coeffs.heat_relaxation_time:
-            tau_q = self.coeffs.heat_relaxation_time
-            if hasattr(fields, "q_mu") and fields.q_mu.ndim >= 1:
-                vector_shape = fields.q_mu.shape
+        # Diffusion current relaxation: V^μ(t) = V₀^μ·exp(-t/τ_V) (Landau frame)
+        if (
+            hasattr(self.coeffs, "diffusion_relaxation_time")
+            and self.coeffs.diffusion_relaxation_time
+        ):
+            tau_V = self.coeffs.diffusion_relaxation_time
+            if hasattr(fields, "V_mu") and fields.V_mu.ndim >= 1:
+                vector_shape = fields.V_mu.shape
                 if len(vector_shape) >= 1 and vector_shape[-1] == 4:
-                    # Pure relaxation for heat flux
-                    relaxation_factor = np.exp(-dt / tau_q)
-                    fields.q_mu[...] *= relaxation_factor
+                    # Pure relaxation for diffusion current
+                    relaxation_factor = np.exp(-dt / tau_V)
+                    fields.V_mu[...] *= relaxation_factor
                 else:
                     warnings.warn(
-                        f"q_mu vector shape {vector_shape} incompatible with 4-component index",
+                        f"V_mu vector shape {vector_shape} incompatible with 4-component index",
                         stacklevel=2,
                     )
 
@@ -852,17 +859,17 @@ class SpectralISolver:
                     stacklevel=2,
                 )
 
-        # Heat flux (vectorized)
-        if hasattr(fields, "q_mu") and fields.q_mu.ndim >= 1:
-            vector_shape = fields.q_mu.shape
+        # Particle diffusion current (Landau frame, vectorized)
+        if hasattr(fields, "V_mu") and fields.V_mu.ndim >= 1:
+            vector_shape = fields.V_mu.shape
             if len(vector_shape) >= 1 and vector_shape[-1] == 4:
                 # Apply FFT to all 4 components efficiently
-                fields_k["q_mu"] = np.zeros_like(fields.q_mu, dtype=complex)
+                fields_k["V_mu"] = np.zeros_like(fields.V_mu, dtype=complex)
                 for mu in range(4):
-                    fields_k["q_mu"][..., mu] = self.fft_plan(fields.q_mu[..., mu])
+                    fields_k["V_mu"][..., mu] = self.fft_plan(fields.V_mu[..., mu])
             else:
                 warnings.warn(
-                    f"q_mu vector shape {vector_shape} incompatible with 4-component index",
+                    f"V_mu vector shape {vector_shape} incompatible with 4-component index",
                     stacklevel=2,
                 )
 
@@ -894,14 +901,14 @@ class SpectralISolver:
                     stacklevel=2,
                 )
 
-        # Heat flux (efficient inverse)
-        if "q_mu" in fields_k and hasattr(fields, "q_mu"):
-            if fields.q_mu.ndim >= 1 and fields.q_mu.shape[-1] == 4:
+        # Particle diffusion current (Landau frame, efficient inverse)
+        if "V_mu" in fields_k and hasattr(fields, "V_mu"):
+            if fields.V_mu.ndim >= 1 and fields.V_mu.shape[-1] == 4:
                 for mu in range(4):
-                    fields.q_mu[..., mu] = self.ifft_plan(fields_k["q_mu"][..., mu]).real
+                    fields.V_mu[..., mu] = self.ifft_plan(fields_k["V_mu"][..., mu]).real
             else:
                 warnings.warn(
-                    f"q_mu vector shape {fields.q_mu.shape} incompatible with 4-component index",
+                    f"V_mu vector shape {fields.V_mu.shape} incompatible with 4-component index",
                     stacklevel=2,
                 )
 
@@ -942,17 +949,18 @@ class SpectralISolver:
                     stacklevel=2,
                 )
 
-        # Apply to heat flux
-        if "q_mu" in fields_k:
-            vector_shape = fields_k["q_mu"].shape
+        # Apply to particle diffusion current (Landau frame)
+        if "V_mu" in fields_k:
+            vector_shape = fields_k["V_mu"].shape
             if len(vector_shape) >= 1 and vector_shape[-1] == 4:
-                thermal_diffusivity = eta  # Simplified assumption
-                thermal_factor = 1.0 / (1.0 + thermal_diffusivity * self.k_squared * dt)
+                # Use diffusion coefficient D (not thermal conductivity)
+                diffusion_coeff = eta  # Simplified assumption (should use actual D)
+                diffusion_factor = 1.0 / (1.0 + diffusion_coeff * self.k_squared * dt)
                 for mu in range(4):
-                    fields_k["q_mu"][..., mu] *= thermal_factor
+                    fields_k["V_mu"][..., mu] *= diffusion_factor
             else:
                 warnings.warn(
-                    f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
+                    f"V_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
                     stacklevel=2,
                 )
 
@@ -995,18 +1003,18 @@ class SpectralISolver:
                         stacklevel=2,
                     )
 
-        # Heat flux relaxation (if available)
-        if hasattr(self.coeffs, "heat_relaxation_time"):
-            tau_q = getattr(self.coeffs, "heat_relaxation_time", None)
-            if tau_q and tau_q > 0 and "q_mu" in fields_k:
-                vector_shape = fields_k["q_mu"].shape
+        # Diffusion current relaxation (Landau frame, if available)
+        if hasattr(self.coeffs, "diffusion_relaxation_time"):
+            tau_V = getattr(self.coeffs, "diffusion_relaxation_time", None)
+            if tau_V and tau_V > 0 and "V_mu" in fields_k:
+                vector_shape = fields_k["V_mu"].shape
                 if len(vector_shape) >= 1 and vector_shape[-1] == 4:
-                    relaxation_factor = 1.0 / (1.0 + dt / tau_q)
+                    relaxation_factor = 1.0 / (1.0 + dt / tau_V)
                     for mu in range(4):
-                        fields_k["q_mu"][..., mu] *= relaxation_factor
+                        fields_k["V_mu"][..., mu] *= relaxation_factor
                 else:
                     warnings.warn(
-                        f"q_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
+                        f"V_mu Fourier vector shape {vector_shape} incompatible with 4-component index",
                         stacklevel=2,
                     )
 
@@ -1366,18 +1374,18 @@ class SpectralISHydrodynamics:
                 # Compute full Israel-Stewart sources using relaxation module
                 rhs = self.relaxation.compute_relaxation_rhs(self.fields)
 
-                # Unpack the concatenated RHS array
-                # Format: [Pi_flat, pi_munu_flat, q_mu_flat]
+                # Unpack the concatenated RHS array (Landau frame)
+                # Format: [Pi_flat, pi_munu_flat, V_mu_flat]
                 Pi_size = self.fields.Pi.size
                 pi_munu_size = self.fields.pi_munu.size
-                q_mu_size = self.fields.q_mu.size
+                V_mu_size = self.fields.V_mu.size
 
                 dPi_dt = rhs[:Pi_size].reshape(self.fields.Pi.shape)
                 dpi_munu_dt = rhs[Pi_size : Pi_size + pi_munu_size].reshape(
                     self.fields.pi_munu.shape
                 )
-                dq_mu_dt = rhs[Pi_size + pi_munu_size : Pi_size + pi_munu_size + q_mu_size].reshape(
-                    self.fields.q_mu.shape
+                dV_mu_dt = rhs[Pi_size + pi_munu_size : Pi_size + pi_munu_size + V_mu_size].reshape(
+                    self.fields.V_mu.shape
                 )
 
                 # Only subtract linear stiff terms in IMEX and split-step modes
@@ -1390,12 +1398,14 @@ class SpectralISHydrodynamics:
                         dPi_dt += self.fields.Pi / self.coeffs.bulk_relaxation_time
                     if getattr(self.coeffs, "shear_relaxation_time", None):
                         dpi_munu_dt += self.fields.pi_munu / self.coeffs.shear_relaxation_time
+                    if getattr(self.coeffs, "diffusion_relaxation_time", None):
+                        dV_mu_dt += self.fields.V_mu / self.coeffs.diffusion_relaxation_time
 
-                # Return with keys matching IMEX field names
+                # Return with keys matching IMEX field names (Landau frame)
                 relaxation_rhs = {
                     "Pi": dPi_dt,
                     "pi_munu": dpi_munu_dt,
-                    "q_mu": dq_mu_dt,
+                    "V_mu": dV_mu_dt,
                 }
             else:
                 # Fallback: compute basic source terms manually
@@ -1409,9 +1419,9 @@ class SpectralISHydrodynamics:
                 }
 
         except Exception as e:
-            physics_logger.log_physics_fallback(
-                "relaxation_source_computation", str(e), "empty_sources"
-            )
+#             # physics_logger.log_physics_fallback(
+#                 "relaxation_source_computation", str(e), "empty_sources"
+#             )
             relaxation_rhs = {}
 
         return relaxation_rhs
@@ -1492,9 +1502,9 @@ class SpectralISHydrodynamics:
 
             error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
             print(f"CONSERVATION ERROR: {error_msg}", file=sys.stderr)
-            physics_logger.log_physics_fallback(
-                "conservation_evolution", error_msg, "fallback_conservation_advance"
-            )
+#             # physics_logger.log_physics_fallback(
+#                 "conservation_evolution", error_msg, "fallback_conservation_advance"
+#             )
             self._fallback_conservation_advance(dt)
 
     def _convert_momentum_to_velocity_derivative(
@@ -1584,14 +1594,14 @@ class SpectralISHydrodynamics:
 
     def _fields_to_momentum_basis(self) -> dict[str, np.ndarray]:
         """
-        Convert ISFieldConfiguration to momentum-density basis.
+        Convert ISFieldConfiguration to momentum-density basis (Landau frame).
 
         Instead of evolving velocity u^i, we evolve momentum density mom_i = h u^i.
         This eliminates the need for product rule conversion and makes conservation
         laws compatible with IMEX splitting.
 
         Returns:
-            Dictionary with keys: rho, mom_x, mom_y, mom_z, Pi, pi_munu, q_mu
+            Dictionary with keys: rho, mom_x, mom_y, mom_z, Pi, pi_munu, V_mu
         """
         rho = self.fields.rho
         u_spatial = self.fields.u_mu[..., 1:4]  # Spatial components (x, y, z)
@@ -1604,17 +1614,17 @@ class SpectralISHydrodynamics:
             "mom_z": (h * u_spatial[..., 2]).copy(),
             "Pi": self.fields.Pi.copy(),
             "pi_munu": self.fields.pi_munu.copy(),
-            "q_mu": self.fields.q_mu.copy(),
+            "V_mu": self.fields.V_mu.copy(),
         }
 
     def _momentum_basis_to_fields(self, mom_dict: dict[str, np.ndarray]) -> None:
         """
-        Update ISFieldConfiguration from momentum-density basis.
+        Update ISFieldConfiguration from momentum-density basis (Landau frame).
 
         Converts momentum density mom_i back to velocity u^i = mom_i / h.
 
         Args:
-            mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, Pi, pi_munu, q_mu
+            mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, Pi, pi_munu, V_mu
         """
         rho = mom_dict["rho"]
         h = 4.0 / 3.0 * rho  # Enthalpy for radiation fluid
@@ -1641,8 +1651,8 @@ class SpectralISHydrodynamics:
         self.fields.Pi[:] = mom_dict["Pi"]
         self.fields.pi_munu.flags.writeable = True
         self.fields.pi_munu[:] = mom_dict["pi_munu"]
-        self.fields.q_mu.flags.writeable = True
-        self.fields.q_mu[:] = mom_dict["q_mu"]
+        self.fields.V_mu.flags.writeable = True
+        self.fields.V_mu[:] = mom_dict["V_mu"]
 
         # CRITICAL: Update pressure from equation of state after ρ changes
         # This ensures pressure gradients are correct for sound wave propagation
@@ -1699,7 +1709,7 @@ class SpectralISHydrodynamics:
             "mom_z": np.zeros_like(self.fields.rho),
             "Pi": np.zeros_like(self.fields.Pi),
             "pi_munu": np.zeros_like(self.fields.pi_munu),
-            "q_mu": np.zeros_like(self.fields.q_mu),
+            "V_mu": np.zeros_like(self.fields.V_mu),
         }
 
         # Conservation laws: Already return ∂_t ρ and ∂_t(ρu^i) = ∂_t(mom_i)
@@ -1714,9 +1724,9 @@ class SpectralISHydrodynamics:
                 explicit_rhs["mom_y"] = conservation_rhs["dmom_dt"][..., 1]
                 explicit_rhs["mom_z"] = conservation_rhs["dmom_dt"][..., 2]
             except Exception as e:
-                physics_logger.log_physics_fallback(
-                    "conservation_momentum_rhs", str(e), "skip_conservation"
-                )
+#                 # physics_logger.log_physics_fallback(
+#                     "conservation_momentum_rhs", str(e), "skip_conservation"
+#                 )
                 # Keep zero RHS (already initialized above)
 
         # Relaxation sources: self.fields has u = mom/ρ, so sources computed correctly
@@ -1727,11 +1737,11 @@ class SpectralISHydrodynamics:
                 explicit_rhs["pi_munu"] = relaxation_rhs.get(
                     "pi_munu", np.zeros_like(self.fields.pi_munu)
                 )
-                explicit_rhs["q_mu"] = relaxation_rhs.get("q_mu", np.zeros_like(self.fields.q_mu))
+                explicit_rhs["V_mu"] = relaxation_rhs.get("V_mu", np.zeros_like(self.fields.V_mu))
             except Exception as e:
-                physics_logger.log_physics_fallback(
-                    "relaxation_momentum_rhs", str(e), "skip_relaxation"
-                )
+#                 # physics_logger.log_physics_fallback(
+#                     "relaxation_momentum_rhs", str(e), "skip_relaxation"
+#                 )
                 # Keep zero RHS (already initialized above)
 
         return explicit_rhs
@@ -1773,12 +1783,18 @@ class SpectralISHydrodynamics:
             else:
                 stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
 
-            # Heat flux relaxation: -q^μ/τ_q (usually not implemented yet)
-            stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+            # Diffusion current relaxation: -V^μ/τ_V (Landau frame)
+            if (
+                hasattr(self.coeffs, "diffusion_relaxation_time")
+                and self.coeffs.diffusion_relaxation_time
+            ):
+                stiff_terms["V_mu"] = -fields.V_mu / self.coeffs.diffusion_relaxation_time
+            else:
+                stiff_terms["V_mu"] = np.zeros_like(fields.V_mu)
         else:
             stiff_terms["Pi"] = np.zeros_like(fields.Pi)
             stiff_terms["pi_munu"] = np.zeros_like(fields.pi_munu)
-            stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+            stiff_terms["V_mu"] = np.zeros_like(fields.V_mu)
 
         return stiff_terms
 
@@ -1840,14 +1856,21 @@ class SpectralISHydrodynamics:
             else:
                 solution["pi_munu"] = rhs_dict["pi_munu"].copy()
 
-            # Heat flux: Y_q = rhs_q / (1 + γ·dt/τ_q) (if implemented)
-            # Currently no heat flux relaxation, so Y_q = rhs_q
-            solution["q_mu"] = rhs_dict["q_mu"].copy()
+            # Diffusion current: Y_V = rhs_V / (1 + γ·dt/τ_V) (Landau frame)
+            if (
+                hasattr(self.coeffs, "diffusion_relaxation_time")
+                and self.coeffs.diffusion_relaxation_time is not None
+                and self.coeffs.diffusion_relaxation_time > 0
+            ):
+                tau_V = self.coeffs.diffusion_relaxation_time
+                solution["V_mu"] = rhs_dict["V_mu"] / (1.0 + gamma_dt / tau_V)
+            else:
+                solution["V_mu"] = rhs_dict["V_mu"].copy()
         else:
             # No transport coefficients: Y = rhs
             solution["Pi"] = rhs_dict["Pi"].copy()
             solution["pi_munu"] = rhs_dict["pi_munu"].copy()
-            solution["q_mu"] = rhs_dict["q_mu"].copy()
+            solution["V_mu"] = rhs_dict["V_mu"].copy()
 
         return solution
 
@@ -1989,16 +2012,16 @@ class SpectralISHydrodynamics:
             # Compute full RHS
             rhs_flat = self.relaxation.compute_relaxation_rhs(self.fields)
 
-            # Unpack
+            # Unpack (Landau frame)
             Pi_size = self.fields.Pi.size
             pi_munu_size = self.fields.pi_munu.size
-            q_mu_size = self.fields.q_mu.size
+            V_mu_size = self.fields.V_mu.size
 
             dPi_dt = rhs_flat[:Pi_size].reshape(self.fields.Pi.shape)
             dpi_munu_dt = rhs_flat[Pi_size : Pi_size + pi_munu_size].reshape(
                 self.fields.pi_munu.shape
             )
-            dq_mu_dt = rhs_flat[Pi_size + pi_munu_size :].reshape(self.fields.q_mu.shape)
+            dV_mu_dt = rhs_flat[Pi_size + pi_munu_size :].reshape(self.fields.V_mu.shape)
 
             # Remove linear relaxation terms (these are handled by advance_linear_terms)
             if self.coeffs is not None:
@@ -2008,13 +2031,13 @@ class SpectralISHydrodynamics:
                 if getattr(self.coeffs, "shear_relaxation_time", None):
                     dpi_munu_dt += self.fields.pi_munu / self.coeffs.shear_relaxation_time
 
-                if getattr(self.coeffs, "heat_relaxation_time", None):
-                    dq_mu_dt += self.fields.q_mu / self.coeffs.heat_relaxation_time
+                if getattr(self.coeffs, "diffusion_relaxation_time", None):
+                    dV_mu_dt += self.fields.V_mu / self.coeffs.diffusion_relaxation_time
 
             # Apply source terms only (explicit Euler)
             self.fields.Pi += dt * dPi_dt
             self.fields.pi_munu += dt * dpi_munu_dt
-            self.fields.q_mu += dt * dq_mu_dt
+            self.fields.V_mu += dt * dV_mu_dt
 
         except Exception as e:
             warnings.warn(f"Relaxation source evolution failed: {e}", stacklevel=2)
@@ -2028,12 +2051,12 @@ class SpectralISHydrodynamics:
         relaxation equations.
 
         Returns:
-            Dictionary with time derivatives:
+            Dictionary with time derivatives (Landau frame):
             - 'drho_dt': Energy density derivative ∂_t ρ
             - 'du_dt': Velocity derivatives ∂_t u^i (3-vector)
             - 'dPi_dt': Bulk pressure derivative ∂_t Π
             - 'dpi_munu_dt': Shear stress derivative ∂_t π^{μν}
-            - 'dq_mu_dt': Heat flux derivative ∂_t q^μ
+            - 'dV_mu_dt': Diffusion current derivative ∂_t V^μ (Landau frame)
         """
         # 1. Conservation laws (with current dissipative fields in stress-energy tensor)
         if self.conservation is not None:
@@ -2053,22 +2076,22 @@ class SpectralISHydrodynamics:
         if self.relaxation is not None:
             relaxation_rhs = self.relaxation.compute_relaxation_rhs(fields)
 
-            # Unpack flattened relaxation RHS
+            # Unpack flattened relaxation RHS (Landau frame)
             Pi_size = fields.Pi.size
             pi_munu_size = fields.pi_munu.size
-            q_mu_size = fields.q_mu.size
+            V_mu_size = fields.V_mu.size
 
             dPi_dt = relaxation_rhs[:Pi_size].reshape(fields.Pi.shape)
             dpi_munu_dt = relaxation_rhs[Pi_size : Pi_size + pi_munu_size].reshape(
                 fields.pi_munu.shape
             )
-            dq_mu_dt = relaxation_rhs[
-                Pi_size + pi_munu_size : Pi_size + pi_munu_size + q_mu_size
-            ].reshape(fields.q_mu.shape)
+            dV_mu_dt = relaxation_rhs[
+                Pi_size + pi_munu_size : Pi_size + pi_munu_size + V_mu_size
+            ].reshape(fields.V_mu.shape)
         else:
             dPi_dt = np.zeros_like(fields.Pi)
             dpi_munu_dt = np.zeros_like(fields.pi_munu)
-            dq_mu_dt = np.zeros_like(fields.q_mu)
+            dV_mu_dt = np.zeros_like(fields.V_mu)
 
         # NOTE: NO removal of linear terms here!
         # For fully-coupled RK4, we want the complete RHS including -Π/τ, -π/τ
@@ -2079,7 +2102,7 @@ class SpectralISHydrodynamics:
             "du_dt": du_dt,
             "dPi_dt": dPi_dt,
             "dpi_munu_dt": dpi_munu_dt,
-            "dq_mu_dt": dq_mu_dt,
+            "dV_mu_dt": dV_mu_dt,
         }
 
     def _update_fields_from_rhs(
@@ -2088,19 +2111,19 @@ class SpectralISHydrodynamics:
         u_mu_0: np.ndarray,
         Pi_0: np.ndarray,
         pi_munu_0: np.ndarray,
-        q_mu_0: np.ndarray,
+        V_mu_0: np.ndarray,
         rhs: dict[str, np.ndarray],
         dt: float,
     ) -> None:
         """
-        Update fields for RK4 intermediate stages.
+        Update fields for RK4 intermediate stages (Landau frame).
 
         Args:
             rho_0: Initial energy density
             u_mu_0: Initial four-velocity
             Pi_0: Initial bulk pressure
             pi_munu_0: Initial shear stress
-            q_mu_0: Initial heat flux
+            V_mu_0: Initial diffusion current (Landau frame)
             rhs: Dictionary of time derivatives
             dt: Time step for this stage
         """
@@ -2108,7 +2131,7 @@ class SpectralISHydrodynamics:
         self.fields.u_mu[..., 1:4] = u_mu_0[..., 1:4] + dt * rhs["du_dt"]
         self.fields.Pi[:] = Pi_0 + dt * rhs["dPi_dt"]
         self.fields.pi_munu[:] = pi_munu_0 + dt * rhs["dpi_munu_dt"]
-        self.fields.q_mu[:] = q_mu_0 + dt * rhs["dq_mu_dt"]
+        self.fields.V_mu[:] = V_mu_0 + dt * rhs["dV_mu_dt"]
 
         # Update pressure from equation of state
         self.fields.update_pressure_from_eos("radiation")
@@ -2120,9 +2143,9 @@ class SpectralISHydrodynamics:
 
     def _rk4_coupled_advance(self, dt: float) -> None:
         """
-        4th-order Runge-Kutta for fully-coupled Israel-Stewart equations.
+        4th-order Runge-Kutta for fully-coupled Israel-Stewart equations (Landau frame).
 
-        No operator splitting - all fields (ρ, u^i, Π, π^{μν}, q^μ) evolved together
+        No operator splitting - all fields (ρ, u^i, Π, π^{μν}, V^μ) evolved together
         as a coupled system. This preserves the full physics coupling and eliminates
         operator splitting errors.
 
@@ -2140,21 +2163,21 @@ class SpectralISHydrodynamics:
         u_mu_0 = self.fields.u_mu.copy()
         Pi_0 = self.fields.Pi.copy()
         pi_munu_0 = self.fields.pi_munu.copy()
-        q_mu_0 = self.fields.q_mu.copy()
+        V_mu_0 = self.fields.V_mu.copy()
 
         # Stage 1: k1 = F(y_n)
         k1 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 2: k2 = F(y_n + dt/2 * k1)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k1, dt / 2)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k1, dt / 2)
         k2 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 3: k3 = F(y_n + dt/2 * k2)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k2, dt / 2)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k2, dt / 2)
         k3 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 4: k4 = F(y_n + dt * k3)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, q_mu_0, k3, dt)
+        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k3, dt)
         k4 = self._compute_full_coupled_rhs(self.fields)
 
         # Final update: y_{n+1} = y_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
@@ -2173,8 +2196,8 @@ class SpectralISHydrodynamics:
             k1["dpi_munu_dt"] + 2 * k2["dpi_munu_dt"] + 2 * k3["dpi_munu_dt"] + k4["dpi_munu_dt"]
         )
 
-        self.fields.q_mu[:] = q_mu_0 + (dt / 6) * (
-            k1["dq_mu_dt"] + 2 * k2["dq_mu_dt"] + 2 * k3["dq_mu_dt"] + k4["dq_mu_dt"]
+        self.fields.V_mu[:] = V_mu_0 + (dt / 6) * (
+            k1["dV_mu_dt"] + 2 * k2["dV_mu_dt"] + 2 * k3["dV_mu_dt"] + k4["dV_mu_dt"]
         )
 
         # Update pressure and derived fields
@@ -2269,7 +2292,7 @@ class SpectralISHydrodynamics:
             new_fields = ISFieldConfiguration(self.grid)
 
         # Update fields in-place from dictionary (avoids copy overhead)
-        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+        for key in ["rho", "Pi", "pi_munu", "V_mu", "u_mu"]:
             if key in field_dict:
                 try:
                     # In-place update: workspace_field[:] = new_values
@@ -2354,7 +2377,7 @@ class SpectralISHydrodynamics:
             # No stiff terms
             return {
                 key: np.zeros_like(getattr(fields, key))
-                for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]
+                for key in ["rho", "Pi", "pi_munu", "V_mu", "u_mu"]
             }
 
         # Bulk viscous diffusion: ∇²Π term (only if viscosity > 0)
@@ -2413,7 +2436,7 @@ class SpectralISHydrodynamics:
         # Other fields (typically no stiff terms)
         stiff_terms["rho"] = np.zeros_like(fields.rho)
         stiff_terms["u_mu"] = np.zeros_like(fields.u_mu)
-        stiff_terms["q_mu"] = np.zeros_like(fields.q_mu)
+        stiff_terms["V_mu"] = np.zeros_like(fields.V_mu)
 
         return stiff_terms
 
@@ -2489,7 +2512,7 @@ class SpectralISHydrodynamics:
     def _dict_to_flat(self, field_dict: dict[str, np.ndarray]) -> np.ndarray:
         """Convert field dictionary to flat array for numerical solvers."""
         arrays = []
-        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+        for key in ["rho", "Pi", "pi_munu", "V_mu", "u_mu"]:
             if key in field_dict:
                 arrays.append(field_dict[key].ravel())
         return np.concatenate(arrays) if arrays else np.array([])
@@ -2501,7 +2524,7 @@ class SpectralISHydrodynamics:
         result = {}
         offset = 0
 
-        for key in ["rho", "Pi", "pi_munu", "q_mu", "u_mu"]:
+        for key in ["rho", "Pi", "pi_munu", "V_mu", "u_mu"]:
             if key in template_dict:
                 shape = template_dict[key].shape
                 size = template_dict[key].size

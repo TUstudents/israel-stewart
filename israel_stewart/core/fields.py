@@ -241,89 +241,91 @@ class FluidVelocityField:
 
 class TransportCoefficients:
     """
-    Transport coefficients for Israel-Stewart hydrodynamics.
+    Transport coefficients for Israel-Stewart hydrodynamics (Landau frame).
 
-    Manages viscosity coefficients, thermal conductivity, and relaxation times
+    Manages viscosity coefficients, particle diffusion coefficient, and relaxation times
     with physical constraints and temperature dependence.
+
+    **Landau Frame**: Uses diffusion coefficient D instead of thermal conductivity κ.
     """
 
     def __init__(
         self,
         shear_viscosity: float,
         bulk_viscosity: float = 0.0,
-        thermal_conductivity: float = 0.0,
+        diffusion_coefficient: float = 0.0,  # D (Landau frame) - was thermal_conductivity κ
         shear_relaxation_time: float | None = None,
         bulk_relaxation_time: float | None = None,
-        heat_relaxation_time: float | None = None,
+        diffusion_relaxation_time: float | None = None,  # τ_V - was heat_relaxation_time τ_q
         # Second-order coupling coefficients
         lambda_pi_pi: float = 0.0,
         lambda_pi_Pi: float = 0.0,
-        lambda_pi_q: float = 0.0,
+        lambda_pi_V: float = 0.0,  # Shear-diffusion coupling - was lambda_pi_q
         lambda_Pi_pi: float = 0.0,
-        lambda_q_pi: float = 0.0,
+        lambda_V_pi: float = 0.0,  # Diffusion-shear coupling - was lambda_q_pi
         xi_1: float = 0.0,
         xi_2: float = 0.0,
         # Nonlinear relaxation parameters
         tau_pi_pi: float = 0.0,
         tau_pi_omega: float = 0.0,
         tau_Pi_pi: float = 0.0,
-        tau_q_pi: float = 0.0,
+        tau_V_pi: float = 0.0,  # Diffusion-shear relaxation coupling - was tau_q_pi
     ):
         """
-        Initialize transport coefficients with Israel-Stewart second-order terms.
+        Initialize transport coefficients with Israel-Stewart second-order terms (Landau frame).
 
         Args:
             shear_viscosity: Shear viscosity η
             bulk_viscosity: Bulk viscosity ζ
-            thermal_conductivity: Thermal conductivity κ
+            diffusion_coefficient: Particle diffusion coefficient D (Landau frame)
             shear_relaxation_time: Shear viscosity relaxation time τ_π
             bulk_relaxation_time: Bulk viscosity relaxation time τ_Π
-            heat_relaxation_time: Heat conduction relaxation time τ_q
+            diffusion_relaxation_time: Diffusion current relaxation time τ_V (Landau frame)
             lambda_pi_pi: Shear-shear coupling coefficient λ_ππ
             lambda_pi_Pi: Shear-bulk coupling coefficient λ_πΠ
-            lambda_pi_q: Shear-heat coupling coefficient λ_πq
+            lambda_pi_V: Shear-diffusion coupling coefficient λ_πV (Landau frame)
             lambda_Pi_pi: Bulk-shear coupling coefficient λ_Ππ
-            lambda_q_pi: Heat-shear coupling coefficient λ_qπ
+            lambda_V_pi: Diffusion-shear coupling coefficient λ_Vπ (Landau frame)
             xi_1: Bulk nonlinearity coefficient ξ₁
             xi_2: Bulk nonlinearity coefficient ξ₂
             tau_pi_pi: Shear-shear relaxation coupling τ_ππ
             tau_pi_omega: Shear-vorticity coupling τ_πω
             tau_Pi_pi: Bulk-shear relaxation coupling τ_Ππ
-            tau_q_pi: Heat-shear relaxation coupling τ_qπ
+            tau_V_pi: Diffusion-shear relaxation coupling τ_Vπ (Landau frame)
         """
         # First-order transport coefficients
         self.shear_viscosity = self._validate_coefficient(shear_viscosity, "shear_viscosity")
         self.bulk_viscosity = self._validate_coefficient(bulk_viscosity, "bulk_viscosity")
-        self.thermal_conductivity = self._validate_coefficient(
-            thermal_conductivity, "thermal_conductivity"
+        self.diffusion_coefficient = self._validate_coefficient(
+            diffusion_coefficient, "diffusion_coefficient"
         )
 
         # Relaxation times
         self.shear_relaxation_time = shear_relaxation_time
         self.bulk_relaxation_time = bulk_relaxation_time
-        self.heat_relaxation_time = heat_relaxation_time
+        self.diffusion_relaxation_time = diffusion_relaxation_time
 
         if shear_relaxation_time is not None:
             self._validate_coefficient(shear_relaxation_time, "shear_relaxation_time")
         if bulk_relaxation_time is not None:
             self._validate_coefficient(bulk_relaxation_time, "bulk_relaxation_time")
-        if heat_relaxation_time is not None:
-            self._validate_coefficient(heat_relaxation_time, "heat_relaxation_time")
+        if diffusion_relaxation_time is not None:
+            self._validate_coefficient(diffusion_relaxation_time, "diffusion_relaxation_time")
 
-        # Second-order coupling coefficients
+        # Second-order coupling coefficients (Landau frame)
         self.lambda_pi_pi = lambda_pi_pi
         self.lambda_pi_Pi = lambda_pi_Pi
-        self.lambda_pi_q = lambda_pi_q
+        self.lambda_pi_V = lambda_pi_V
         self.lambda_Pi_pi = lambda_Pi_pi
-        self.lambda_q_pi = lambda_q_pi
+        self.lambda_V_pi = lambda_V_pi
         self.xi_1 = xi_1
         self.xi_2 = xi_2
 
-        # Nonlinear relaxation parameters
+        # Nonlinear relaxation parameters (Landau frame)
         self.tau_pi_pi = tau_pi_pi
         self.tau_pi_omega = tau_pi_omega
         self.tau_Pi_pi = tau_Pi_pi
-        self.tau_q_pi = tau_q_pi
+        self.tau_V_pi = tau_V_pi
 
         # Validate thermodynamic stability
         self._validate_stability_constraints()
@@ -350,9 +352,9 @@ class TransportCoefficients:
 
     def estimate_relaxation_times(self, thermodynamic_state: ThermodynamicState) -> None:
         """
-        Estimate relaxation times from thermodynamic state.
+        Estimate relaxation times from thermodynamic state (Landau frame).
 
-        Uses kinetic theory estimates: τ ∝ η/(ρ + p)
+        Uses kinetic theory estimates: τ ∝ transport_coefficient/(ρ + p)
         """
         enthalpy = thermodynamic_state.enthalpy_density
 
@@ -363,15 +365,15 @@ class TransportCoefficients:
             if self.bulk_relaxation_time is None and self.bulk_viscosity > 0:
                 self.bulk_relaxation_time = self.bulk_viscosity / enthalpy
 
-            if self.heat_relaxation_time is None and self.thermal_conductivity > 0:
-                # Rough estimate for heat conduction relaxation
-                self.heat_relaxation_time = self.thermal_conductivity / enthalpy
+            if self.diffusion_relaxation_time is None and self.diffusion_coefficient > 0:
+                # Rough estimate for diffusion relaxation (Landau frame)
+                self.diffusion_relaxation_time = self.diffusion_coefficient / enthalpy
 
     def temperature_dependence(
         self, temperature: float, model: str = "constant"
     ) -> "TransportCoefficients":
         """
-        Apply temperature dependence to transport coefficients.
+        Apply temperature dependence to transport coefficients (Landau frame).
 
         Args:
             temperature: Current temperature
@@ -392,22 +394,22 @@ class TransportCoefficients:
             return TransportCoefficients(
                 shear_viscosity=self.shear_viscosity * temp_factor,
                 bulk_viscosity=self.bulk_viscosity * temp_factor,
-                thermal_conductivity=self.thermal_conductivity * temp_factor,
+                diffusion_coefficient=self.diffusion_coefficient * temp_factor,
                 shear_relaxation_time=self.shear_relaxation_time,
                 bulk_relaxation_time=self.bulk_relaxation_time,
-                heat_relaxation_time=self.heat_relaxation_time,
+                diffusion_relaxation_time=self.diffusion_relaxation_time,
                 # Second-order coefficients (typically temperature independent)
                 lambda_pi_pi=self.lambda_pi_pi,
                 lambda_pi_Pi=self.lambda_pi_Pi,
-                lambda_pi_q=self.lambda_pi_q,
+                lambda_pi_V=self.lambda_pi_V,
                 lambda_Pi_pi=self.lambda_Pi_pi,
-                lambda_q_pi=self.lambda_q_pi,
+                lambda_V_pi=self.lambda_V_pi,
                 xi_1=self.xi_1,
                 xi_2=self.xi_2,
                 tau_pi_pi=self.tau_pi_pi,
                 tau_pi_omega=self.tau_pi_omega,
                 tau_Pi_pi=self.tau_Pi_pi,
-                tau_q_pi=self.tau_q_pi,
+                tau_V_pi=self.tau_V_pi,
             )
 
         else:
@@ -501,21 +503,21 @@ class HydrodynamicState:
 
     def relaxation_time_scales(self) -> dict[str, float]:
         """
-        Get relaxation time scales for Israel-Stewart evolution.
+        Get relaxation time scales for Israel-Stewart evolution (Landau frame).
 
         Returns:
             Dictionary of relaxation time ratios
         """
         tau_pi = self.transport.shear_relaxation_time or 1.0
         tau_Pi = self.transport.bulk_relaxation_time or 1.0
-        tau_q = self.transport.heat_relaxation_time or 1.0
+        tau_V = self.transport.diffusion_relaxation_time or 1.0
 
         return {
             "tau_pi": tau_pi,
             "tau_Pi": tau_Pi,
-            "tau_q": tau_q,
+            "tau_V": tau_V,
             "tau_Pi_over_tau_pi": tau_Pi / tau_pi if tau_pi > 0 else float("inf"),
-            "tau_q_over_tau_pi": tau_q / tau_pi if tau_pi > 0 else float("inf"),
+            "tau_V_over_tau_pi": tau_V / tau_pi if tau_pi > 0 else float("inf"),
         }
 
     def __str__(self) -> str:
@@ -577,10 +579,10 @@ class ISFieldConfiguration:
         # Initialize four-velocity to rest frame
         self.u_mu[..., 0] = 1.0  # u^0 = 1 (rest frame)
 
-        # Dissipative fluxes (Israel-Stewart variables)
+        # Dissipative fluxes (Israel-Stewart variables - Landau frame)
         self.Pi = np.zeros((nx, ny, nz))  # Bulk pressure Π
         self.pi_munu = np.zeros((nx, ny, nz, 4, 4))  # Shear tensor π^μν
-        self.q_mu = np.zeros((nx, ny, nz, 4))  # Heat flux q^μ
+        self.V_mu = np.zeros((nx, ny, nz, 4))  # Particle diffusion current V^μ (Landau frame)
 
         # Thermodynamic variables
         self.pressure = np.zeros((nx, ny, nz))  # Pressure p
@@ -608,7 +610,7 @@ class ISFieldConfiguration:
             + 4 * grid_size  # u^μ
             + 1 * grid_size  # Π
             + 16 * grid_size  # π^μν
-            + 4 * grid_size  # q^μ
+            + 4 * grid_size  # V^μ (particle diffusion current, Landau frame)
         )
 
     def to_state_vector(self) -> np.ndarray:
@@ -628,7 +630,7 @@ class ISFieldConfiguration:
                 self.u_mu.reshape(-1),
                 self.Pi.flatten(),
                 self.pi_munu.reshape(-1),
-                self.q_mu.reshape(-1),
+                self.V_mu.reshape(-1),
             ]
         )
 
@@ -674,20 +676,20 @@ class ISFieldConfiguration:
         self.pi_munu = state[offset : offset + pi_size].reshape((nx, ny, nz, 4, 4))
         offset += pi_size
 
-        # Unpack heat flux
-        q_size = 4 * grid_size
-        self.q_mu = state[offset : offset + q_size].reshape((nx, ny, nz, 4))
+        # Unpack particle diffusion current (Landau frame)
+        V_size = 4 * grid_size
+        self.V_mu = state[offset : offset + V_size].reshape((nx, ny, nz, 4))
 
-        # Reset validation flags
-        self._constraints_enforced = False
-        self._thermodynamic_consistent = False
+        # Enforce physical constraints after updating from state vector
+        # This is CRITICAL to ensure u^μ remains normalized and fluxes orthogonal.
+        self.apply_constraints()
 
     def to_dissipative_vector(self) -> np.ndarray:
         """
         Pack dissipative fluxes into single vector for relaxation evolution.
 
         Returns:
-            Flattened vector containing [Π, π^μν, q^μ] components
+            Flattened vector containing [Π, π^μν, V^μ] components (Landau frame)
 
         Shape:
             (dissipative_field_count,) = 21 * (nx * ny * nz)
@@ -696,7 +698,7 @@ class ISFieldConfiguration:
             [
                 self.Pi.flatten(),
                 self.pi_munu.reshape(-1),
-                self.q_mu.reshape(-1),
+                self.V_mu.reshape(-1),
             ]
         )
 
@@ -716,9 +718,9 @@ class ISFieldConfiguration:
         # Expected sizes for each field
         pi_size = grid_size
         pi_munu_size = 16 * grid_size
-        q_size = 4 * grid_size
+        V_size = 4 * grid_size
 
-        expected_size = pi_size + pi_munu_size + q_size
+        expected_size = pi_size + pi_munu_size + V_size
         if len(dissipative_state) != expected_size:
             raise ValueError(
                 f"Dissipative vector size {len(dissipative_state)} doesn't match "
@@ -735,8 +737,8 @@ class ISFieldConfiguration:
         self.pi_munu = dissipative_state[offset : offset + pi_munu_size].reshape((nx, ny, nz, 4, 4))
         offset += pi_munu_size
 
-        # Unpack heat flux q^μ
-        self.q_mu = dissipative_state[offset : offset + q_size].reshape((nx, ny, nz, 4))
+        # Unpack particle diffusion current V^μ (Landau frame)
+        self.V_mu = dissipative_state[offset : offset + V_size].reshape((nx, ny, nz, 4))
 
     @property
     def dissipative_field_count(self) -> int:
@@ -745,7 +747,7 @@ class ISFieldConfiguration:
         return (
             1 * grid_size  # Π
             + 16 * grid_size  # π^μν
-            + 4 * grid_size  # q^μ
+            + 4 * grid_size  # V^μ (particle diffusion current, Landau frame)
         )
 
     def apply_constraints(self) -> None:
@@ -756,7 +758,7 @@ class ISFieldConfiguration:
         - u^μ u_μ = -c² (four-velocity normalization)
         - π^μν u_μ = 0 (shear tensor orthogonality)
         - π^μ_μ = 0 (shear tensor traceless)
-        - q^μ u_μ = 0 (heat flux orthogonality)
+        - V^μ u_μ = 0 (diffusion current orthogonality, Landau frame)
         - Thermodynamic positivity conditions
         """
         # 1. Normalize four-velocity
@@ -765,8 +767,8 @@ class ISFieldConfiguration:
         # 2. Project shear tensor to be orthogonal and traceless
         self._project_shear_tensor()
 
-        # 3. Project heat flux to be orthogonal to u^μ
-        self._project_heat_flux()
+        # 3. Project diffusion current to be orthogonal to u^μ (Landau frame)
+        self._project_diffusion_current()
 
         # 4. Apply thermodynamic constraints
         self._enforce_thermodynamic_constraints()
@@ -827,8 +829,8 @@ class ISFieldConfiguration:
 
         self.pi_munu = pi_traceless
 
-    def _project_heat_flux(self) -> None:
-        """Project heat flux to be orthogonal to u^μ."""
+    def _project_diffusion_current(self) -> None:
+        """Project diffusion current V^μ to be orthogonal to u^μ (Landau frame constraint)."""
         from .tensor_utils import optimized_einsum
 
         # Get metric inverse
@@ -845,8 +847,8 @@ class ISFieldConfiguration:
         u_outer = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
         delta = g_inv + u_outer
 
-        # Project heat flux
-        self.q_mu = optimized_einsum("...mn,...n->...m", delta, self.q_mu)
+        # Project diffusion current
+        self.V_mu = optimized_einsum("...mn,...n->...m", delta, self.V_mu)
 
     def _enforce_thermodynamic_constraints(self) -> None:
         """Enforce thermodynamic positivity and consistency constraints."""
@@ -896,47 +898,132 @@ class ISFieldConfiguration:
             self.pressure[:] = self.rho
         else:
             raise ValueError(
-                f"Unknown EOS type: {eos_type}. "
-                f"Supported: 'radiation', 'ideal_gas', 'stiff'"
+                f"Unknown EOS type: {eos_type}. " f"Supported: 'radiation', 'ideal_gas', 'stiff'"
             )
 
         # Ensure pressure positivity after EOS update
         self.pressure = np.maximum(self.pressure, -0.1 * self.rho)
 
+    def compute_chemical_potential_over_temperature(
+        self, eos_type: str = "radiation", reference_temperature: float = 1.0
+    ) -> np.ndarray:
+        """
+        Compute chemical potential over temperature μ_B/T for Landau frame diffusion.
+
+        In the Landau frame, the diffusion current V^μ is driven by gradients of μ_B/T:
+            dV^μ/dτ + V^μ/τ_V = D ∇^μ(μ_B/T) + coupling terms
+
+        For a radiation fluid (massless particles) with conserved baryon number:
+            μ_B/T = ln(n/n_eq(T))
+
+        where n_eq(T) = (ζ(3)/π²) T³ is the equilibrium particle density at temperature T
+        and ζ(3) ≈ 1.202 is the Riemann zeta function at 3.
+
+        Args:
+            eos_type: Type of equation of state
+                - "radiation": Massless particles, n_eq ∝ T³
+                - "ideal_gas": Massive particles (requires mass parameter)
+            reference_temperature: Reference temperature scale (default: 1.0 in natural units)
+
+        Returns:
+            Chemical potential over temperature μ_B/T with shape (nx, ny, nz)
+
+        Note:
+            For radiation fluid at equilibrium with μ_B = 0: n = n_eq(T).
+            When n > n_eq: μ_B/T > 0 (excess particles)
+            When n < n_eq: μ_B/T < 0 (deficit particles)
+
+        See:
+            docs/LANDAU_FRAME_FORMULATION.md Section 3 for detailed derivation
+        """
+        if eos_type == "radiation":
+            # Radiation fluid: μ_B/T = ln(n/n_eq(T))
+            # where n_eq(T) = (ζ(3)/π²) T³ ≈ 0.1215 T³
+
+            # Riemann zeta function: ζ(3) ≈ 1.202056903
+            zeta_3 = 1.202056903
+            prefactor = zeta_3 / (np.pi**2)  # ≈ 0.1215
+
+            # Equilibrium particle density at current temperature
+            # Use temperature with safety floor to avoid division by zero
+            T_safe = np.maximum(self.temperature, 1e-10)
+            n_eq = prefactor * T_safe**3
+
+            # Particle density with safety floor
+            n_safe = np.maximum(self.n, 1e-15)
+
+            # Chemical potential: μ_B/T = ln(n/n_eq)
+            mu_over_T = np.log(n_safe / n_eq)
+
+            return mu_over_T
+
+        elif eos_type == "ideal_gas":
+            # For massive particles, need mass parameter
+            # Placeholder: use non-relativistic approximation
+            # μ_B/T ≈ ln(n/n_eq) - m/T where m is particle mass
+            raise NotImplementedError(
+                "Chemical potential for ideal gas EOS not yet implemented. "
+                "Requires particle mass parameter."
+            )
+
+        else:
+            raise ValueError(
+                f"Unknown EOS type: {eos_type}. " f"Supported: 'radiation', 'ideal_gas'"
+            )
+
     def compute_stress_energy_tensor(self) -> np.ndarray:
         """
-        Compute total stress-energy tensor T^μν = T^μν_perfect + π^μν.
+        Compute complete stress-energy tensor including all Israel-Stewart corrections.
+
+        **LANDAU FRAME** formulation - NO heat flux in stress-energy tensor!
+        For (-,+,+,+) metric signature (g^μν = diag(-1,+1,+1,+1)):
+        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν + π^μν
+
+        In Landau frame:
+        - Heat flux q^μ = 0 (by definition of frame)
+        - Particle diffusion V^μ appears in J^μ = n u^μ + V^μ, NOT in T^μν
+
+        NOTE: All dissipative terms (Π, π^μν) have PLUS signs in this signature.
+        This follows from IReD paper eq. (5) after metric signature conversion.
+        See docs/LANDAU_FRAME_FORMULATION.md Section 2 for complete derivation.
 
         Returns:
             Stress-energy tensor with shape (nx, ny, nz, 4, 4)
         """
+        from .tensor_utils import optimized_einsum
+
         if not self._constraints_enforced:
             warnings.warn(
                 "Computing stress-energy tensor without enforcing constraints", stacklevel=2
             )
 
-        # Perfect fluid part: T^μν_perfect = (ρ + p) u^μ u^ν + p g^μν
-        enthalpy_density = self.rho + self.pressure
+        grid_shape = self.grid.shape
 
-        # Compute u^μ u^ν outer product
-        u_outer = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
-
-        # Get metric tensor
+        # Get metric tensor g^μν (inverse metric)
         if self.grid.metric is None:
-            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*self.grid.shape, 4, 4))
+            g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*grid_shape, 4, 4))
         else:
             g_inv = self.grid.metric.inverse
             if g_inv.ndim == 2:
-                g_inv = np.broadcast_to(g_inv, (*self.grid.shape, 4, 4))
+                g_inv = np.broadcast_to(g_inv, (*grid_shape, 4, 4))
 
-        # Perfect fluid tensor
-        perfect_fluid = (
-            enthalpy_density[..., np.newaxis, np.newaxis] * u_outer
-            + self.pressure[..., np.newaxis, np.newaxis] * g_inv
-        )
+        # Perfect fluid tensor: T_pf^μν = (ε+p)u^μu^ν + p g^μν
+        enthalpy = self.rho + self.pressure
+        u_outer = optimized_einsum("...,...i,...j->...ij", enthalpy, self.u_mu, self.u_mu)
+        p_metric = optimized_einsum("...,...ij->...ij", self.pressure, g_inv)
+        T_perfect = u_outer + p_metric
 
-        # Total stress-energy tensor with viscous corrections
-        T_total: np.ndarray = perfect_fluid + self.pi_munu
+        # Spatial projector: Δ^μν = g^μν + u^μu^ν
+        u_outer_unit = np.einsum("...i,...j->...ij", self.u_mu, self.u_mu)
+        Delta = g_inv + u_outer_unit
+
+        # Viscous corrections (Landau frame - no heat flux term!)
+        T_bulk = optimized_einsum("...,...ij->...ij", self.Pi, Delta)  # Π Δ^μν
+        T_shear = self.pi_munu.copy()  # π^μν
+
+        # Combine all contributions (Landau frame: NO heat flux in T^μν)
+        # NOTE: All dissipative terms have PLUS signs in (-,+,+,+) signature
+        T_total = T_perfect + T_bulk + T_shear
 
         self._total_stress_tensor = T_total
         return T_total
@@ -971,11 +1058,11 @@ class ISFieldConfiguration:
 
         # Check orthogonality constraints
         pi_u_contraction = optimized_einsum("...ij,...i->...j", self.pi_munu, self.u_mu)
-        q_u_contraction = optimized_einsum("...i,...i->...", self.q_mu, self.u_mu)
+        V_u_contraction = optimized_einsum("...i,...i->...", self.V_mu, self.u_mu)
 
         validation["shear_orthogonal_to_velocity"] = np.allclose(pi_u_contraction, 0.0, atol=1e-12)
-        validation["heat_flux_orthogonal_to_velocity"] = np.allclose(
-            q_u_contraction, 0.0, atol=1e-12
+        validation["diffusion_current_orthogonal_to_velocity"] = np.allclose(
+            V_u_contraction, 0.0, atol=1e-12
         )
 
         # Check thermodynamic positivity
@@ -1008,7 +1095,7 @@ class ISFieldConfiguration:
 
         Args:
             fields: List of field names to copy. If None, copies all fields.
-                   Available: rho, n, u_mu, Pi, pi_munu, q_mu,
+                   Available: rho, n, u_mu, Pi, pi_munu, V_mu,
                              pressure, temperature
 
         Returns:
@@ -1016,14 +1103,14 @@ class ISFieldConfiguration:
         """
         new_config = ISFieldConfiguration(self.grid)
 
-        # Available field names for pure 3D storage
+        # Available field names for pure 3D storage (Landau frame)
         available_fields = [
             "rho",
             "n",
             "u_mu",
             "Pi",
             "pi_munu",
-            "q_mu",
+            "V_mu",  # Particle diffusion current (Landau frame)
             "pressure",
             "temperature",
         ]

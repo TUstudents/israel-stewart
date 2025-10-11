@@ -66,45 +66,20 @@ class ConservationLaws:
     @monitor_performance("stress_energy_tensor")
     def stress_energy_tensor(self) -> np.ndarray:
         """
-        Construct T^μν including all Israel-Stewart corrections:
-        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν - π^μν + q^μu^ν + q^νu^μ
+        Construct T^μν including all Israel-Stewart corrections.
 
-        NOTE: The shear stress has a MINUS sign. This is Convention B in the
-        literature (Landau-Lifshitz), which treats π^μν as a dissipative correction
-        that opposes the flow. The dispersion matrix uses this convention.
+        For (-,+,+,+) metric signature (g^μν = diag(-1,+1,+1,+1)):
+        T^μν = (ε+p)u^μu^ν + p g^μν + ΠΔ^μν + π^μν + q^μu^ν + q^νu^μ
+
+        NOTE: All dissipative terms (Π, π^μν) have PLUS signs in this signature.
+        This follows from IReD paper eq. (5) after metric signature conversion.
+        See docs/IRED_THEORY.md Section 1.3 for detailed derivation.
 
         Returns:
             Stress-energy tensor with shape (*grid.shape, 4, 4)
         """
-        f = self.fields
-        grid_shape = f.grid.shape
-
-        # Get metric tensor g^μν (inverse metric)
-        g_inv = self.metric.inverse
-        if g_inv.ndim == 2:
-            g_inv = np.broadcast_to(g_inv, (*grid_shape, 4, 4))
-
-        # Standard perfect fluid tensor: T_pf^μν = (ε+p)u^μu^ν + p g^μν
-        enthalpy = f.rho + f.pressure
-        u_outer = optimized_einsum("...,...i,...j->...ij", enthalpy, f.u_mu, f.u_mu)
-        p_metric = optimized_einsum("...,...ij->...ij", f.pressure, g_inv)
-        T_perfect = u_outer + p_metric
-
-        # Viscous corrections
-        Delta = self._spatial_projector()
-        T_bulk = optimized_einsum("...,...ij->...ij", f.Pi, Delta)  # Π Δ^μν
-        T_shear = f.pi_munu.copy()  # π^μν
-
-        # Heat flux contribution: q^μu^ν + q^νu^μ (symmetric)
-        T_heat_1 = optimized_einsum("...i,...j->...ij", f.q_mu, f.u_mu)
-        T_heat_2 = optimized_einsum("...j,...i->...ij", f.q_mu, f.u_mu)
-        T_heat = T_heat_1 + T_heat_2
-
-        # Combine all contributions
-        # NOTE: Shear stress has MINUS sign (Convention B: dissipative correction)
-        T_total = T_perfect + T_bulk - T_shear + T_heat
-        result: np.ndarray = T_total
-        return result
+        # Delegate to the single source of truth in ISFieldConfiguration
+        return self.fields.compute_stress_energy_tensor()
 
     @monitor_performance("divergence_T")
     def divergence_T(self) -> np.ndarray:

@@ -4,7 +4,7 @@ Tests for symbolic stress tensor operations.
 This module tests the critical bug fixes for SymPy symbolic computation
 in stress-energy and viscous stress tensors, specifically:
 1. Momentum density extraction from symbolic stress-energy tensors
-2. Heat flux extraction from symbolic viscous stress tensors
+2. Particle diffusion current extraction from symbolic viscous stress tensors (Landau frame)
 3. All subsequent FourVector operations on extracted quantities
 
 The main bug was that SymPy branches created (4,1) matrices that caused
@@ -190,52 +190,52 @@ class TestSymbolicViscousStressTensor:
         """Create symbolic four-velocity for testing."""
         return FourVector([1, sp.Rational(1, 3), 0, 0], False, metric)
 
-    def test_symbolic_heat_flux_extraction(
+    def test_symbolic_diffusion_current_extraction(
         self, symbolic_viscous_tensor: ViscousStressTensor, symbolic_four_velocity: FourVector
     ) -> None:
-        """Test heat flux extraction from symbolic viscous tensor."""
+        """Test particle diffusion current extraction from symbolic viscous tensor."""
         # This was the second bug - heat_flux_part would fail with (4,1) SymPy matrices
-        heat_flux = symbolic_viscous_tensor.heat_flux_part(symbolic_four_velocity)
+        diffusion_current = symbolic_viscous_tensor.heat_flux_part(symbolic_four_velocity)
 
         # Verify it's a proper FourVector
-        assert isinstance(heat_flux, FourVector)
+        assert isinstance(diffusion_current, FourVector)
 
         # Verify components have correct shape and type
-        assert hasattr(heat_flux.components, "shape")
-        assert heat_flux.components.shape == (4,)
-        assert isinstance(heat_flux.components, np.ndarray)
+        assert hasattr(diffusion_current.components, "shape")
+        assert diffusion_current.components.shape == (4,)
+        assert isinstance(diffusion_current.components, np.ndarray)
 
-        # Verify the extraction formula: q^μ = -u_ν π^μν
+        # Verify the extraction formula: V^μ = -u_ν π^μν (Landau frame)
         # Should contain symbolic expressions
         eta = sp.Symbol("eta", positive=True)
-        if heat_flux.time_component != 0:
+        if diffusion_current.time_component != 0:
             symbols = (
-                heat_flux.time_component.free_symbols
-                if hasattr(heat_flux.time_component, "free_symbols")
+                diffusion_current.time_component.free_symbols
+                if hasattr(diffusion_current.time_component, "free_symbols")
                 else set()
             )
             # May contain eta symbol or be zero
-            assert eta in symbols or heat_flux.time_component == 0
+            assert eta in symbols or diffusion_current.time_component == 0
 
-    def test_symbolic_heat_flux_operations(
+    def test_symbolic_diffusion_current_operations(
         self, symbolic_viscous_tensor: ViscousStressTensor, symbolic_four_velocity: FourVector
     ) -> None:
-        """Test that extracted symbolic heat flux can be used in all FourVector operations."""
-        heat_flux = symbolic_viscous_tensor.heat_flux_part(symbolic_four_velocity)
+        """Test that extracted symbolic diffusion current can be used in all FourVector operations."""
+        diffusion_current = symbolic_viscous_tensor.heat_flux_part(symbolic_four_velocity)
 
         # Test dot product (this was the specific failure case)
-        dot_product = heat_flux.dot(heat_flux)
+        dot_product = diffusion_current.dot(diffusion_current)
         assert isinstance(dot_product, sp.Expr) or isinstance(dot_product, (int, float))
 
         # Test magnitude squared
-        mag_squared = heat_flux.magnitude_squared()
+        mag_squared = diffusion_current.magnitude_squared()
         assert isinstance(mag_squared, sp.Expr) or isinstance(mag_squared, (int, float))
 
         # Test component access
-        assert heat_flux.time_component is not None
-        assert heat_flux.x is not None
-        assert heat_flux.y is not None
-        assert heat_flux.z is not None
+        assert diffusion_current.time_component is not None
+        assert diffusion_current.x is not None
+        assert diffusion_current.y is not None
+        assert diffusion_current.z is not None
 
     def test_symbolic_bulk_viscous_extraction(
         self, symbolic_viscous_tensor: ViscousStressTensor, symbolic_four_velocity: FourVector
@@ -296,8 +296,8 @@ class TestSymbolicStressTensorRegression:
         # Should complete successfully and return symbolic result
         assert isinstance(dot_product, sp.Expr) or isinstance(dot_product, (int, float))
 
-    def test_regression_heat_flux_dot_product(self, metric: MinkowskiMetric) -> None:
-        """Regression test for the specific heat flux dot product failure."""
+    def test_regression_diffusion_current_dot_product(self, metric: MinkowskiMetric) -> None:
+        """Regression test for the specific particle diffusion current dot product failure."""
         # Create the exact scenario that was failing
         eta = sp.Symbol("eta", positive=True)
         pi_symbolic = sp.Matrix([[0, 0, 0, 0], [0, eta, 0, 0], [0, 0, eta, 0], [0, 0, 0, 0]])
@@ -306,10 +306,10 @@ class TestSymbolicStressTensorRegression:
         u_symbolic = FourVector([1, sp.Rational(1, 2), 0, 0], False, metric)
 
         # This should NOT raise ValueError about einsum dimensions
-        heat_flux = viscous_tensor.heat_flux_part(u_symbolic)
+        diffusion_current = viscous_tensor.heat_flux_part(u_symbolic)
 
         # This specific operation was failing before the fix
-        dot_product = heat_flux.dot(heat_flux)
+        dot_product = diffusion_current.dot(diffusion_current)
 
         # Should complete successfully and return symbolic result
         assert isinstance(dot_product, sp.Expr) or isinstance(dot_product, (int, float))
@@ -336,10 +336,10 @@ class TestSymbolicStressTensorRegression:
 
         for pi_components in [pi1, pi2]:
             viscous = ViscousStressTensor(pi_components, metric)
-            heat_flux = viscous.heat_flux_part(u)
+            diffusion_current = viscous.heat_flux_part(u)
 
             # All should have (4,) shape
-            assert heat_flux.components.shape == (4,)
+            assert diffusion_current.components.shape == (4,)
 
 
 if __name__ == "__main__":

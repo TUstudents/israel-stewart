@@ -95,6 +95,11 @@ These are the **r=0 moments** that appear in the stress-energy tensor and partic
 
 ### 1.3 Landau Frame Decomposition
 
+**CRITICAL NOTE (2025-10-11)**: The current implementation has a **frame inconsistency** issue—it uses Eckart frame variables (heat flux q^μ) while assuming Landau frame elsewhere. This is being addressed in a major refactoring. See:
+- **`docs/LANDAU_FRAME_FORMULATION.md`** for complete Landau frame physics
+- **`LANDAU_FRAME_REFACTORING_PLAN.md`** for implementation plan
+- **Section 1.3.1 below** for quick reference on frame differences
+
 #### Stress-Energy Tensor
 
 The stress-energy tensor admits different decompositions depending on the metric signature.
@@ -147,6 +152,31 @@ These conditions imply that certain moments vanish identically:
 ```
 ρ₁ = ρ₂ = ρ^μ₁ = 0                                                  (IReD eq. 6)
 ```
+
+#### 1.3.1 Landau vs Eckart Frame: The Critical Difference
+
+**Landau Frame** (used in IReD paper and this project):
+- **Definition**: Zero energy flux → T^μ_ν u^ν = ε u^μ
+- **Consequence**: Heat flux q^μ = 0 (identically)
+- **Dissipative flux**: Particle diffusion current V^μ (orthogonal to u^μ)
+- **Stress tensor**: T^μν = (ε+p)u^μu^ν + p g^μν + Π Δ^μν + π^μν (NO q^μ term!)
+- **Particle current**: J^μ = n u^μ + V^μ
+- **Driving force**: ∇^μ(μ_B/T) (chemical potential gradient)
+
+**Eckart Frame** (NOT used, but code currently has Eckart variables):
+- **Definition**: Zero particle flux → J^μ = n u^μ
+- **Consequence**: Diffusion current V^μ = 0
+- **Dissipative flux**: Heat flux q^μ (energy diffusion)
+- **Stress tensor**: T^μν = ... + q^μu^ν + q^νu^μ (includes heat flux!)
+- **Particle current**: J^μ = n u^μ (no diffusion)
+- **Driving force**: ∇^μ T (temperature gradient)
+
+**CURRENT CODE ISSUE**: The implementation mixes these frames:
+- Uses Eckart variables (q^μ, thermal conductivity κ, ∇^μ T)
+- But assumes Landau frame in stress tensor construction
+- **Solution**: Replace q^μ → V^μ, κ → D (diffusion coefficient), ∇^μ T → ∇^μ(μ_B/T)
+
+See `docs/LANDAU_FRAME_FORMULATION.md` Section 1 for detailed physics and `LANDAU_FRAME_REFACTORING_PLAN.md` for implementation plan.
 
 ### 1.4 Equations of Motion for Irreducible Moments
 

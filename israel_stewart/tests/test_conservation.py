@@ -92,10 +92,10 @@ class TestStressEnergyTensor:
         fields.Pi[:] = 0.1  # Bulk viscosity
         fields.u_mu[..., 0] = 1.0  # Rest frame
 
-        # Add some shear stress and heat flux
+        # Add some shear stress and particle diffusion current
         fields.pi_munu[..., 1, 2] = 0.05
         fields.pi_munu[..., 2, 1] = 0.05  # Symmetry
-        fields.q_mu[..., 1] = 0.02
+        fields.V_mu[..., 1] = 0.02
 
         return fields
 
@@ -139,16 +139,16 @@ class TestStressEnergyTensor:
         np.testing.assert_allclose(T[..., 1, 2], expected_T12, rtol=1e-12)
         np.testing.assert_allclose(T[..., 2, 1], expected_T12, rtol=1e-12)
 
-    def test_heat_flux_contribution(self, simple_fields: ISFieldConfiguration) -> None:
-        """Test heat flux contribution."""
+    def test_diffusion_current_contribution(self, simple_fields: ISFieldConfiguration) -> None:
+        """Test particle diffusion current contribution."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
 
-        # Check T^01 component (heat flux term)
-        # T^01 = ρ u^0 u^1 + (p+Π)Δ^01 + π^01 + q^0u^1 + q^1u^0
+        # Check T^01 component (diffusion current term in Landau frame)
+        # T^01 = ρ u^0 u^1 + (p+Π)Δ^01 + π^01 + V^0u^1 + V^1u^0
         # For rest frame: u^0 = 1, u^1 = 0, Δ^01 = 0
-        # T^01 = 0 + 0 + π^01 + 0 + q^1 = π^01 + q^1
-        expected_T01 = 0.0 + 0.02  # π^01 + q^1
+        # T^01 = 0 + 0 + π^01 + 0 + V^1 = π^01 + V^1
+        expected_T01 = 0.0 + 0.02  # π^01 + V^1
         np.testing.assert_allclose(T[..., 0, 1], expected_T01, rtol=1e-12)
 
     def test_tensor_symmetry(self, simple_fields: ISFieldConfiguration) -> None:
@@ -505,7 +505,9 @@ class TestIntegrationWithGrid:
         assert len(coords) == 3  # SpaceGrid has 3D spatial coordinates
         assert grid.coordinate_names == ["x", "y", "z"]
 
-    @pytest.mark.skip(reason="Milne coordinates require SpacetimeGrid, not yet updated for SpaceGrid")
+    @pytest.mark.skip(
+        reason="Milne coordinates require SpacetimeGrid, not yet updated for SpaceGrid"
+    )
     def test_milne_grid_integration(self) -> None:
         """Test with Milne coordinates (skipped - needs SpacetimeGrid support)."""
         pass

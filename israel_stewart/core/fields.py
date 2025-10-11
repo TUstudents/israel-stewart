@@ -983,9 +983,9 @@ class ISFieldConfiguration:
         - Heat flux q^μ = 0 (by definition of frame)
         - Particle diffusion V^μ appears in J^μ = n u^μ + V^μ, NOT in T^μν
 
-        NOTE: All dissipative terms (Π, π^μν) have PLUS signs in this signature.
-        This follows from IReD paper eq. (5) after metric signature conversion.
-        See docs/LANDAU_FRAME_FORMULATION.md Section 2 for complete derivation.
+        **Sign Convention**: All dissipative terms (Π, π^μν) have PLUS signs in
+        the (-,+,+,+) signature following the IReD formulation (Denicol et al.).
+        This matches equation (5) in the IReD paper after metric signature conversion.
 
         Returns:
             Stress-energy tensor with shape (nx, ny, nz, 4, 4)
@@ -1022,7 +1022,7 @@ class ISFieldConfiguration:
         T_shear = self.pi_munu.copy()  # π^μν
 
         # Combine all contributions (Landau frame: NO heat flux in T^μν)
-        # NOTE: All dissipative terms have PLUS signs in (-,+,+,+) signature
+        # IReD sign convention: ALL dissipative terms have PLUS signs
         T_total = T_perfect + T_bulk + T_shear
 
         self._total_stress_tensor = T_total

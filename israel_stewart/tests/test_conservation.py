@@ -128,28 +128,29 @@ class TestStressEnergyTensor:
         np.testing.assert_allclose(T[..., 1, 1], expected_T11, rtol=1e-12)
 
     def test_shear_stress_contribution(self, simple_fields: ISFieldConfiguration) -> None:
-        """Test shear stress contribution with Convention B sign."""
+        """Test shear stress contribution with IReD sign convention."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
 
         # Check off-diagonal components with shear stress
-        # Convention B (Landau-Lifshitz): T = ... - π^μν (MINUS sign)
-        # For rest frame: T^12 = -π^12 = -0.05
-        expected_T12 = -0.05  # -π^12 (Convention B)
+        # IReD sign convention: T = ... + π^μν (PLUS sign for dissipative terms)
+        # For rest frame: T^12 = π^12 = 0.05
+        expected_T12 = 0.05  # +π^12 (IReD convention)
         np.testing.assert_allclose(T[..., 1, 2], expected_T12, rtol=1e-12)
         np.testing.assert_allclose(T[..., 2, 1], expected_T12, rtol=1e-12)
 
     def test_diffusion_current_contribution(self, simple_fields: ISFieldConfiguration) -> None:
-        """Test particle diffusion current contribution."""
+        """Test that diffusion current does NOT appear in stress-energy tensor (Landau frame)."""
         conservation = ConservationLaws(simple_fields)
         T = conservation.stress_energy_tensor()
 
-        # Check T^01 component (diffusion current term in Landau frame)
-        # T^01 = ρ u^0 u^1 + (p+Π)Δ^01 + π^01 + V^0u^1 + V^1u^0
-        # For rest frame: u^0 = 1, u^1 = 0, Δ^01 = 0
-        # T^01 = 0 + 0 + π^01 + 0 + V^1 = π^01 + V^1
-        expected_T01 = 0.0 + 0.02  # π^01 + V^1
-        np.testing.assert_allclose(T[..., 0, 1], expected_T01, rtol=1e-12)
+        # LANDAU FRAME: V^μ appears in J^μ = n u^μ + V^μ, NOT in T^μν!
+        # T^01 = ρ u^0 u^1 + (p+Π)Δ^01 - π^01
+        # For rest frame: u^0 = 1, u^1 = 0, Δ^01 = 0, π^01 = 0
+        # T^01 = 0 + 0 - 0 = 0
+        # The V^1 = 0.02 field value should NOT contribute to T^μν
+        expected_T01 = 0.0  # No contribution from V^μ in Landau frame
+        np.testing.assert_allclose(T[..., 0, 1], expected_T01, atol=1e-12)
 
     def test_tensor_symmetry(self, simple_fields: ISFieldConfiguration) -> None:
         """Test that stress-energy tensor is symmetric."""

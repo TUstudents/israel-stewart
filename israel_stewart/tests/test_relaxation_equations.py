@@ -543,17 +543,18 @@ class TestRelaxationPhysics:
 
     def test_milne_coordinates(self) -> None:
         """Test relaxation equations in Milne coordinates."""
-        grid = SpacetimeGrid(
-            coordinate_system="milne",
-            time_range=(0.1, 1.0),
-            spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(4, 4, 4, 4),
+        # Use SpaceGrid (pure 3D) with Milne metric for curved spacetime
+        grid = SpaceGrid(
+            coordinate_system="cartesian",  # Grid discretization (pure 3D spatial)
+            spatial_ranges=[(-1.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
+            grid_points=(4, 4, 4),
+            boundary_conditions="periodic",
+            metric=MilneMetric(),  # Milne spacetime geometry
         )
-        metric = MilneMetric()
 
         coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
 
-        relaxation = ISRelaxationEquations(grid, metric, coeffs)
+        relaxation = ISRelaxationEquations(grid, grid.metric, coeffs)
         fields = ISFieldConfiguration(grid)
 
         # Bjorken flow initial conditions
@@ -566,7 +567,7 @@ class TestRelaxationPhysics:
         dt = 0.01
         relaxation.evolve_relaxation(fields, dt)
 
-        # Convert to numpy arrays if needed and check finiteness
+        # Check finiteness (convert from SymPy expressions to float for symbolic metrics)
         Pi_array = np.asarray(fields.Pi, dtype=float)
         pi_munu_array = np.asarray(fields.pi_munu, dtype=float)
         assert np.all(np.isfinite(Pi_array))
@@ -580,11 +581,12 @@ class TestRelaxationPerformance:
     @pytest.mark.benchmark
     def test_evolution_performance(self) -> None:
         """Benchmark evolution performance."""
-        grid = SpacetimeGrid(
+        # Use SpaceGrid (pure 3D) for performance testing
+        grid = SpaceGrid(
             coordinate_system="cartesian",
-            time_range=(0.0, 1.0),
             spatial_ranges=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
-            grid_points=(8, 8, 8, 8),
+            grid_points=(8, 8, 8),  # Pure 3D: (nx, ny, nz)
+            boundary_conditions="periodic",
         )
         metric = MinkowskiMetric()
 

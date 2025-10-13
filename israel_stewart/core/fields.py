@@ -343,6 +343,31 @@ class TransportCoefficients:
         if self.bulk_viscosity < 0:
             raise ValueError("Bulk viscosity must be non-negative")
 
+        # Warn for large coupling coefficients (indicates strong coupling, may violate perturbative assumptions)
+        large_coupling_threshold = 10.0
+        coupling_coeffs = [
+            ("lambda_pi_pi", self.lambda_pi_pi),
+            ("lambda_pi_Pi", self.lambda_pi_Pi),
+            ("lambda_pi_V", self.lambda_pi_V),
+            ("lambda_Pi_pi", self.lambda_Pi_pi),
+            ("lambda_V_pi", self.lambda_V_pi),
+            ("xi_1", self.xi_1),
+            ("xi_2", self.xi_2),
+            ("tau_pi_pi", self.tau_pi_pi),
+            ("tau_pi_omega", self.tau_pi_omega),
+            ("tau_Pi_pi", self.tau_Pi_pi),
+            ("tau_V_pi", self.tau_V_pi),
+        ]
+
+        for name, value in coupling_coeffs:
+            if abs(value) > large_coupling_threshold:
+                warnings.warn(
+                    f"Large coupling coefficient {name}={value:.2f} (|{name}| > {large_coupling_threshold}). "
+                    "This indicates strong coupling and may violate perturbative assumptions in "
+                    "Israel-Stewart theory. Consider using smaller values or verifying regime of applicability.",
+                    stacklevel=3,
+                )
+
     @property
     def viscosity_ratio(self) -> float:
         """Bulk to shear viscosity ratio ζ/η."""

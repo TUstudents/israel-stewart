@@ -416,8 +416,12 @@ uv run python verify_ired_implementation.py
 - ✅ **Fields & Constants**: Thermodynamic state, velocity fields, transport coefficients, natural units
 
 **Completed Physics:**
-- ✅ **Conservation Laws**: ∇_μ T^μν = 0 (31 tests)
-- ✅ **Relaxation Equations**: IS second-order (Π, π^μν, q^μ), all couplings (λ_ππ, λ_πΠ, λ_πq, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (30+ tests)
+- ✅ **Conservation Laws**: ∇_μ T^μν = 0 (31 static tests), ✅ **Dynamic Conservation** (12 tests in `test_dynamic_conservation.py`):
+  - Global conservation: ∫ρ d³x, ∫(ρu^i) d³x, ∫n d³x conserved during evolution (3 tests passing ✓)
+  - Local balance: ∂_t ρ + ∇·T^{i0} = 0, ∂_t(ρu^j) + ∇·T^{ij} = 0 pointwise (3 tests)
+  - Constraint maintenance: V^μ u_μ = 0, π^μν u_μ = 0, u·u = -1 throughout evolution (3 tests)
+  - Physical scenarios: Sound waves, diffusion, Bjorken expansion (3 tests)
+- ✅ **Relaxation Equations**: IS second-order (Π, π^μν, V^μ Landau frame), all couplings (λ_ππ, λ_πΠ, λ_πV, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (18/21 tests passing)
 - ✅ **Spectral Solver**: FFT-based with linear regime detection, periodic boundary conditions
 - ✅ **Benchmarks**: Bjorken flow, sound wave propagation, equilibration dynamics (executable via `run_*.py` scripts)
 

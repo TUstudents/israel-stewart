@@ -46,6 +46,7 @@ from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
 from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
+from ..equations.ired_simple import HardSphereIReD
 from ..equations.relaxation import ISRelaxationEquations
 from ..solvers import create_periodic_grid
 from ..solvers.spectral import SpectralISHydrodynamics
@@ -2132,3 +2133,69 @@ def create_numerical_benchmark(
         metric=metric,
         **kwargs,
     )
+
+
+def create_numerical_benchmark_with_ired(
+    temperature: float = 0.4,
+    cross_section: float = 1.0,
+    truncation: str = "41",
+    domain_size: float = 2 * np.pi,
+    grid_points: tuple[int, int, int] = (64, 64, 16),
+    metric: GeneralMetric | None = None,
+) -> tuple[NumericalSoundWaveBenchmark, HardSphereIReD]:
+    """
+    Create numerical sound wave benchmark with IReD transport coefficients.
+
+    This uses quantitatively accurate coefficients from kinetic theory
+    (Wagner et al. 2022) instead of phenomenological values.
+
+    Args:
+        temperature: Temperature T in GeV
+        cross_section: Hard sphere cross-section in fm²
+        truncation: Moment truncation ('14', '23', '32', '41')
+        domain_size: Spatial domain size (periodic)
+        grid_points: Spatial grid resolution (Nx, Ny, Nz)
+        metric: Spacetime metric (defaults to Minkowski)
+
+    Returns:
+        Tuple of (NumericalSoundWaveBenchmark, HardSphereIReD model)
+
+    Example:
+        >>> benchmark, ired_model = create_numerical_benchmark_with_ired(T=0.4)
+        >>> print(f"η/s = {ired_model.eta_over_s():.4f}")
+        >>> result = benchmark.run_simulation(wave_number=1.0)
+
+    Note:
+        The hard sphere gas with IReD coefficients may have very large relaxation times
+        (τ_π ~ 200 fm/c) which puts the system outside the Israel-Stewart regime
+        (|τω| >> 1) for typical wave numbers. This is physically correct but may
+        require smaller k values or adjusted parameters for regime validity.
+    """
+    # Create IReD transport coefficient model
+    ired_model = HardSphereIReD(
+        temperature=temperature, cross_section=cross_section, truncation=truncation
+    )
+
+    # Extract IReD transport coefficients
+    transport_coeffs = TransportCoefficients(
+        shear_viscosity=ired_model.shear_viscosity(),
+        bulk_viscosity=ired_model.bulk_viscosity(),  # Zero for conformal
+        diffusion_coefficient=ired_model.diffusion_coefficient(),  # D (Landau frame)
+        shear_relaxation_time=ired_model.shear_relaxation_time(),
+        bulk_relaxation_time=ired_model.bulk_relaxation_time(),
+        diffusion_relaxation_time=ired_model.diffusion_relaxation_time(),  # τ_V
+        # Second-order IReD coefficients
+        tau_pi_pi=ired_model.tau_pi_pi(),  # Shear-shear coupling τ_ππ
+        lambda_pi_V=ired_model.lambda_pi_V(),  # Shear-diffusion coupling λ_πV
+        lambda_V_pi=ired_model.lambda_V_pi(),  # Diffusion-shear coupling λ_Vπ
+    )
+
+    # Create numerical benchmark
+    benchmark = NumericalSoundWaveBenchmark(
+        domain_size=domain_size,
+        grid_points=grid_points,
+        transport_coeffs=transport_coeffs,
+        metric=metric,
+    )
+
+    return benchmark, ired_model

@@ -46,6 +46,7 @@ from ..core.spacetime_grid import SpacetimeGrid
 from ..core.stress_tensors import StressEnergyTensor, ViscousStressTensor
 from ..core.tensor_base import TensorField
 from ..equations.conservation import ConservationLaws
+from ..equations.ired_simple import HardSphereIReD
 from ..equations.relaxation import ISRelaxationEquations
 from ..solvers.spectral import SpectralISHydrodynamics
 
@@ -952,3 +953,70 @@ def analyze_approach_to_equilibrium(
         "relaxation_comparison": benchmark.relaxation_analysis.compare_with_theory(properties),
         "entropy_validation": benchmark.entropy_analysis.validate_second_law(properties),
     }
+
+
+def create_equilibration_benchmark_with_ired(
+    temperature: float = 0.4,
+    cross_section: float = 1.0,
+    truncation: str = "41",
+    grid_points: tuple[int, int, int] = (16, 16, 16),
+    domain_size: float = 1.0,
+    **kwargs,
+) -> tuple[EquilibrationAnalysis, HardSphereIReD]:
+    """
+    Create equilibration benchmark with IReD transport coefficients.
+
+    This uses quantitatively accurate coefficients from kinetic theory
+    (Wagner et al. 2022) instead of phenomenological values.
+
+    Args:
+        temperature: Temperature T in GeV
+        cross_section: Hard sphere cross-section σ in fm²
+        truncation: IReD moment truncation ('14', '23', '32', '41')
+        grid_points: Grid resolution (nx, ny, nz)
+        domain_size: Domain size L in GeV⁻¹
+        **kwargs: Additional arguments for EquilibrationAnalysis
+
+    Returns:
+        Tuple of (EquilibrationAnalysis, HardSphereIReD)
+
+    Note:
+        The hard sphere gas with IReD coefficients may have very large relaxation times
+        (τ_π ~ 200 fm/c) which puts the system outside the Israel-Stewart regime
+        (|τω| >> 1) for typical frequencies. This is physically correct but may
+        require longer equilibration times.
+    """
+    # Create IReD transport coefficient model
+    ired_model = HardSphereIReD(
+        temperature=temperature, cross_section=cross_section, truncation=truncation
+    )
+
+    # Create spatial grid (pure 3D)
+    grid = SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, domain_size)] * 3,
+        grid_points=grid_points,
+        boundary_conditions="periodic",
+    )
+
+    # Create metric
+    metric = MinkowskiMetric()
+
+    # Extract IReD transport coefficients
+    transport_coeffs = TransportCoefficients(
+        shear_viscosity=ired_model.shear_viscosity(),
+        bulk_viscosity=ired_model.bulk_viscosity(),  # Zero for conformal
+        diffusion_coefficient=ired_model.diffusion_coefficient(),
+        shear_relaxation_time=ired_model.shear_relaxation_time(),
+        bulk_relaxation_time=ired_model.bulk_relaxation_time(),
+        diffusion_relaxation_time=ired_model.diffusion_relaxation_time(),
+        # Second-order IReD coefficients
+        tau_pi_pi=ired_model.tau_pi_pi(),
+        lambda_pi_V=ired_model.lambda_pi_V(),
+        lambda_V_pi=ired_model.lambda_V_pi(),
+    )
+
+    # Create equilibration analysis
+    analysis = EquilibrationAnalysis(grid, metric, transport_coeffs, **kwargs)
+
+    return analysis, ired_model

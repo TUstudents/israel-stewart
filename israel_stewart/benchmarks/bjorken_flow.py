@@ -19,6 +19,7 @@ from ..core.metrics import MilneMetric
 from ..core.performance import monitor_performance
 from ..core.spacegrid import SpaceGrid
 from ..core.spacetime_grid import SpacetimeGrid
+from ..equations.ired_simple import HardSphereIReD
 from ..equations.relaxation import ISRelaxationEquations
 from ..solvers.spectral import SpectralISHydrodynamics
 
@@ -770,3 +771,70 @@ def create_standard_bjorken_benchmark(
     )
 
     return BjorkenBenchmark(grid, coefficients, analytical)
+
+
+def create_bjorken_benchmark_with_ired(
+    tau0: float = 0.6,
+    T0: float = 0.4,
+    cross_section: float = 1.0,
+    truncation: str = "41",
+    grid_points: tuple[int, int, int] = (32, 32, 32),
+    domain_size: float = 2.0 * np.pi,
+) -> tuple[BjorkenBenchmark, HardSphereIReD]:
+    """
+    Create Bjorken flow benchmark with IReD transport coefficients.
+
+    This uses quantitatively accurate coefficients from kinetic theory
+    (Wagner et al. 2022) instead of phenomenological values.
+
+    Args:
+        tau0: Initial proper time in fm/c
+        T0: Initial temperature in GeV
+        cross_section: Hard sphere cross-section in fm²
+        truncation: Moment truncation ('14', '23', '32', '41')
+        grid_points: Spatial grid resolution (nx, ny, nz)
+        domain_size: Spatial domain size (periodic)
+
+    Returns:
+        Tuple of (BjorkenBenchmark, HardSphereIReD model)
+
+    Example:
+        >>> benchmark, ired_model = create_bjorken_benchmark_with_ired(T0=0.4)
+        >>> print(f"η/s = {ired_model.eta_over_s():.4f}")
+        >>> result = benchmark.run_numerical_simulation(final_time=5.0)
+    """
+    # Create IReD transport coefficient model
+    ired_model = HardSphereIReD(temperature=T0, cross_section=cross_section, truncation=truncation)
+
+    # Create pure 3D spatial grid
+    grid = SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, domain_size)] * 3,
+        grid_points=grid_points,
+        boundary_conditions="periodic",
+    )
+
+    # Extract IReD transport coefficients
+    coefficients = TransportCoefficients(
+        shear_viscosity=ired_model.shear_viscosity(),
+        bulk_viscosity=ired_model.bulk_viscosity(),  # Zero for conformal
+        diffusion_coefficient=ired_model.diffusion_coefficient(),  # D (Landau frame)
+        shear_relaxation_time=ired_model.shear_relaxation_time(),
+        bulk_relaxation_time=ired_model.bulk_relaxation_time(),
+        diffusion_relaxation_time=ired_model.diffusion_relaxation_time(),  # τ_V
+        # Second-order IReD coefficients (mapped to TransportCoefficients structure)
+        tau_pi_pi=ired_model.tau_pi_pi(),  # Shear-shear coupling τ_ππ
+        lambda_pi_V=ired_model.lambda_pi_V(),  # Shear-diffusion coupling λ_πV
+        lambda_V_pi=ired_model.lambda_V_pi(),  # Diffusion-shear coupling λ_Vπ
+    )
+
+    # Analytical solution
+    analytical = BjorkenFlowSolution(
+        initial_temperature=T0,
+        initial_time=tau0,
+        equation_of_state="ideal",
+    )
+
+    benchmark = BjorkenBenchmark(grid, coefficients, analytical)
+
+    return benchmark, ired_model

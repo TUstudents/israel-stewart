@@ -330,31 +330,62 @@ dΠ/dt = -Π/τ_Π - ζθ/τ_Π + J_terms
 
 #### Current Transport Coefficients
 
-**Status**: Phenomenological (acceptable for exploratory work)
+**Status**: ✅ **IReD hard sphere benchmark implementation available** (Phase 14A complete)
+
+**Option 1: IReD Hard Sphere Gas (Quantitatively Accurate)**
+
+```python
+from israel_stewart.equations.ired_simple import HardSphereIReD
+
+# Use IReD hard sphere benchmark (Wagner et al. 2022, Tables III-IV)
+model = HardSphereIReD(
+    temperature=0.4,  # 400 MeV
+    cross_section=1.0,  # 1 fm²
+    truncation="41"  # 41-moment accuracy
+)
+
+# All transport coefficients computed from kinetic theory
+coeffs = TransportCoefficients(
+    shear_viscosity=model.shear_viscosity(),  # η = 1.2678/(σβ)
+    shear_relaxation_time=model.shear_relaxation_time(),  # τ_π = 1.6552 λ_mfp
+    lambda_pi_pi=model.tau_pi_pi(),  # τ_ππ = 1.6944 τ_π
+    delta_pi_pi=model.delta_pi_pi(),  # δ_ππ = 4/3
+    lambda_pi_V=model.lambda_pi_V(),  # λ_πV from IReD Table III
+    # ... all 10+ second-order coefficients
+)
+
+# Validation: η/s, regime parameters, etc.
+print(f"η/s = {model.eta_over_s():.4f}")
+print(f"|τω| at k=2 fm⁻¹: {model.regime_parameter(2.0):.2f}")
+```
+
+**Option 2: Phenomenological (Legacy, Exploratory Work)**
 
 ```python
 coeffs = TransportCoefficients(
     # First-order (required)
-    shear_viscosity=0.1,      # η
-    bulk_viscosity=0.05,      # ζ
+    shear_viscosity=0.1,      # η (phenomenological)
+    bulk_viscosity=0.05,      # ζ (phenomenological)
 
-    # Relaxation times (required, IReD: weighted averages)
-    shear_relaxation_time=0.5,  # τ_π
-    bulk_relaxation_time=0.3,   # τ_Π
+    # Relaxation times (required)
+    shear_relaxation_time=0.5,  # τ_π (phenomenological)
+    bulk_relaxation_time=0.3,   # τ_Π (phenomenological)
 
-    # Second-order J terms (optional, currently phenomenological)
+    # Second-order J terms (optional, phenomenological)
     xi_1=0.0,     # ξ₁ (nonlinear bulk)
     xi_2=0.0,     # ξ₂ (nonlinear shear)
-    # lambda_pipi, lambda_piPi, etc. - not yet implemented
 )
 ```
 
-**For quantitative accuracy**: Implement full IReD transport coefficients from Appendix B of IReD.pdf. See `docs/IRED_THEORY.md` Part III for explicit formulas.
+**IReD Implementation Details**:
+- **Module**: `israel_stewart/equations/ired_simple.py`
+- **Tests**: 29/29 passing in `test_ired_coefficients.py`
+- **Validates against**: IReD paper Tables III-IV (< 0.01% error)
+- **Coefficients**: First-order (η, ζ=0, D) + relaxation times (τ_π, τ_V) + 10 second-order couplings
+- **Accuracy**: 41-moment truncation converges to 0.03% of exact kinetic theory
+- **Limitations**: Hard sphere gas only (constant cross-section, massless, conformal)
 
-**Ultrarelativistic hard sphere gas** (benchmark):
-- ζ/s = 0 (conformal)
-- η/s = 1/(4π)
-- τ_Π = τ_π = 5τ₀/3
+**For other systems**: Full collision matrix solver (Phase 14B, future work) or use phenomenological Option 2
 
 #### Verification
 
@@ -421,7 +452,8 @@ uv run python verify_ired_implementation.py
   - Local balance: ∂_t ρ + ∇·T^{i0} = 0, ∂_t(ρu^j) + ∇·T^{ij} = 0 pointwise (3 tests)
   - Constraint maintenance: V^μ u_μ = 0, π^μν u_μ = 0, u·u = -1 throughout evolution (3 tests)
   - Physical scenarios: Sound waves, diffusion, Bjorken expansion (3 tests)
-- ✅ **Relaxation Equations**: IS second-order (Π, π^μν, V^μ Landau frame), all couplings (λ_ππ, λ_πΠ, λ_πV, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (18/21 tests passing)
+- ✅ **Relaxation Equations**: IS second-order (Π, π^μν, V^μ Landau frame), all couplings (λ_ππ, λ_πΠ, λ_πV, ξ₁, ξ₂), implicit/exponential integrators, stability analysis (21/21 tests passing)
+- ✅ **IReD Transport Coefficients** (Phase 14A): Hard sphere gas benchmark from kinetic theory (Wagner et al. 2022), validates against IReD Tables III-IV (29/29 tests passing)
 - ✅ **Spectral Solver**: FFT-based with linear regime detection, periodic boundary conditions
 - ✅ **Benchmarks**: Bjorken flow, sound wave propagation, equilibration dynamics (executable via `run_*.py` scripts)
 

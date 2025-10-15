@@ -287,7 +287,7 @@ class DiffusionBenchmark:
         # Determine timestep if not provided
         if timestep is None:
             # CFL condition: dt < dx / c_s
-            dx_min = np.min(self.grid.cell_volumes) ** (1 / 3)
+            dx_min = self.grid.dx  # Uniform grid spacing
             c_s = 1.0 / np.sqrt(3.0)  # Sound speed for radiation
             timestep = 0.1 * dx_min / c_s
             logger.info(f"Auto-determined timestep: dt = {timestep:.4e} GeV⁻¹")
@@ -296,38 +296,40 @@ class DiffusionBenchmark:
         if snapshot_interval is None:
             snapshot_interval = final_time / 10
 
-        # Run evolution
+        # Storage for snapshots
         times = []
         particle_densities = []
         diffusion_currents_x = []
         energy_densities = []
         constraint_violations = []
 
-        t = 0.0
-        times.append(t)
+        # Record initial state
+        times.append(0.0)
         particle_densities.append(self._compute_particle_density(solver.fields))
         diffusion_currents_x.append(solver.fields.V_mu[..., 1].copy())
         energy_densities.append(solver.fields.rho.copy())
         constraint_violations.append(self._check_landau_frame_constraint(solver.fields))
 
-        n_steps = int(final_time / timestep)
+        # Track next snapshot time
         next_snapshot = snapshot_interval
+
+        # Callback function to record snapshots
+        def record_snapshot(t: float, fields: ISFieldConfiguration) -> None:
+            nonlocal next_snapshot
+            if t >= next_snapshot - timestep / 2:
+                times.append(t)
+                particle_densities.append(self._compute_particle_density(fields))
+                diffusion_currents_x.append(fields.V_mu[..., 1].copy())
+                energy_densities.append(fields.rho.copy())
+                constraint_violations.append(self._check_landau_frame_constraint(fields))
+                next_snapshot += snapshot_interval
 
         logger.info(f"Running diffusion simulation: t ∈ [0, {final_time}], dt = {timestep}")
 
-        for _step in range(n_steps):
-            solver.step(timestep)
-            t = solver.time
+        # Run evolution with callback
+        solver.evolve(t_final=final_time, dt=timestep, callback=record_snapshot)
 
-            if t >= next_snapshot - timestep / 2:
-                times.append(t)
-                particle_densities.append(self._compute_particle_density(solver.fields))
-                diffusion_currents_x.append(solver.fields.V_mu[..., 1].copy())
-                energy_densities.append(solver.fields.rho.copy())
-                constraint_violations.append(self._check_landau_frame_constraint(solver.fields))
-                next_snapshot += snapshot_interval
-
-        logger.info(f"Simulation complete: {n_steps} steps, {len(times)} snapshots")
+        logger.info(f"Simulation complete: {len(times)} snapshots")
 
         return {
             "time": np.array(times),
@@ -451,10 +453,9 @@ class DiffusionBenchmark:
         particle_densities = result["particle_density"]
         times = result["time"]
 
-        # Integrate over volume
-        total_particles = np.array(
-            [np.sum(n) * self.grid.cell_volumes[0] for n in particle_densities]
-        )
+        # Integrate over volume (cell_volume = dx³ for uniform 3D grid)
+        cell_volume = self.grid.dx**3
+        total_particles = np.array([np.sum(n) * cell_volume for n in particle_densities])
 
         # Check relative change
         initial_particles = total_particles[0]

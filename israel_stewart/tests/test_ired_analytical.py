@@ -85,7 +85,9 @@ class TestIReDAnalyticalValidation:
         max_error = 0.0
         for t, T_num in zip(times, T_numerical):
             # Get analytical temperature
-            analytical_solution = benchmark.analytical.israel_stewart_solution(t)
+            analytical_solution = benchmark.analytical.israel_stewart_solution(
+                t, benchmark.coefficients
+            )
             T_analytical = analytical_solution["temperature"]
 
             # Compute relative error
@@ -387,7 +389,7 @@ class TestIReDAnalyticalValidation:
 
         # Check Fick's law at t=0 (initial condition)
         X, _, _ = benchmark.grid.meshgrid()
-        V_x_numerical = benchmark.fields.V_mu[..., 1]
+        V_x_numerical = benchmark.initial_fields.V_mu[..., 1]
         V_x_analytical = benchmark.analytical.diffusion_current(X, 0.0)
 
         # Compute relative error (pointwise)

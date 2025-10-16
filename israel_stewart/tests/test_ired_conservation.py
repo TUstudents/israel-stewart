@@ -126,6 +126,10 @@ class TestIReDConservation:
         )
         print(f"\nRegime parameter |τω| = {regime_param:.3f} < 1.0 ✓")
 
+        # Setup initial conditions (run_numerical_simulation calls this internally)
+        # But we need E0 before evolution, so call it explicitly
+        benchmark._setup_bjorken_initial_conditions(benchmark.fields)
+
         # Compute initial energy
         E0 = compute_total_energy(benchmark.fields, benchmark.grid)
         print(f"Initial energy: E0 = {E0:.6e}")

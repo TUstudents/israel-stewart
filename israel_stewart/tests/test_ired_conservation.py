@@ -181,7 +181,7 @@ class TestIReDConservation:
         print(f"Diffusion relaxation time τ_V = {ired_model.diffusion_relaxation_time():.6f} fm/c")
 
         # Compute initial particle number
-        N0 = compute_total_particle_number(benchmark.fields, benchmark.grid)
+        N0 = compute_total_particle_number(benchmark.initial_fields, benchmark.grid)
         print(f"Initial particle number: N0 = {N0:.6e}")
 
         # Evolve for 2 diffusion times

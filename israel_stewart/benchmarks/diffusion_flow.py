@@ -219,6 +219,10 @@ class DiffusionBenchmark:
         # Initialize fields
         self.initial_fields = self._setup_initial_fields()
 
+        # Create solver (compatible with NumericalSoundWaveBenchmark API)
+        self.fields = self.initial_fields  # Alias for consistency with other benchmarks
+        self.solver = SpectralISHydrodynamics(self.grid, self.fields, self.coefficients)
+
     def _setup_initial_fields(self) -> ISFieldConfiguration:
         """
         Set up initial conditions at t=0.
@@ -281,8 +285,8 @@ class DiffusionBenchmark:
         Returns:
             Dictionary with simulation results
         """
-        # Create solver
-        solver = SpectralISHydrodynamics(self.grid, self.initial_fields, self.coefficients)
+        # Use existing solver
+        solver = self.solver
 
         # Determine timestep if not provided
         if timestep is None:

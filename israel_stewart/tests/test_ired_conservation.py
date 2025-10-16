@@ -15,6 +15,7 @@ import pytest
 from israel_stewart.benchmarks.bjorken_flow import create_bjorken_benchmark_with_ired
 from israel_stewart.benchmarks.diffusion_flow import create_diffusion_benchmark_with_ired
 from israel_stewart.benchmarks.sound_waves import create_numerical_benchmark_with_ired
+from israel_stewart.solvers.spectral import SpectralISHydrodynamics
 from israel_stewart.tests.test_helpers import check_regime_validity
 
 
@@ -184,10 +185,14 @@ class TestIReDConservation:
         N0 = compute_total_particle_number(benchmark.initial_fields, benchmark.grid)
         print(f"Initial particle number: N0 = {N0:.6e}")
 
-        # Evolve for 2 diffusion times
-        t_final = 2.0 / (
-            benchmark.analytical.diffusion_coefficient * benchmark.analytical.wave_number**2
-        )
+        # Evolve for short time (IReD diffusion is very slow with large cross-section)
+        # Use 2 fm/c evolution time (short but sufficient to test conservation)
+        t_final = 2.0 / 0.197  # 2 fm/c in GeV^-1 units
+        n_timesteps = 40  # Moderate number of timesteps for speed
+        dt = t_final / n_timesteps
+
+        print(f"Evolution time: {t_final * 0.197:.2f} fm/c ({n_timesteps} timesteps)")
+        print(f"Timestep: {dt * 0.197:.4f} fm/c")
 
         # Collect snapshots
         N_values = [N0]
@@ -198,7 +203,7 @@ class TestIReDConservation:
 
         benchmark.solver.evolve(
             t_final=t_final,
-            dt=t_final / 50,  # 50 timesteps
+            dt=dt,
             method="rk4",
             callback=track_particle_number,
         )

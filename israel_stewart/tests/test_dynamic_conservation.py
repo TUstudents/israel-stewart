@@ -97,7 +97,9 @@ class TestGlobalConservation:
         # Check smooth evolution (no wild oscillations)
         dE = np.diff(E_history)
         oscillation_measure = np.std(dE) / (np.mean(np.abs(dE)) + 1e-15)
-        assert oscillation_measure < 10.0, f"Energy has wild oscillations: {oscillation_measure:.2e}"
+        assert (
+            oscillation_measure < 10.0
+        ), f"Energy has wild oscillations: {oscillation_measure:.2e}"
 
     def test_momentum_conserved_globally(self, uniform_grid, uniform_fields, transport_coeffs):
         """Test that total momentum is conserved."""
@@ -437,7 +439,7 @@ class TestConstraintMaintenance:
             solver.time_step(dt)
 
             # Check u^μ u_μ = -1 in mostly-plus signature
-            u_squared = -solver.fields.u_mu[..., 0] ** 2 + np.sum(
+            u_squared = -(solver.fields.u_mu[..., 0] ** 2) + np.sum(
                 solver.fields.u_mu[..., 1:4] ** 2, axis=-1
             )
 
@@ -451,6 +453,7 @@ class TestConstraintMaintenance:
 class TestPhysicalScenarios:
     """Test conservation in realistic physical scenarios."""
 
+    @pytest.mark.slow
     def test_sound_wave_energy_conservation(self):
         """Test energy conservation in sound wave propagation."""
         # Setup grid
@@ -522,6 +525,7 @@ class TestPhysicalScenarios:
 
         assert oscillation_amp > 0.1 * mean_trend, "Energy should oscillate, not just decay"
 
+    @pytest.mark.slow
     def test_diffusion_conserves_particles(self):
         """Test particle conservation with active diffusion."""
         grid = SpaceGrid(

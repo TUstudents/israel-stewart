@@ -13,6 +13,7 @@ from israel_stewart.benchmarks.sound_waves import NumericalSoundWaveBenchmark
 from israel_stewart.core.fields import TransportCoefficients
 
 
+@pytest.mark.slow
 def test_eigenmode_ratios_are_preserved():
     """Assert that complex eigenmode ratios are stable over time.
 

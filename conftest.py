@@ -193,3 +193,56 @@ def test_coeffs():
         shear_relaxation_time=0.5,
         bulk_relaxation_time=0.3,
     )
+
+
+# ============================================================================
+# Phase 16: IReD Regime-Valid Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def ired_regime_valid_coarse():
+    """
+    IReD hard sphere gas with 8³ grid, regime-valid.
+
+    Parameters selected for |τω| < 1:
+    - Large cross-section (σ=100 fm²) → small relaxation times
+    - Coarse grid (8³) → low k_max
+    - Standard domain (2π)
+
+    Expected regime parameter: |τω| ≈ 0.3 < 1 ✓
+
+    Returns:
+        dict: Configuration parameters for regime-valid IReD simulation
+    """
+    return {
+        "temperature": 0.4,  # 400 MeV
+        "cross_section": 100.0,  # Large σ → small τ
+        "grid_points": (8, 8, 8),  # Coarse grid → low k_max
+        "domain_size": 2 * np.pi,  # Standard domain
+        "expected_regime": 0.3,  # |τω| < 1
+    }
+
+
+@pytest.fixture
+def ired_regime_valid_large_domain():
+    """
+    IReD hard sphere gas with 32³ grid on large domain, regime-valid.
+
+    Parameters selected for |τω| < 1:
+    - Large cross-section (σ=100 fm²) → small relaxation times
+    - Large domain (20π) → low k_max despite fine grid
+    - Better resolution than coarse grid
+
+    Expected regime parameter: |τω| ≈ 0.1 < 1 ✓
+
+    Returns:
+        dict: Configuration parameters for regime-valid IReD simulation
+    """
+    return {
+        "temperature": 0.4,  # 400 MeV
+        "cross_section": 100.0,  # Large σ → small τ
+        "grid_points": (32, 32, 32),  # Fine grid
+        "domain_size": 20 * np.pi,  # 10× larger domain → low k_max
+        "expected_regime": 0.1,  # |τω| << 1
+    }

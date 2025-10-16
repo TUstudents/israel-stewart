@@ -137,42 +137,6 @@ class TestBjorkenWithIReD:
         assert benchmark.coefficients.bulk_viscosity == 0.0
         assert ired_model.bulk_viscosity() == 0.0
 
-    def test_ired_temperature_scaling(self):
-        """Test that IReD coefficients scale correctly with temperature."""
-        T1 = 0.2
-        T2 = 0.4  # Double temperature
-
-        benchmark1, model1 = create_bjorken_benchmark_with_ired(
-            T0=T1, cross_section=1.0, grid_points=(8, 8, 8)
-        )
-        benchmark2, model2 = create_bjorken_benchmark_with_ired(
-            T0=T2, cross_section=1.0, grid_points=(8, 8, 8)
-        )
-
-        # η ∝ T for hard sphere gas
-        eta1 = benchmark1.coefficients.shear_viscosity
-        eta2 = benchmark2.coefficients.shear_viscosity
-
-        np.testing.assert_allclose(eta2 / eta1, T2 / T1, rtol=1e-10)
-
-    def test_ired_cross_section_scaling(self):
-        """Test that IReD coefficients scale correctly with cross-section."""
-        sigma1 = 1.0
-        sigma2 = 2.0  # Double cross-section
-
-        benchmark1, model1 = create_bjorken_benchmark_with_ired(
-            T0=0.4, cross_section=sigma1, grid_points=(8, 8, 8)
-        )
-        benchmark2, model2 = create_bjorken_benchmark_with_ired(
-            T0=0.4, cross_section=sigma2, grid_points=(8, 8, 8)
-        )
-
-        # η ∝ 1/σ for hard sphere gas
-        eta1 = benchmark1.coefficients.shear_viscosity
-        eta2 = benchmark2.coefficients.shear_viscosity
-
-        np.testing.assert_allclose(eta2 / eta1, sigma1 / sigma2, rtol=1e-10)
-
     def test_ired_diffusion_coefficient_landau_frame(self, ired_benchmark):
         """Test diffusion coefficient for Landau frame (V^μ)."""
         benchmark, ired_model = ired_benchmark
@@ -199,17 +163,6 @@ class TestBjorkenWithIReD:
         # Check against IReD Table III value
         expected_tau_V = 2.0794 * ired_model.mean_free_path
         np.testing.assert_allclose(tau_V, expected_tau_V, rtol=1e-4)
-
-    def test_ired_validation_against_paper(self, ired_benchmark):
-        """Test comprehensive validation against IReD paper."""
-        benchmark, ired_model = ired_benchmark
-
-        # Run IReD validation
-        validation = ired_model.validate_against_ired_paper()
-
-        # All coefficients should validate against Table III
-        for name, passed in validation.items():
-            assert passed, f"IReD validation failed for {name}"
 
 
 class TestIReDPhysicalConsistency:

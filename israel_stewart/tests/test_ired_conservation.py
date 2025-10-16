@@ -121,29 +121,27 @@ class TestIReDConservation:
         )
 
         # Check regime validity (will skip if |τω| > 1)
-        regime_param = check_regime_validity(benchmark.grid, benchmark.coefficients, max_allowed=1.0)
+        regime_param = check_regime_validity(
+            benchmark.grid, benchmark.coefficients, max_allowed=1.0
+        )
         print(f"\nRegime parameter |τω| = {regime_param:.3f} < 1.0 ✓")
 
         # Compute initial energy
-        E0 = compute_total_energy(benchmark.initial_fields, benchmark.grid)
+        E0 = compute_total_energy(benchmark.fields, benchmark.grid)
         print(f"Initial energy: E0 = {E0:.6e}")
 
         # Evolve 100 steps (τ = 0.6 → 1.1 fm/c)
-        result = benchmark.run_numerical_simulation(
-            final_time=1.1, timestep=0.005, method="rk4"
-        )
+        result = benchmark.run_numerical_simulation(final_time=1.1, timestep=0.005, method="rk4")
 
         # Get final fields from solver
-        Ef = compute_total_energy(benchmark.solver.fields, benchmark.grid)
+        Ef = compute_total_energy(benchmark.fields, benchmark.grid)
         print(f"Final energy: Ef = {Ef:.6e}")
 
         # Conservation check
         relative_change = abs(Ef - E0) / E0
         print(f"Energy conservation: ΔE/E0 = {relative_change:.2e}")
 
-        assert (
-            relative_change < 1e-3
-        ), f"Energy not conserved: ΔE/E = {relative_change:.2e} > 0.1%"
+        assert relative_change < 1e-3, f"Energy not conserved: ΔE/E = {relative_change:.2e} > 0.1%"
 
     @pytest.mark.slow
     def test_particle_conservation_diffusion(self, ired_regime_valid_large_domain):
@@ -179,11 +177,13 @@ class TestIReDConservation:
         print(f"Diffusion relaxation time τ_V = {ired_model.diffusion_relaxation_time():.6f} fm/c")
 
         # Compute initial particle number
-        N0 = compute_total_particle_number(benchmark.initial_fields, benchmark.grid)
+        N0 = compute_total_particle_number(benchmark.fields, benchmark.grid)
         print(f"Initial particle number: N0 = {N0:.6e}")
 
         # Evolve for 2 diffusion times
-        t_final = 2.0 / (benchmark.analytical.diffusion_coefficient * benchmark.analytical.wave_number**2)
+        t_final = 2.0 / (
+            benchmark.analytical.diffusion_coefficient * benchmark.analytical.wave_number**2
+        )
 
         # Collect snapshots
         N_values = [N0]
@@ -196,7 +196,7 @@ class TestIReDConservation:
             t_final=t_final,
             dt=t_final / 50,  # 50 timesteps
             method="rk4",
-            callback=track_particle_number
+            callback=track_particle_number,
         )
 
         # Check conservation at all times
@@ -266,7 +266,7 @@ class TestIReDConservation:
             t_final=period,
             dt=period / 50,  # 50 timesteps per period
             method="spectral_imex",
-            callback=track_momentum
+            callback=track_momentum,
         )
 
         # Check conservation at all times
@@ -277,7 +277,9 @@ class TestIReDConservation:
         relative_changes = np.abs(P_norms - P0_norm) / (P0_norm + 1e-15)  # Avoid division by zero
         max_violation = np.max(relative_changes)
 
-        print(f"Final momentum: Pf = [{P_array[-1, 0]:.6e}, {P_array[-1, 1]:.6e}, {P_array[-1, 2]:.6e}]")
+        print(
+            f"Final momentum: Pf = [{P_array[-1, 0]:.6e}, {P_array[-1, 1]:.6e}, {P_array[-1, 2]:.6e}]"
+        )
         print(f"Maximum violation: max(Δ|P|/|P0|) = {max_violation:.2e}")
 
         assert (

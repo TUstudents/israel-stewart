@@ -75,7 +75,7 @@ class TestIReDAnalyticalValidation:
         result = benchmark.run_numerical_simulation(
             final_time=3.0,  # τ = 0.6 → 3.0 fm/c
             timestep=0.05,
-            method="rk4"
+            method="rk4",
         )
 
         # Compare with analytical solution at several points
@@ -93,7 +93,9 @@ class TestIReDAnalyticalValidation:
             max_error = max(max_error, error)
 
             if error > 0.05:  # Print violations
-                print(f"t={t:.2f} fm/c: T_num={T_num:.4f}, T_ana={T_analytical:.4f}, error={error:.1%}")
+                print(
+                    f"t={t:.2f} fm/c: T_num={T_num:.4f}, T_ana={T_analytical:.4f}, error={error:.1%}"
+                )
 
         print(f"Maximum temperature error: {max_error:.1%}")
 
@@ -134,7 +136,7 @@ class TestIReDAnalyticalValidation:
         result = benchmark.run_numerical_simulation(
             final_time=2.0,  # τ = 0.6 → 2.0 fm/c
             timestep=0.05,
-            method="rk4"
+            method="rk4",
         )
 
         # Extract shear stress (spatial average)
@@ -154,7 +156,9 @@ class TestIReDAnalyticalValidation:
         expected_magnitude = 4 * eta / (3 * final_time)
 
         # This is a placeholder - full test requires π^{μν} storage
-        print(f"Expected shear stress magnitude at τ={final_time:.2f}: |π^ηη| ~ {expected_magnitude:.6e}")
+        print(
+            f"Expected shear stress magnitude at τ={final_time:.2f}: |π^ηη| ~ {expected_magnitude:.6e}"
+        )
 
         # Mark as expected to evolve (weak test for now)
         assert times[-1] > times[0], "Bjorken evolution progressed"
@@ -331,10 +335,7 @@ class TestIReDAnalyticalValidation:
         # Evolve for several decay times
         t_final = 3.0 / Gamma_expected
         benchmark.solver.evolve(
-            t_final=t_final,
-            dt=t_final / 50,
-            method="rk4",
-            callback=extract_amplitude
+            t_final=t_final, dt=t_final / 50, method="rk4", callback=extract_amplitude
         )
 
         # Fit exponential decay
@@ -386,7 +387,7 @@ class TestIReDAnalyticalValidation:
 
         # Check Fick's law at t=0 (initial condition)
         X, _, _ = benchmark.grid.meshgrid()
-        V_x_numerical = benchmark.initial_fields.V_mu[..., 1]
+        V_x_numerical = benchmark.fields.V_mu[..., 1]
         V_x_analytical = benchmark.analytical.diffusion_current(X, 0.0)
 
         # Compute relative error (pointwise)
@@ -394,7 +395,7 @@ class TestIReDAnalyticalValidation:
         max_error = np.max(relative_error)
         mean_error = np.mean(relative_error)
 
-        print(f"Fick's law validation at t=0:")
+        print("Fick's law validation at t=0:")
         print(f"  Mean error: {mean_error:.1%}")
         print(f"  Max error: {max_error:.1%}")
 
@@ -415,12 +416,7 @@ class TestIReDAnalyticalValidation:
                 errors_check.append(error)
                 print(f"  t={t:.2f}: error = {error:.1%}")
 
-        benchmark.solver.evolve(
-            t_final=0.5,
-            dt=0.05,
-            method="rk4",
-            callback=check_ficks_law
-        )
+        benchmark.solver.evolve(t_final=0.5, dt=0.05, method="rk4", callback=check_ficks_law)
 
         # Early time error should still be reasonable (< 20%)
         if errors_check:

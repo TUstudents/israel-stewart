@@ -240,6 +240,7 @@ class DiffusionBenchmark:
 
         fields.rho[:] = rho_0
         fields.pressure[:] = p_0
+        fields.n[:] = n_0  # Initialize particle density!
 
         # Four-velocity: Rest frame u^μ = (1, 0, 0, 0)
         fields.u_mu[..., 0] = 1.0

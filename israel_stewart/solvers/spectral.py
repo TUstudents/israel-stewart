@@ -589,15 +589,17 @@ class SpectralISolver:
                 return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], result)
 
             except Exception as e:
-#                 # physics_logger.log_physics_fallback(
-#                     "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
-#                 )
+                #                 # physics_logger.log_physics_fallback(
+                #                     "israel_stewart_bulk_evolution", str(e), "simplified_exponential_relaxation"
+                #                 )
 
                 # Fallback: simplified exponential relaxation
                 # ∂Π/∂τ ≈ -Π/τ_Π (linear relaxation only)
                 relaxation_factor = np.exp(-dt / relaxation_time) if relaxation_time > 0 else 0.0
 
-                return cast(np.ndarray[Any, np.dtype[np.floating[Any]]], relaxation_factor * bulk_field)
+                return cast(
+                    np.ndarray[Any, np.dtype[np.floating[Any]]], relaxation_factor * bulk_field
+                )
 
     @monitor_performance("laplacian")
     def laplacian(self, field: np.ndarray) -> np.ndarray[Any, np.dtype[np.floating[Any]]]:
@@ -1419,9 +1421,9 @@ class SpectralISHydrodynamics:
                 }
 
         except Exception as e:
-#             # physics_logger.log_physics_fallback(
-#                 "relaxation_source_computation", str(e), "empty_sources"
-#             )
+            #             # physics_logger.log_physics_fallback(
+            #                 "relaxation_source_computation", str(e), "empty_sources"
+            #             )
             relaxation_rhs = {}
 
         return relaxation_rhs
@@ -1502,9 +1504,9 @@ class SpectralISHydrodynamics:
 
             error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
             print(f"CONSERVATION ERROR: {error_msg}", file=sys.stderr)
-#             # physics_logger.log_physics_fallback(
-#                 "conservation_evolution", error_msg, "fallback_conservation_advance"
-#             )
+            #             # physics_logger.log_physics_fallback(
+            #                 "conservation_evolution", error_msg, "fallback_conservation_advance"
+            #             )
             self._fallback_conservation_advance(dt)
 
     def _convert_momentum_to_velocity_derivative(
@@ -1601,7 +1603,7 @@ class SpectralISHydrodynamics:
         laws compatible with IMEX splitting.
 
         Returns:
-            Dictionary with keys: rho, mom_x, mom_y, mom_z, Pi, pi_munu, V_mu
+            Dictionary with keys: rho, mom_x, mom_y, mom_z, n, Pi, pi_munu, V_mu
         """
         rho = self.fields.rho
         u_spatial = self.fields.u_mu[..., 1:4]  # Spatial components (x, y, z)
@@ -1612,6 +1614,7 @@ class SpectralISHydrodynamics:
             "mom_x": (h * u_spatial[..., 0]).copy(),
             "mom_y": (h * u_spatial[..., 1]).copy(),
             "mom_z": (h * u_spatial[..., 2]).copy(),
+            "n": self.fields.n.copy(),
             "Pi": self.fields.Pi.copy(),
             "pi_munu": self.fields.pi_munu.copy(),
             "V_mu": self.fields.V_mu.copy(),
@@ -1624,7 +1627,7 @@ class SpectralISHydrodynamics:
         Converts momentum density mom_i back to velocity u^i = mom_i / h.
 
         Args:
-            mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, Pi, pi_munu, V_mu
+            mom_dict: Dictionary with keys rho, mom_x, mom_y, mom_z, n, Pi, pi_munu, V_mu
         """
         rho = mom_dict["rho"]
         h = 4.0 / 3.0 * rho  # Enthalpy for radiation fluid
@@ -1638,6 +1641,13 @@ class SpectralISHydrodynamics:
         except ValueError:
             self.fields.rho.flags.writeable = True
             self.fields.rho[:] = rho
+
+        # Update particle number density
+        try:
+            self.fields.n[:] = mom_dict["n"]
+        except ValueError:
+            self.fields.n.flags.writeable = True
+            self.fields.n[:] = mom_dict["n"]
 
         # Update four-velocity from momentum density
         self.fields.u_mu.flags.writeable = True
@@ -1707,6 +1717,7 @@ class SpectralISHydrodynamics:
             "mom_x": np.zeros_like(self.fields.rho),
             "mom_y": np.zeros_like(self.fields.rho),
             "mom_z": np.zeros_like(self.fields.rho),
+            "n": np.zeros_like(self.fields.n),
             "Pi": np.zeros_like(self.fields.Pi),
             "pi_munu": np.zeros_like(self.fields.pi_munu),
             "V_mu": np.zeros_like(self.fields.V_mu),
@@ -1723,6 +1734,8 @@ class SpectralISHydrodynamics:
                 explicit_rhs["mom_x"] = conservation_rhs["dmom_dt"][..., 0]
                 explicit_rhs["mom_y"] = conservation_rhs["dmom_dt"][..., 1]
                 explicit_rhs["mom_z"] = conservation_rhs["dmom_dt"][..., 2]
+                # Particle number density evolution
+                explicit_rhs["n"] = conservation_rhs["dn_dt"]
             except Exception as e:
                 # Keep zero RHS (already initialized above)
                 pass

@@ -221,13 +221,16 @@ This is the equation that replaces heat flux evolution in Eckart frame:
 
 Simplified (first-order):
 ```
-dV^μ/dτ + V^μ/τ_V = D ∇^μ(μ_B/T)
+dV^μ/dτ + V^μ/τ_V = -D ∇^μ(μ_B/T)
 ```
+
+**Fick's law**: V^μ = -D ∇^μ(μ_B/T) (particles flow down chemical potential gradient)
 
 where:
 - τ_V: Diffusion relaxation time
 - D: Diffusion coefficient (replaces thermal conductivity κ)
 - ∇^μ(μ_B/T): Chemical potential gradient (projected to spatial hypersurface)
+- Negative sign: ensures particles flow from high μ to low μ
 
 **Second-order terms** (Landau frame):
 ```
@@ -238,7 +241,7 @@ R_V^μ = [Higher-order terms, typically neglected]
 ```
 
 **Physical interpretation**:
-- First-order term: Fick's law generalization (diffusion driven by chemical potential gradient)
+- First-order term: Fick's law (diffusion driven DOWN chemical potential gradient)
 - Second-order terms: Couplings to expansion and shear (small corrections)
 
 **Orthogonality**: After evolution, V^μ must be projected to ensure V^μ u_μ = 0.
@@ -491,13 +494,16 @@ def diffusion_rhs(V_mu, pi_munu, theta, nabla_mu_over_T, coeffs):
     """
     Compute RHS of particle diffusion evolution equation.
 
-    dV^μ/dτ = -V^μ/τ_V + D ∇^μ(μ_B/T) + coupling terms
+    dV^μ/dτ = -V^μ/τ_V - D ∇^μ(μ_B/T) + coupling terms
+
+    Fick's law: V^μ = -D ∇^μ(μ_B/T) (particles flow down gradient)
     """
     # Linear relaxation
     linear = -V_mu / coeffs.diffusion_relaxation_time
 
-    # First-order source: D ∇^μ(μ_B/T)
-    first_order = coeffs.diffusion_coefficient * nabla_mu_over_T
+    # First-order source: -D ∇^μ(μ_B/T) (Fick's law)
+    # Negative sign: particles flow DOWN chemical potential gradient
+    first_order = -coeffs.diffusion_coefficient * nabla_mu_over_T
 
     # Second-order coupling terms
     nonlinear = np.zeros_like(V_mu)

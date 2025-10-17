@@ -15,7 +15,7 @@ In Landau frame, the frame is defined by zero energy flux:
 The dissipative fluxes evolve according to:
     - Bulk: dΠ/dτ + Π/τ_Π = -ζθ + nonlinear terms
     - Shear: dπ^μν/dτ + π^μν/τ_π = 2η σ^μν + coupling terms
-    - Diffusion: dV^μ/dτ + V^μ/τ_V = D ∇^μ(μ_B/T) + coupling terms
+    - Diffusion: dV^μ/dτ + V^μ/τ_V = -D ∇^μ(μ_B/T) + coupling terms
 
 where D is the diffusion coefficient and μ_B/T is the baryon chemical potential over temperature.
 
@@ -170,7 +170,7 @@ class ISRelaxationEquations:
         dpi_00_dt = shear_linear + shear_nonlinear
 
         # Particle diffusion evolution equation (Landau frame - using V^0 as representative component)
-        diffusion_linear = -V_0 / tau_V + D * sp.Symbol("nabla_0_mu_over_T")
+        diffusion_linear = -V_0 / tau_V - D * sp.Symbol("nabla_0_mu_over_T")
         diffusion_nonlinear = (
             lambda_V_pi * pi_00 * sp.Symbol("nabla_0_mu_over_T") - tau_V * V_0 * theta
         )
@@ -407,12 +407,15 @@ class ISRelaxationEquations:
         It satisfies the orthogonality condition V^μ u_μ = 0.
 
         Evolution equation:
-            dV^μ/dτ + V^μ/τ_V = D ∇^μ(μ_B/T) + coupling terms
+            dV^μ/dτ + V^μ/τ_V = -D ∇^μ(μ_B/T) + coupling terms
+
+        Fick's law: V^μ = -D ∇^μ(μ_B/T) (particles flow down chemical potential gradient)
 
         where:
             - D is the diffusion coefficient (not thermal conductivity!)
             - μ_B/T is the baryon chemical potential over temperature
             - τ_V is the diffusion relaxation time
+            - Negative sign ensures particles flow from high μ to low μ
 
         Args:
             V_mu: Current particle diffusion current V^μ (Landau frame)
@@ -434,9 +437,9 @@ class ISRelaxationEquations:
             else np.zeros_like(V_mu)
         )
 
-        # First-order source: D ∇^μ(μ_B/T)
-        # This is the driving force for particle diffusion in Landau frame
-        first_order = self.coeffs.diffusion_coefficient * nabla_mu_over_T
+        # First-order source: -D ∇^μ(μ_B/T) (Fick's law)
+        # Negative sign: particles flow DOWN chemical potential gradient (from high μ to low μ)
+        first_order = -self.coeffs.diffusion_coefficient * nabla_mu_over_T
 
         # Second-order nonlinear terms
         nonlinear = np.zeros_like(V_mu)

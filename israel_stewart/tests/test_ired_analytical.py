@@ -295,9 +295,6 @@ class TestIReDAnalyticalValidation:
         )
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        reason="Physics issue: Negative decay rate (amplitude growing instead of decaying). Numerical instability in slow IReD diffusion evolution."
-    )
     def test_diffusion_decay_rate(self, ired_regime_valid_large_domain):
         """
         Test diffusion decay rate Γ = D k² with IReD diffusion coefficient.

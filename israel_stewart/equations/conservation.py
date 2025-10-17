@@ -158,6 +158,9 @@ class ConservationLaws:
         - ∂_t ρ = -∂_i T^0i  (energy conservation, ν=0)
         - ∂_t (ρu^j) = -∂_i T^ij  (momentum conservation, ν=1,2,3)
 
+        From ∂_μ N^μ = 0, extract:
+        - ∂_t n = -∂_i N^i = -∂_i (n u^i + V^i)  (particle number conservation)
+
         For 3+1D time evolution, we compute ONLY spatial divergence, not full 4D divergence.
         The conservation equation ∂_0 T^0ν + ∂_i T^iν = 0 rearranges to:
         ∂_t T^0ν = -∂_i T^iν (spatial divergence determines time evolution)
@@ -166,6 +169,7 @@ class ConservationLaws:
             Dictionary with evolution equations:
             - 'drho_dt': Energy density time derivative
             - 'dmom_dt': Momentum density time derivatives (3-vector)
+            - 'dn_dt': Particle number density time derivative
         """
         T = self.stress_energy_tensor()
         grid_shape = self.fields.grid.shape
@@ -222,7 +226,25 @@ class ConservationLaws:
                         dmom_dt[..., j - 1] -= christoffel[i, i, lam] * T[..., lam, j]
                         dmom_dt[..., j - 1] -= christoffel[j, i, lam] * T[..., i, lam]
 
-        return {"drho_dt": drho_dt, "dmom_dt": dmom_dt}
+        # Particle number conservation: ∂_t n = -∂_i N^i = -∂_i (n u^i + V^i)
+        # Landau frame: N^i = n u^i + V^i (particle current includes diffusion)
+        dn_dt = np.zeros(grid_shape)
+
+        # Compute particle current N^i = n u^i + V^i
+        n = self.fields.n
+        u_mu = self.fields.u_mu
+        V_mu = self.fields.V_mu
+
+        # Particle current (spatial components only)
+        N_i = n[..., np.newaxis] * u_mu[..., 1:4] + V_mu[..., 1:4]  # (n u^i + V^i) for i=1,2,3
+
+        # Compute divergence using same method as for energy/momentum
+        if self.spectral_solver is not None and self.fields.grid.boundary_conditions == "periodic":
+            dn_dt = -self.spectral_solver.spatial_divergence(N_i)
+        else:
+            dn_dt = -self.fields.grid.divergence(N_i, order=2)
+
+        return {"drho_dt": drho_dt, "dmom_dt": dmom_dt, "dn_dt": dn_dt}
 
     def _spatial_projector(self) -> np.ndarray:
         """

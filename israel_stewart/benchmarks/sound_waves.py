@@ -429,8 +429,8 @@ class SoundWaveAnalysis:
 
         # Row 3: Shear stress relaxation equation
         # (1 - iωτ_π)·δπ_xx - i·(4/3)ηk·δv_x = 0
-        # Note: Both bulk and shear should have consistent sign structure
-        matrix[3, 1] = +1j * (4.0 / 3.0) * eta * k  # δv_x coefficient (PLUS to match bulk)
+        # Note: Shear has OPPOSITE sign to bulk in the linearized IS equations
+        matrix[3, 1] = -1j * (4.0 / 3.0) * eta * k  # δv_x coefficient (MINUS per physics)
         matrix[3, 3] = 1.0 - 1j * omega * tau_pi  # δπ_xx coefficient
 
         return matrix

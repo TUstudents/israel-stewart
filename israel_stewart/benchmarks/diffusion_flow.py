@@ -98,7 +98,11 @@ class AnalyticalDiffusionSolution:
         V^x = -D ∂_x(μ/T)
 
         For radiation fluid with small perturbations:
-            μ/T ∝ n/T³ → ∂_x(μ/T) ∝ ∂_x n
+            n(x,t) = n₀(1 + A·exp(-Dk²t)·sin(kx))
+            μ/T ≈ ln(n/n_eq) ≈ A·exp(-Dk²t)·sin(kx)  (for small A)
+            ∂_x(μ/T) = A·k·exp(-Dk²t)·cos(kx)
+
+        Therefore: V^x = -D·A·k·exp(-Dk²t)·cos(kx)
 
         Args:
             x: Spatial coordinate (GeV⁻¹)
@@ -109,11 +113,11 @@ class AnalyticalDiffusionSolution:
         """
         k = self.wave_number
         D = self.diffusion_coefficient
-        delta_n0 = self.perturbation_amplitude * self.particle_density_0
+        A = self.perturbation_amplitude  # Dimensionless amplitude
 
         damping = np.exp(-D * k**2 * t)
-        # V^x = -D ∂_x n (for small perturbations)
-        return -D * delta_n0 * damping * k * np.cos(k * x)
+        # Fick's law: V^x = -D ∂_x(μ/T) = -D·A·k·exp(-Dk²t)·cos(kx)
+        return -D * A * damping * k * np.cos(k * x)
 
     def chemical_potential(self, x: NDArray[np.floating], t: float) -> NDArray[np.floating]:
         """
@@ -241,6 +245,10 @@ class DiffusionBenchmark:
         fields.rho[:] = rho_0
         fields.pressure[:] = p_0
         fields.n[:] = n_0  # Initialize particle density!
+
+        # Temperature from energy density: ρ = (π²/30) T⁴ for radiation fluid
+        # T = (30 ρ / π²)^(1/4)
+        fields.temperature[:] = (30.0 * rho_0 / np.pi**2) ** 0.25
 
         # Four-velocity: Rest frame u^μ = (1, 0, 0, 0)
         fields.u_mu[..., 0] = 1.0

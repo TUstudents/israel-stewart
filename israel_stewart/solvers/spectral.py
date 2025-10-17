@@ -1836,6 +1836,7 @@ class SpectralISHydrodynamics:
 
         # Hydrodynamic fields have no stiff terms, so Y = rhs
         solution["rho"] = rhs_dict["rho"].copy()
+        solution["n"] = rhs_dict["n"].copy()  # Particle density
         solution["mom_x"] = rhs_dict["mom_x"].copy()
         solution["mom_y"] = rhs_dict["mom_y"].copy()
         solution["mom_z"] = rhs_dict["mom_z"].copy()
@@ -2071,6 +2072,7 @@ class SpectralISHydrodynamics:
         if self.conservation is not None:
             conservation_rhs = self.conservation.evolution_equations()
             drho_dt = conservation_rhs.get("drho_dt", np.zeros_like(fields.rho))
+            dn_dt = conservation_rhs.get("dn_dt", np.zeros_like(fields.n))  # Particle density
             dmom_dt = conservation_rhs.get("dmom_dt", np.zeros((*fields.rho.shape, 3)))
 
             # Convert momentum density derivative to velocity derivative
@@ -2078,6 +2080,7 @@ class SpectralISHydrodynamics:
             du_dt = self._convert_momentum_to_velocity_derivative(dmom_dt, drho_dt)
         else:
             drho_dt = np.zeros_like(fields.rho)
+            dn_dt = np.zeros_like(fields.n)
             du_dt = np.zeros((*fields.rho.shape, 3))
 
         # 2. Relaxation equations (FULL RHS - no splitting!)
@@ -2108,6 +2111,7 @@ class SpectralISHydrodynamics:
 
         return {
             "drho_dt": drho_dt,
+            "dn_dt": dn_dt,  # Particle density derivative
             "du_dt": du_dt,
             "dPi_dt": dPi_dt,
             "dpi_munu_dt": dpi_munu_dt,
@@ -2117,6 +2121,7 @@ class SpectralISHydrodynamics:
     def _update_fields_from_rhs(
         self,
         rho_0: np.ndarray,
+        n_0: np.ndarray,
         u_mu_0: np.ndarray,
         Pi_0: np.ndarray,
         pi_munu_0: np.ndarray,
@@ -2129,6 +2134,7 @@ class SpectralISHydrodynamics:
 
         Args:
             rho_0: Initial energy density
+            n_0: Initial particle density
             u_mu_0: Initial four-velocity
             Pi_0: Initial bulk pressure
             pi_munu_0: Initial shear stress
@@ -2137,6 +2143,7 @@ class SpectralISHydrodynamics:
             dt: Time step for this stage
         """
         self.fields.rho[:] = rho_0 + dt * rhs["drho_dt"]
+        self.fields.n[:] = n_0 + dt * rhs["dn_dt"]  # Particle density evolution
         self.fields.u_mu[..., 1:4] = u_mu_0[..., 1:4] + dt * rhs["du_dt"]
         self.fields.Pi[:] = Pi_0 + dt * rhs["dPi_dt"]
         self.fields.pi_munu[:] = pi_munu_0 + dt * rhs["dpi_munu_dt"]
@@ -2169,6 +2176,7 @@ class SpectralISHydrodynamics:
         """
         # Save initial state
         rho_0 = self.fields.rho.copy()
+        n_0 = self.fields.n.copy()  # Particle density
         u_mu_0 = self.fields.u_mu.copy()
         Pi_0 = self.fields.Pi.copy()
         pi_munu_0 = self.fields.pi_munu.copy()
@@ -2178,20 +2186,24 @@ class SpectralISHydrodynamics:
         k1 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 2: k2 = F(y_n + dt/2 * k1)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k1, dt / 2)
+        self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k1, dt / 2)
         k2 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 3: k3 = F(y_n + dt/2 * k2)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k2, dt / 2)
+        self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k2, dt / 2)
         k3 = self._compute_full_coupled_rhs(self.fields)
 
         # Stage 4: k4 = F(y_n + dt * k3)
-        self._update_fields_from_rhs(rho_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k3, dt)
+        self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k3, dt)
         k4 = self._compute_full_coupled_rhs(self.fields)
 
         # Final update: y_{n+1} = y_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
         self.fields.rho[:] = rho_0 + (dt / 6) * (
             k1["drho_dt"] + 2 * k2["drho_dt"] + 2 * k3["drho_dt"] + k4["drho_dt"]
+        )
+
+        self.fields.n[:] = n_0 + (dt / 6) * (
+            k1["dn_dt"] + 2 * k2["dn_dt"] + 2 * k3["dn_dt"] + k4["dn_dt"]
         )
 
         u_update = (dt / 6) * (k1["du_dt"] + 2 * k2["du_dt"] + 2 * k3["du_dt"] + k4["du_dt"])

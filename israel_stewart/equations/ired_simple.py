@@ -251,16 +251,19 @@ class HardSphereIReD:
         tau_pi = self.shear_relaxation_time(time_unit=time_unit)
         return 1.6944 * tau_pi
 
-    def lambda_pi_V(self) -> float:
+    def lambda_pi_V(self, time_unit: str = "fm/c") -> float:
         """
         Shear-diffusion coupling λ_πV from IReD Table III.
 
         For N₂=3: λ_πV = 0.20890 τ_π/β
 
+        Args:
+            time_unit: Unit for τ_π ('fm/c', 'natural', or 'SI')
+
         Returns:
-            λ_πV in GeV⁴
+            λ_πV with time in requested unit (units depend on time_unit)
         """
-        tau_pi = self.shear_relaxation_time()
+        tau_pi = self.shear_relaxation_time(time_unit=time_unit)
         return 0.20890 * tau_pi / self.beta
 
     def delta_pi_pi(self) -> float:
@@ -322,40 +325,49 @@ class HardSphereIReD:
         tau_V = self.diffusion_relaxation_time(time_unit=time_unit)
         return 0.89501 * tau_V
 
-    def lambda_V_pi(self) -> float:
+    def lambda_V_pi(self, time_unit: str = "fm/c") -> float:
         """
         Diffusion-shear coupling λ_Vπ from IReD Table III.
 
         For N₁=4: λ_Vπ = 0.069240 β τ_V
 
+        Args:
+            time_unit: Unit for τ_V ('fm/c', 'natural', or 'SI')
+
         Returns:
-            λ_Vπ in GeV⁻²·(fm/c)
+            λ_Vπ with time in requested unit (units depend on time_unit)
         """
-        tau_V = self.diffusion_relaxation_time()
+        tau_V = self.diffusion_relaxation_time(time_unit=time_unit)
         return 0.069240 * self.beta * tau_V
 
-    def ell_V_pi(self) -> float:
+    def ell_V_pi(self, time_unit: str = "fm/c") -> float:
         """
         Diffusion-shear gradient coupling ℓ_Vπ from IReD Table III.
 
         For N₁=4: ℓ_Vπ = 0.028677 β τ_V
 
+        Args:
+            time_unit: Unit for τ_V ('fm/c', 'natural', or 'SI')
+
         Returns:
-            ℓ_Vπ in GeV⁻²·(fm/c)
+            ℓ_Vπ with time in requested unit (units depend on time_unit)
         """
-        tau_V = self.diffusion_relaxation_time()
+        tau_V = self.diffusion_relaxation_time(time_unit=time_unit)
         return 0.028677 * self.beta * tau_V
 
-    def tau_V_pi(self) -> float:
+    def tau_V_pi(self, time_unit: str = "fm/c") -> float:
         """
         Diffusion-shear force coupling τ_Vπ from IReD Table III.
 
         For N₁=4: τ_Vπ = 0.0071692 β τ_V/P
 
+        Args:
+            time_unit: Unit for τ_V ('fm/c', 'natural', or 'SI')
+
         Returns:
-            τ_Vπ in GeV⁻⁵·(fm/c)
+            τ_Vπ with time in requested unit (units depend on time_unit)
         """
-        tau_V = self.diffusion_relaxation_time()
+        tau_V = self.diffusion_relaxation_time(time_unit=time_unit)
         return 0.0071692 * self.beta * tau_V / self.pressure
 
     # ========================================================================

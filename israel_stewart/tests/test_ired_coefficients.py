@@ -258,7 +258,8 @@ class TestEdgeCases:
         model = HardSphereIReD(temperature=0.4, cross_section=1e-6)
 
         # Very small σ → very large λ_mfp → weak coupling
-        assert model.mean_free_path > 1e6  # Very large
+        # With corrected units: λ_mfp = (ℏc)³/(n·σ) ≈ 9.86e5 fm
+        assert model.mean_free_path > 9e5  # Very large (almost 1 mm!)
 
         # Coefficients should still be finite and positive
         assert np.isfinite(model.shear_viscosity())

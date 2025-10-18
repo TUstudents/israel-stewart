@@ -77,10 +77,48 @@ class HardSphereIReD:
         self.pressure = self.energy_density / 3.0
         self.entropy_density = 4.0 * self.energy_density / (3.0 * self.temperature)
 
-        # Mean free path: λ_mfp = 1/(n·σ) where n ∝ T³
+        # Mean free path: λ_mfp = (ℏc)³/(n·σ) where n ∝ T³
         # For radiation: n = (ζ(3)/π²) T³ where ζ(3) ≈ 1.202
+        # Unit conversion: n in GeV³, σ in fm² → λ_mfp in fm requires (ℏc)³ factor
         self.particle_density = (1.202 / np.pi**2) * self.temperature**3
-        self.mean_free_path = 1.0 / (self.particle_density * self.cross_section)
+        self.mean_free_path = (self.HBARC**3) / (self.particle_density * self.cross_section)
+
+    # ========================================================================
+    # Unit Conversion Utilities
+    # ========================================================================
+
+    def _convert_time(self, time_fm: float, time_unit: str) -> float:
+        """
+        Convert time from fm/c to requested unit.
+
+        Args:
+            time_fm: Time in fm/c
+            time_unit: Target unit ('fm/c', 'natural', or 'SI')
+
+        Returns:
+            Time in requested unit
+
+        Raises:
+            ValueError: If time_unit is not recognized
+        """
+        if time_unit == "fm/c":
+            return time_fm
+        elif time_unit == "natural":
+            # Convert fm/c → GeV⁻¹: divide by ℏc
+            # Time in natural units: t[GeV⁻¹] = t[fm] / (ℏc[GeV·fm])
+            return time_fm / self.HBARC
+        elif time_unit == "SI":
+            # Convert fm/c → seconds
+            # First convert to natural units, then to SI
+            time_natural = time_fm / self.HBARC
+            # Import here to avoid circular dependency
+            from israel_stewart.core.constants import natural_to_si_time
+
+            return natural_to_si_time(time_natural)
+        else:
+            raise ValueError(
+                f"Unknown time_unit: {time_unit}. " "Must be 'fm/c', 'natural', or 'SI'"
+            )
 
     # ========================================================================
     # First-Order Transport Coefficients
@@ -137,14 +175,17 @@ class HardSphereIReD:
     # Relaxation Times
     # ========================================================================
 
-    def shear_relaxation_time(self) -> float:
+    def shear_relaxation_time(self, time_unit: str = "fm/c") -> float:
         """
         Shear relaxation time τ_π from IReD Table III.
 
         For N₂=3 truncation: τ_π = 1.6552 λ_mfp
 
+        Args:
+            time_unit: Output unit ('fm/c', 'natural', or 'SI')
+
         Returns:
-            τ_π in fm/c
+            τ_π in requested unit (default: fm/c)
         """
         # Table III values
         tau_pi_table = {
@@ -155,48 +196,59 @@ class HardSphereIReD:
         }
 
         tau_pi_dimensionless = tau_pi_table[self.truncation]
-        return tau_pi_dimensionless * self.mean_free_path
+        tau_pi_fm = tau_pi_dimensionless * self.mean_free_path
+        return self._convert_time(tau_pi_fm, time_unit)
 
-    def bulk_relaxation_time(self) -> float:
+    def bulk_relaxation_time(self, time_unit: str = "fm/c") -> float:
         """
         Bulk relaxation time τ_Π.
 
         For conformal fluid with ζ=0, bulk relaxation is not relevant.
         Return a nominal value.
 
+        Args:
+            time_unit: Output unit ('fm/c', 'natural', or 'SI')
+
         Returns:
-            τ_Π (nominal)
+            τ_Π (nominal) in requested unit
         """
         # Use typical scale: τ_Π ~ τ_π for dimensional analysis
-        return self.shear_relaxation_time()
+        return self.shear_relaxation_time(time_unit=time_unit)
 
-    def diffusion_relaxation_time(self) -> float:
+    def diffusion_relaxation_time(self, time_unit: str = "fm/c") -> float:
         """
         Diffusion relaxation time τ_V (Landau frame).
 
         For N₁=4 truncation: τ_V = 2.0794 λ_mfp
 
+        Args:
+            time_unit: Output unit ('fm/c', 'natural', or 'SI')
+
         Returns:
-            τ_V in fm/c
+            τ_V in requested unit (default: fm/c)
         """
         # Table III (N₁=4, 41 moments)
         tau_V_dimensionless = 2.0794
-        return tau_V_dimensionless * self.mean_free_path
+        tau_V_fm = tau_V_dimensionless * self.mean_free_path
+        return self._convert_time(tau_V_fm, time_unit)
 
     # ========================================================================
     # Second-Order Transport Coefficients
     # ========================================================================
 
-    def tau_pi_pi(self) -> float:
+    def tau_pi_pi(self, time_unit: str = "fm/c") -> float:
         """
         Shear-shear coupling τ_ππ from IReD Table III.
 
         For N₂=3: τ_ππ = 1.6944 τ_π
 
+        Args:
+            time_unit: Output unit ('fm/c', 'natural', or 'SI')
+
         Returns:
-            τ_ππ in fm/c
+            τ_ππ in requested unit (default: fm/c)
         """
-        tau_pi = self.shear_relaxation_time()
+        tau_pi = self.shear_relaxation_time(time_unit=time_unit)
         return 1.6944 * tau_pi
 
     def lambda_pi_V(self) -> float:
@@ -255,16 +307,19 @@ class HardSphereIReD:
         """
         return 1.0
 
-    def lambda_V_V(self) -> float:
+    def lambda_V_V(self, time_unit: str = "fm/c") -> float:
         """
         Diffusion-diffusion coupling λ_VV from IReD Table III.
 
         For N₁=4: λ_VV = 0.89501 τ_V
 
+        Args:
+            time_unit: Output unit ('fm/c', 'natural', or 'SI')
+
         Returns:
-            λ_VV in fm/c
+            λ_VV in requested unit (default: fm/c)
         """
-        tau_V = self.diffusion_relaxation_time()
+        tau_V = self.diffusion_relaxation_time(time_unit=time_unit)
         return 0.89501 * tau_V
 
     def lambda_V_pi(self) -> float:
@@ -440,7 +495,7 @@ def example_usage():
     model = HardSphereIReD(
         temperature=0.4,  # 400 MeV
         cross_section=1.0,  # 1 fm²
-        truncation="41"  # Highest accuracy
+        truncation="41",  # Highest accuracy
     )
 
     # Print summary

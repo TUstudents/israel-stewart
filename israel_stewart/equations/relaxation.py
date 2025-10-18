@@ -213,8 +213,11 @@ class ISRelaxationEquations:
             shear_tensor,
             vorticity_tensor,
             mu_over_T_gradient,  # Chemical potential gradient
+            fields.temperature,  # Temperature for dimensional scaling
         )
-        dV_mu_dt = self._diffusion_rhs(V_mu, pi_munu, expansion_scalar, mu_over_T_gradient)
+        dV_mu_dt = self._diffusion_rhs(
+            V_mu, pi_munu, expansion_scalar, mu_over_T_gradient, fields.temperature
+        )
 
         # Pack into dissipative vector format
         return np.concatenate([dPi_dt.flatten(), dpi_munu_dt.reshape(-1), dV_mu_dt.reshape(-1)])
@@ -290,6 +293,7 @@ class ISRelaxationEquations:
         sigma_munu: np.ndarray,
         omega_munu: np.ndarray,
         nabla_mu_over_T: np.ndarray,
+        temperature: np.ndarray,
     ) -> np.ndarray:
         """
         Compute shear stress tensor evolution RHS (Landau frame).
@@ -309,6 +313,7 @@ class ISRelaxationEquations:
             sigma_munu: Shear tensor σ^μν
             omega_munu: Vorticity tensor ω^μν
             nabla_mu_over_T: Chemical potential gradient ∇^μ(μ_B/T) (Landau frame)
+            temperature: Temperature field T (GeV) for dimensional scaling
 
         Returns:
             Full RHS: -π^μν/τ_π + 2η σ^μν + (second-order coupling terms)
@@ -347,16 +352,21 @@ class ISRelaxationEquations:
             nonlinear += bulk_coupling
 
         # Shear-particle diffusion coupling (Landau frame)
-        # Term: λ_πV * (V^μ ∇^ν(μ_B/T) + V^ν ∇^μ(μ_B/T)) / 2
+        # Term: λ_πV * T * (V^μ ∇^ν(μ_B/T) + V^ν ∇^μ(μ_B/T)) / 2
         # This couples shear stress to particle diffusion gradients
+        # NOTE: λ_πV from IReD is dimensionless; multiply by T for correct units (GeV)
         if self.coeffs.lambda_pi_V != 0:
             from ..core.tensor_utils import optimized_einsum
 
             # Outer product: V^μ ∇^ν(μ_B/T)
             outer_product = optimized_einsum("...i,...j->...ij", V_mu, nabla_mu_over_T)
             # Symmetrize: (V^μ ∇^ν + V^ν ∇^μ) / 2
+            # Scale by temperature for dimensional consistency: [λ_πV × T] = GeV
             diffusion_term = (
-                self.coeffs.lambda_pi_V * 0.5 * (outer_product + np.swapaxes(outer_product, -1, -2))
+                self.coeffs.lambda_pi_V
+                * temperature[..., np.newaxis, np.newaxis]
+                * 0.5
+                * (outer_product + np.swapaxes(outer_product, -1, -2))
             )
             nonlinear += diffusion_term
 
@@ -398,6 +408,7 @@ class ISRelaxationEquations:
         pi_munu: np.ndarray,
         theta: np.ndarray,
         nabla_mu_over_T: np.ndarray,
+        temperature: np.ndarray,
     ) -> np.ndarray:
         """
         Compute particle diffusion current evolution (Landau frame).
@@ -422,6 +433,7 @@ class ISRelaxationEquations:
             pi_munu: Shear stress tensor π^μν
             theta: Expansion scalar θ = ∇_μ u^μ
             nabla_mu_over_T: Projected gradient of chemical potential ∇^μ(μ_B/T)
+            temperature: Temperature field T (GeV) for dimensional scaling
 
         Returns:
             Time derivative dV^μ/dτ
@@ -450,14 +462,18 @@ class ISRelaxationEquations:
             expansion_term = -self.coeffs.tau_V_pi * V_mu * theta[..., np.newaxis]
             nonlinear += expansion_term
 
-        # Shear-diffusion coupling: λ_Vπ π^μν ∇_ν(μ_B/T)
+        # Shear-diffusion coupling: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
         # Shear flow couples to diffusion gradients
+        # NOTE: λ_Vπ from IReD is dimensionless; multiply by T for correct units (GeV⁻¹ total)
         if self.coeffs.lambda_V_pi != 0:
             from ..core.tensor_utils import optimized_einsum
 
-            # Term: λ_Vπ * π^μν ∇_ν(μ_B/T)
-            shear_diffusion_term = self.coeffs.lambda_V_pi * optimized_einsum(
-                "...ij,...j->...i", pi_munu, nabla_mu_over_T
+            # Term: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
+            # Scale by temperature for dimensional consistency: [λ_Vπ × T] = GeV⁻¹
+            shear_diffusion_term = (
+                self.coeffs.lambda_V_pi
+                * temperature[..., np.newaxis]
+                * optimized_einsum("...ij,...j->...i", pi_munu, nabla_mu_over_T)
             )
             nonlinear += shear_diffusion_term
 

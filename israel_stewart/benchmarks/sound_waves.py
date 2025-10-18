@@ -2177,17 +2177,18 @@ def create_numerical_benchmark_with_ired(
     )
 
     # Extract IReD transport coefficients
+    # CRITICAL: Use time_unit="natural" because solver expects GeV⁻¹, not fm/c
     transport_coeffs = TransportCoefficients(
         shear_viscosity=ired_model.shear_viscosity(),
         bulk_viscosity=ired_model.bulk_viscosity(),  # Zero for conformal
         diffusion_coefficient=ired_model.diffusion_coefficient(),  # D (Landau frame)
-        shear_relaxation_time=ired_model.shear_relaxation_time(),
-        bulk_relaxation_time=ired_model.bulk_relaxation_time(),
-        diffusion_relaxation_time=ired_model.diffusion_relaxation_time(),  # τ_V
+        shear_relaxation_time=ired_model.shear_relaxation_time(time_unit="natural"),
+        bulk_relaxation_time=ired_model.bulk_relaxation_time(time_unit="natural"),
+        diffusion_relaxation_time=ired_model.diffusion_relaxation_time(time_unit="natural"),
         # Second-order IReD coefficients
-        tau_pi_pi=ired_model.tau_pi_pi(),  # Shear-shear coupling τ_ππ
-        lambda_pi_V=ired_model.lambda_pi_V(),  # Shear-diffusion coupling λ_πV
-        lambda_V_pi=ired_model.lambda_V_pi(),  # Diffusion-shear coupling λ_Vπ
+        tau_pi_pi=ired_model.tau_pi_pi(time_unit="natural"),  # Shear-shear coupling τ_ππ
+        lambda_pi_V=ired_model.lambda_pi_V(time_unit="natural"),  # Shear-diffusion coupling λ_πV
+        lambda_V_pi=ired_model.lambda_V_pi(time_unit="natural"),  # Diffusion-shear coupling λ_Vπ
     )
 
     # Create numerical benchmark

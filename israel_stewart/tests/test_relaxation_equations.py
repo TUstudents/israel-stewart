@@ -33,7 +33,7 @@ class TestTransportCoefficientsEnhanced:
         # Check default second-order coefficients
         assert coeffs.lambda_pi_pi == 0.0
         assert coeffs.lambda_pi_Pi == 0.0
-        assert coeffs.xi_1 == 0.0
+        assert coeffs.delta_Pi_Pi == 0.0  # IReD bulk self-coupling
         assert coeffs.tau_pi_pi == 0.0
 
     def test_second_order_initialization(self) -> None:
@@ -43,16 +43,16 @@ class TestTransportCoefficientsEnhanced:
             bulk_viscosity=0.05,
             lambda_pi_pi=0.2,
             lambda_pi_Pi=0.15,
-            xi_1=0.3,
-            xi_2=-0.1,
+            delta_Pi_Pi=0.3,  # IReD bulk self-coupling (was xi_1)
+            lambda_Pi_pi=0.15,  # IReD bulk-shear coupling
             tau_pi_pi=0.05,
             tau_pi_omega=0.02,
         )
 
         assert coeffs.lambda_pi_pi == 0.2
         assert coeffs.lambda_pi_Pi == 0.15
-        assert coeffs.xi_1 == 0.3
-        assert coeffs.xi_2 == -0.1
+        assert coeffs.delta_Pi_Pi == 0.3  # IReD
+        assert coeffs.lambda_Pi_pi == 0.15  # IReD
         assert coeffs.tau_pi_pi == 0.05
         assert coeffs.tau_pi_omega == 0.02
 
@@ -88,7 +88,7 @@ class TestTransportCoefficientsEnhanced:
     def test_temperature_dependence_enhanced(self) -> None:
         """Test temperature dependence with second-order coefficients."""
         coeffs = TransportCoefficients(
-            shear_viscosity=0.1, bulk_viscosity=0.05, lambda_pi_pi=0.2, xi_1=0.3
+            shear_viscosity=0.1, bulk_viscosity=0.05, lambda_pi_pi=0.2, delta_Pi_Pi=0.3
         )
 
         T = 2.0
@@ -103,7 +103,7 @@ class TestTransportCoefficientsEnhanced:
 
         # Second-order coefficients remain unchanged
         assert temp_coeffs.lambda_pi_pi == 0.2
-        assert temp_coeffs.xi_1 == 0.3
+        assert temp_coeffs.delta_Pi_Pi == 0.3
 
 
 class TestISFieldConfigurationEnhanced:
@@ -192,7 +192,7 @@ class TestISRelaxationEquations:
             # Second-order coefficients
             lambda_pi_pi=0.1,
             lambda_pi_Pi=0.05,
-            xi_1=0.2,
+            delta_Pi_Pi=0.2,  # IReD bulk self-coupling (was xi_1)
             tau_pi_pi=0.02,
         )
 
@@ -243,9 +243,18 @@ class TestISRelaxationEquations:
 
         # Setup simple test case
         fields.Pi.fill(0.1)  # Positive bulk pressure
-        theta = np.ones(grid.shape) * 0.5  # Expansion
+        fields.pi_munu.fill(0.05)  # Shear stress
+        fields.V_mu.fill(0.01)  # Diffusion current
 
-        relaxation._bulk_rhs(fields.Pi, fields.pi_munu, theta)
+        theta = np.ones(grid.shape) * 0.5  # Expansion
+        sigma_munu = np.ones((*grid.shape, 4, 4)) * 0.1  # Shear tensor
+        div_n = np.ones(grid.shape) * 0.02  # Diffusion divergence
+        F_mu = np.ones((*grid.shape, 4)) * 0.03  # Pressure gradient
+        I_mu = np.ones((*grid.shape, 4)) * 0.01  # Chemical potential gradient
+
+        dPi_dt = relaxation._bulk_rhs(
+            fields.Pi, fields.pi_munu, fields.V_mu, theta, sigma_munu, div_n, F_mu, I_mu
+        )
 
         # Check relaxation: should be negative (decaying toward equilibrium)
         linear_part = -fields.Pi / relaxation.coeffs.bulk_relaxation_time
@@ -254,6 +263,9 @@ class TestISRelaxationEquations:
         # Check first-order source: should be negative for expansion
         first_order_part = -relaxation.coeffs.bulk_viscosity * theta
         assert np.all(first_order_part < 0)
+
+        # Verify output shape
+        assert dPi_dt.shape == grid.shape
 
     def test_shear_rhs_physics(self, setup_relaxation_system: tuple) -> None:
         """Test shear tensor evolution physics."""
@@ -508,7 +520,7 @@ class TestRelaxationPhysics:
             shear_relaxation_time=0.5,
             bulk_relaxation_time=0.3,
             lambda_pi_Pi=1.0,  # Stronger shear-bulk coupling
-            xi_1=1.0,  # Stronger bulk nonlinearity
+            delta_Pi_Pi=1.0,  # IReD bulk self-coupling (was xi_1)
         )
 
         relaxation1 = ISRelaxationEquations(grid, metric, coeffs1)
@@ -626,6 +638,140 @@ class TestRelaxationPerformance:
         # Check performance report
         report = relaxation.performance_report()
         assert report["evolution_count"] == 10
+
+
+class TestEquilibriumRHS:
+    """Test that RHS = 0 at equilibrium (no expansion, no shear, no gradients).
+
+    Stage 3: Rigorous component-level validation.
+    Goal: Find bugs in equation implementation with tight tolerances.
+    """
+
+    @pytest.fixture
+    def equilibrium_setup(self):
+        """Create equilibrium state: uniform fields, no flow."""
+        from israel_stewart.core.metrics import MinkowskiMetric
+
+        grid = SpaceGrid(
+            "cartesian",
+            [(0.0, 2.0)] * 3,
+            (8, 8, 8),
+            boundary_conditions="periodic",
+            metric=MinkowskiMetric(),
+        )
+        fields = ISFieldConfiguration(grid)
+
+        # Equilibrium: uniform density, pressure, rest frame
+        fields.rho[:] = 1.0
+        fields.pressure[:] = 0.3
+        fields.u_mu[..., 0] = 1.0  # Rest frame
+
+        # Zero dissipative fields (equilibrium)
+        fields.Pi[:] = 0.0
+        fields.pi_munu[:] = 0.0
+        fields.V_mu[:] = 0.0
+
+        coeffs = TransportCoefficients(
+            shear_viscosity=0.1,
+            bulk_viscosity=0.05,
+            diffusion_coefficient=0.02,
+            shear_relaxation_time=0.5,
+            bulk_relaxation_time=0.3,
+            diffusion_relaxation_time=0.4,
+        )
+
+        relaxation = ISRelaxationEquations(grid, grid.metric, coeffs)
+
+        return fields, relaxation, coeffs
+
+    def test_bulk_rhs_equilibrium(self, equilibrium_setup) -> None:
+        """Test bulk viscous pressure RHS = 0 at equilibrium.
+
+        At equilibrium: theta = 0 (no expansion), Pi = 0
+        Expected: dPi/dt = -Pi/tau_Pi - zeta*theta + J_terms = 0
+        """
+        fields, relaxation, coeffs = equilibrium_setup
+
+        # Compute all required quantities
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+        sigma_munu = relaxation._compute_shear_tensor(fields.u_mu)
+
+        # For equilibrium (uniform fields), all spatial gradients are zero
+        # Use simple zero arrays instead of computing divergence to avoid grid.divergence() bug
+        div_n = np.zeros(fields.grid.shape)  # ∇·V = 0 at equilibrium
+        F_mu = np.zeros(fields.grid.shape + (4,))  # ∇P = 0 at equilibrium
+        I_mu = np.zeros(fields.grid.shape + (4,))  # ∇(μ/T) = 0 at equilibrium
+
+        dPi_dt = relaxation._bulk_rhs(
+            Pi=fields.Pi,
+            pi_munu=fields.pi_munu,
+            n_mu=fields.V_mu,
+            theta=theta,
+            sigma_munu=sigma_munu,
+            div_n=div_n,
+            F_mu=F_mu,
+            I_mu=I_mu,
+        )
+
+        # RIGOROUS: Equilibrium RHS must be exactly zero (no tolerance for analytical case)
+        np.testing.assert_allclose(dPi_dt, 0.0, atol=1e-14)
+        np.testing.assert_allclose(
+            theta, 0.0, atol=1e-14, err_msg="Expansion scalar not zero at equilibrium"
+        )
+
+    def test_shear_rhs_equilibrium(self, equilibrium_setup) -> None:
+        """Test shear stress RHS = 0 at equilibrium.
+
+        At equilibrium: sigma^munu = 0 (no shear), pi^munu = 0
+        Expected: dπ^μν/dt = -π^μν/tau_pi + 2*eta*sigma^munu + J_terms = 0
+        """
+        fields, relaxation, coeffs = equilibrium_setup
+
+        # Compute shear tensor (should be zero at equilibrium)
+        sigma_munu = relaxation._compute_shear_tensor(fields.u_mu)
+
+        # Compute shear RHS
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+        omega_munu = np.zeros_like(fields.pi_munu)  # No vorticity at rest
+
+        dpi_dt = relaxation._shear_rhs(
+            pi_munu=fields.pi_munu,
+            Pi=fields.Pi,
+            V_mu=fields.V_mu,
+            theta=theta,
+            sigma_munu=sigma_munu,
+            omega_munu=omega_munu,
+            nabla_mu_over_T=np.zeros(fields.u_mu.shape),  # No gradients
+            temperature=np.full(fields.rho.shape, 0.4),
+        )
+
+        # RIGOROUS: Both shear tensor and RHS must be zero
+        np.testing.assert_allclose(
+            sigma_munu, 0.0, atol=1e-14, err_msg="Shear tensor not zero at equilibrium"
+        )
+        np.testing.assert_allclose(dpi_dt, 0.0, atol=1e-14)
+
+    def test_diffusion_rhs_equilibrium(self, equilibrium_setup) -> None:
+        """Test diffusion current RHS = 0 at equilibrium.
+
+        At equilibrium: V^mu = 0 (no diffusion), no chemical potential gradients
+        Expected: dV^μ/dt = -V^μ/tau_V - D*nabla^mu(mu/T) + J_terms = 0
+        """
+        fields, relaxation, coeffs = equilibrium_setup
+
+        # Compute diffusion RHS
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+
+        dV_dt = relaxation._diffusion_rhs(
+            V_mu=fields.V_mu,
+            pi_munu=fields.pi_munu,
+            theta=theta,
+            nabla_mu_over_T=np.zeros(fields.u_mu.shape),  # No chemical potential gradients
+            temperature=np.full(fields.rho.shape, 0.4),
+        )
+
+        # RIGOROUS: Equilibrium RHS must be exactly zero
+        np.testing.assert_allclose(dV_dt, 0.0, atol=1e-14)
 
 
 if __name__ == "__main__":

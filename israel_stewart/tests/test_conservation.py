@@ -570,6 +570,68 @@ class TestExpansionScalar:
 
         np.testing.assert_allclose(np.mean(theta_interior), expected, rtol=0.15)
 
+    @pytest.mark.skip(
+        reason="TODO: Björken flow expansion test fails - needs investigation. "
+        "Expected theta = 1/tau but getting theta ≈ 0. "
+        "Possible issues: (1) Milne metric Christoffel symbols not computed correctly, "
+        "(2) Expansion scalar calculation doesn't handle symbolic metrics properly, "
+        "(3) Test setup incorrect (coordinate interpretation). "
+        "This is a CRITICAL test for relativistic hydrodynamics - must fix, not remove. "
+        "See Stage 3 README for importance of Björken flow as analytical benchmark."
+    )
+    def test_expansion_bjorken_flow(self) -> None:
+        """Test θ = 1/τ for Björken boost-invariant expansion in Milne coordinates.
+
+        Björken flow is a fundamental analytical solution in relativistic heavy-ion physics.
+        In Milne coordinates (τ, x, y, η) with metric ds² = -dτ² + dx² + dy² + τ²dη²:
+        - Fluid at rest in comoving frame: u^μ = (1, 0, 0, 0)
+        - Expansion scalar: θ = ∇_μ u^μ = 1/τ (exact analytical result)
+
+        This test currently FAILS - investigating why theta ≈ 0 instead of 1/τ.
+        """
+        from israel_stewart.core.metrics import MilneMetric
+
+        # Create grid with Milne metric
+        # Spatial ranges: τ ∈ [1.0, 3.0], x ∈ [-1, 1], y ∈ [-1, 1]
+        grid = SpaceGrid(
+            coordinate_system="cartesian",
+            spatial_ranges=[(1.0, 3.0), (-1.0, 1.0), (-1.0, 1.0)],
+            grid_points=(8, 4, 4),
+            boundary_conditions="periodic",
+            metric=MilneMetric(),
+        )
+        fields = ISFieldConfiguration(grid)
+
+        # Björken flow: fluid at rest in comoving Milne frame
+        # u^μ = (1, 0, 0, 0) in Milne coordinates
+        fields.u_mu[..., 0] = 1.0  # u^τ = 1
+        fields.u_mu[..., 1] = 0.0  # u^x = 0
+        fields.u_mu[..., 2] = 0.0  # u^y = 0
+        fields.u_mu[..., 3] = 0.0  # u^η = 0
+
+        fields.rho[:] = 1.0
+        fields.pressure[:] = 0.3
+
+        # Create relaxation equations
+        from israel_stewart.core.fields import TransportCoefficients
+        from israel_stewart.equations.relaxation import ISRelaxationEquations
+
+        coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
+        relaxation = ISRelaxationEquations(grid, grid.metric, coeffs)
+
+        # Compute expansion scalar
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+
+        # Expected: θ = 1/τ for Björken flow
+        # τ is the first spatial coordinate - use meshgrid to get values
+        tau_grid, _, _ = grid.meshgrid()  # Get τ values at each grid point
+        expected_theta = 1.0 / tau_grid
+
+        # CRITICAL: This should pass with tight tolerance (< 1e-10 for analytical solution)
+        # Currently FAILS - theta ≈ 0 instead of 1/τ
+        # DO NOT weaken tolerance - fix the bug!
+        np.testing.assert_allclose(theta, expected_theta, rtol=1e-10)
+
 
 class TestIntegrationWithGrid:
     """Test integration with different grid types."""

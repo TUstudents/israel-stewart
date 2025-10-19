@@ -201,11 +201,22 @@ class ISRelaxationEquations:
         shear_tensor = self._compute_shear_tensor(u_mu)
         vorticity_tensor = self._compute_vorticity_tensor(u_mu)
 
-        # Chemical potential gradient (projected) - Landau frame driving force
-        mu_over_T_gradient = self._compute_chemical_potential_gradient(fields, u_mu)
+        # Thermodynamic forces for IReD J-terms (Landau frame)
+        mu_over_T_gradient = self._compute_chemical_potential_gradient(fields, u_mu)  # I^μ
+        pressure_gradient = self._compute_pressure_gradient(fields, u_mu)  # F^μ = ∇^μ P
+        diffusion_divergence = self._compute_diffusion_divergence(V_mu)  # ∇·n
 
         # Right-hand side components
-        dPi_dt = self._bulk_rhs(Pi, pi_munu, expansion_scalar)
+        dPi_dt = self._bulk_rhs(
+            Pi,
+            pi_munu,
+            V_mu,
+            expansion_scalar,
+            shear_tensor,
+            diffusion_divergence,
+            pressure_gradient,
+            mu_over_T_gradient,
+        )
         dpi_munu_dt = self._shear_rhs(
             pi_munu,
             Pi,
@@ -223,20 +234,44 @@ class ISRelaxationEquations:
         # Pack into dissipative vector format
         return np.concatenate([dPi_dt.flatten(), dpi_munu_dt.reshape(-1), dV_mu_dt.reshape(-1)])
 
-    def _bulk_rhs(self, Pi: np.ndarray, pi_munu: np.ndarray, theta: np.ndarray) -> np.ndarray:
+    def _bulk_rhs(
+        self,
+        Pi: np.ndarray,
+        pi_munu: np.ndarray,
+        n_mu: np.ndarray,
+        theta: np.ndarray,
+        sigma_munu: np.ndarray,
+        div_n: np.ndarray,
+        F_mu: np.ndarray,
+        I_mu: np.ndarray,
+    ) -> np.ndarray:
         """
-        Compute bulk pressure evolution RHS.
+        Compute bulk pressure evolution RHS (IReD formulation).
 
-        Israel-Stewart equation: dΠ/dt = -Π/τ_Π - ζθ
+        Implements Israel-Stewart second-order equation from IReD (Wagner et al. 2022):
+            dΠ/dt = -Π/τ_Π - ζθ + J
 
-        IMPORTANT: For IMEX time integration, the linear term -Π/τ_Π is handled
-        implicitly, so the spectral solver adds it back to get the explicit part.
-        This function computes the FULL RHS including both linear and source terms.
-        The IMEX splitting is done in spectral.py, not here.
+        where J-term (IReD eq. 29a) contains 5 rigorous kinetic theory couplings:
+            J = -ℓ_Πn ∇·n - τ_Πn n·F - δ_ΠΠ Π θ - λ_Πn n·I + λ_Ππ π^μν σ_μν
+
+        Args:
+            Pi: Bulk viscous pressure Π
+            pi_munu: Shear stress tensor π^μν
+            n_mu: Diffusion current V^μ (Landau frame)
+            theta: Expansion scalar θ = ∇_μ u^μ
+            sigma_munu: Shear tensor σ^μν
+            div_n: Diffusion divergence ∇·n = ∂_μ V^μ
+            F_mu: Pressure gradient F^μ = ∇^μ P
+            I_mu: Chemical potential gradient I^μ = ∇^μ(μ_B/T)
 
         Returns:
-            Full RHS: -Π/τ_Π - ζθ + (second-order terms)
+            Full RHS: -Π/τ_Π - ζθ + J (all IReD terms)
+
+        References:
+            Wagner, Palermo, Ambrus (2022), arXiv:2203.12608v2, eq. 29a, Appendix B
         """
+        from ..core.tensor_utils import optimized_einsum
+
         # Linear relaxation term: -Π/τ_Π
         linear = (
             -Pi / self.coeffs.bulk_relaxation_time
@@ -244,45 +279,42 @@ class ISRelaxationEquations:
             else np.zeros_like(Pi)
         )
 
-        # First-order source: -ζ*θ (Form B - standard IReD formulation)
-        # NOTE: This is the correct Israel-Stewart/IReD relaxation equation form.
-        # See docs/IRED_THEORY.md and Wagner, Palermo, Ambrus (2022), arXiv:2203.12608.
-        # The apparent "paradox" with dispersion relations was resolved—this form
-        # correctly implements operator splitting, not algebraic solution.
-        if self.coeffs.bulk_viscosity:
-            first_order = -self.coeffs.bulk_viscosity * theta
-        else:
-            first_order = np.zeros_like(Pi)
+        # First-order source: -ζθ (Form B - IReD formulation)
+        first_order = (
+            -self.coeffs.bulk_viscosity * theta if self.coeffs.bulk_viscosity else np.zeros_like(Pi)
+        )
 
-        # Second-order nonlinear terms
-        nonlinear = np.zeros_like(Pi)
-        if self.coeffs.xi_1 != 0:
-            nonlinear += self.coeffs.xi_1 * Pi * theta
+        # ============================================================
+        # IReD second-order J-terms (Wagner et al. 2022, eq. 29a)
+        # ============================================================
+        J = np.zeros_like(Pi)
 
-        if (
-            self.coeffs.xi_2 != 0
-            and self.coeffs.bulk_viscosity > 0
-            and self.coeffs.bulk_relaxation_time
-        ):
-            nonlinear += (
-                self.coeffs.xi_2
-                * Pi**2
-                / (self.coeffs.bulk_viscosity * self.coeffs.bulk_relaxation_time)
-            )
+        # Term 1: -ℓ_Πn ∇·n (bulk-diffusion gradient coupling, IReD eq. B1)
+        if self.coeffs.ell_Pi_n != 0:
+            J -= self.coeffs.ell_Pi_n * div_n
 
-        # Shear-bulk coupling
-        # NOTE: The shear tensor π^μν is traceless by definition (g_μν π^μν = 0),
-        # so this coupling term is identically zero. The standard IReD formulation
-        # does not include a λ_Ππ coefficient for bulk-shear coupling.
-        # See docs/IRED_THEORY.md Section 2 for proper coupling structure.
+        # Term 2: -τ_Πn n·F (bulk-diffusion force coupling, IReD eq. B2)
+        # where n·F = n^μ F_μ (diffusion current dotted with pressure gradient)
+        if self.coeffs.tau_Pi_n != 0:
+            n_dot_F = optimized_einsum("...i,...i->...", n_mu, F_mu)
+            J -= self.coeffs.tau_Pi_n * n_dot_F
+
+        # Term 3: -δ_ΠΠ Π θ (bulk self-coupling to expansion, IReD eq. B3)
+        if self.coeffs.delta_Pi_Pi != 0:
+            J -= self.coeffs.delta_Pi_Pi * Pi * theta
+
+        # Term 4: -λ_Πn n·I (bulk-diffusion thermodynamic force, IReD eq. B4)
+        # where n·I = n^μ I_μ (diffusion current dotted with chem. potential gradient)
+        if self.coeffs.lambda_Pi_n != 0:
+            n_dot_I = optimized_einsum("...i,...i->...", n_mu, I_mu)
+            J -= self.coeffs.lambda_Pi_n * n_dot_I
+
+        # Term 5: +λ_Ππ π^μν σ_μν (bulk-shear coupling, IReD eq. B5)
         if self.coeffs.lambda_Pi_pi != 0:
-            warnings.warn(
-                "lambda_Pi_pi coefficient is non-zero, but shear tensor is traceless. "
-                "This coupling term has no effect. Check IReD formulation.",
-                UserWarning,
-                stacklevel=3,
-            )
-        result: np.ndarray = linear + first_order + nonlinear
+            pi_sigma = optimized_einsum("...ij,...ij->...", pi_munu, sigma_munu)
+            J += self.coeffs.lambda_Pi_pi * pi_sigma
+
+        result: np.ndarray = linear + first_order + J
         return result
 
     def _shear_rhs(
@@ -908,6 +940,120 @@ class ISRelaxationEquations:
         nabla_mu_over_T = optimized_einsum("...ab,...b->...a", delta, grad_mu_lower)
 
         return nabla_mu_over_T
+
+    def _compute_pressure_gradient(
+        self, fields: ISFieldConfiguration, u_mu: np.ndarray
+    ) -> np.ndarray:
+        """
+        Compute projected pressure gradient F^μ = ∇^μ P (IReD thermodynamic force).
+
+        This appears in IReD bulk RHS J-term (eq. 29a):
+            J = ... - τ_Πn n·F ...
+        where F^μ = ∇^μ P is the pressure gradient force.
+
+        Args:
+            fields: Current field configuration
+            u_mu: Four-velocity field
+
+        Returns:
+            Projected gradient F^μ = ∇^μ P with shape (..., 4)
+        """
+        from ..core.tensor_utils import optimized_einsum
+
+        pressure = fields.pressure
+
+        # Detect grid type
+        is_spacegrid = pressure.ndim == 3
+
+        # Compute gradient of P using finite differences: ∂_μ P
+        grad_P_lower = np.zeros(pressure.shape + (4,))
+        if is_spacegrid:
+            # Pure 3D: only spatial derivatives
+            if self.spectral_solver is not None and hasattr(
+                self.spectral_solver, "spatial_derivative"
+            ):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1
+                    grad_P_lower[..., mu] = self.spectral_solver.spatial_derivative(
+                        pressure, direction=spatial_axis
+                    )
+            elif hasattr(self.grid, "gradient"):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1
+                    grad_P_lower[..., mu] = self.grid.gradient(pressure, axis=spatial_axis, order=2)
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1
+                    grad_P_lower[..., mu] = np.gradient(pressure, axis=spatial_axis, edge_order=1)
+        else:
+            # 4D spacetime
+            for mu in range(4):
+                grad_P_lower[..., mu] = np.gradient(pressure, axis=mu, edge_order=1)
+
+        # Get metric inverse for raising indices
+        g_inv = self.metric.inverse
+        if isinstance(g_inv, np.ndarray) and g_inv.ndim == 2:
+            g_inv = np.broadcast_to(g_inv, pressure.shape + (4, 4))
+
+        # Raise gradient indices: ∇^μ P = g^μν ∇_ν P
+        grad_P_up = optimized_einsum("...ab,...b->...a", g_inv, grad_P_lower)
+
+        # Compute perpendicular projector: Δ^μν = g^μν + u^μ u^ν
+        if u_mu.shape[:-1] != pressure.shape:
+            u_aligned = u_mu[: pressure.shape[0], : pressure.shape[1], : pressure.shape[2], :]
+        else:
+            u_aligned = u_mu
+
+        delta = g_inv + optimized_einsum("...a,...b->...ab", u_aligned, u_aligned)
+
+        # Project gradient: F^μ = Δ^μν ∇_ν P
+        F_mu = optimized_einsum("...ab,...b->...a", delta, grad_P_lower)
+
+        return F_mu
+
+    def _compute_diffusion_divergence(self, n_mu: np.ndarray) -> np.ndarray:
+        """
+        Compute divergence of diffusion current ∇·n = ∂_μ n^μ (IReD term).
+
+        This appears in IReD bulk RHS J-term (eq. 29a):
+            J = -ℓ_Πn ∇·n ...
+
+        Args:
+            n_mu: Diffusion current V^μ (Landau frame) with shape (..., 4)
+
+        Returns:
+            Divergence ∇·n = ∂_μ n^μ as scalar field
+        """
+        # Detect grid type
+        is_spacegrid = n_mu.ndim == 4 and n_mu.shape[-1] == 4
+
+        div_n = np.zeros(n_mu.shape[:-1])
+
+        if is_spacegrid:
+            # Pure 3D: only spatial components (μ=1,2,3)
+            if self.spectral_solver is not None and hasattr(
+                self.spectral_solver, "spatial_derivative"
+            ):
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1
+                    div_n += self.spectral_solver.spatial_derivative(
+                        n_mu[..., mu], direction=spatial_axis
+                    )
+            elif hasattr(self.grid, "divergence"):
+                # Use grid's divergence method (handles boundary conditions)
+                # Extract spatial components only
+                n_spatial = n_mu[..., 1:4]  # (nx, ny, nz, 3)
+                div_n = self.grid.divergence(n_spatial, order=2)
+            else:
+                for mu in range(1, 4):
+                    spatial_axis = mu - 1
+                    div_n += np.gradient(n_mu[..., mu], axis=spatial_axis, edge_order=1)
+        else:
+            # 4D spacetime
+            for mu in range(4):
+                div_n += np.gradient(n_mu[..., mu], axis=mu, edge_order=1)
+
+        return div_n
 
     def validate_kinematic_quantities(self, fields: ISFieldConfiguration) -> dict[str, bool]:
         """

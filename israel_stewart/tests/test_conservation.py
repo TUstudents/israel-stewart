@@ -490,6 +490,87 @@ class TestEdgeCases:
         assert "fields=" in repr_str
 
 
+class TestExpansionScalar:
+    """Test expansion scalar θ = ∇_μ u^μ computation for known analytical flows."""
+
+    def test_expansion_uniform_cartesian(self) -> None:
+        """Test θ = 0 for static uniform fluid in Cartesian coordinates."""
+        from israel_stewart.core.metrics import MinkowskiMetric
+
+        grid = SpaceGrid(
+            "cartesian",
+            [(0.0, 2.0)] * 3,
+            (8, 8, 8),
+            boundary_conditions="periodic",
+            metric=MinkowskiMetric(),
+        )
+        fields = ISFieldConfiguration(grid)
+
+        # Static uniform fluid: u^μ = (1, 0, 0, 0) everywhere
+        fields.rho[:] = 1.0
+        fields.pressure[:] = 0.3
+        fields.u_mu[..., 0] = 1.0  # Rest frame
+
+        # Create relaxation equations to access expansion computation
+        from israel_stewart.core.fields import TransportCoefficients
+        from israel_stewart.equations.relaxation import ISRelaxationEquations
+
+        coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
+        relaxation = ISRelaxationEquations(grid, grid.metric, coeffs)
+
+        # Compute expansion scalar
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+
+        # Expected: θ = 0 (no expansion in static uniform fluid)
+        np.testing.assert_allclose(theta, 0.0, atol=1e-12)
+
+    def test_expansion_linear_velocity_gradient(self) -> None:
+        """Verify expansion computation matches analytical formula in flat space."""
+        # This is a simpler verification test: for uniform expansion in flat space
+        # θ = ∇_μ u^μ = ∂_i u^i (no Christoffel terms in Minkowski)
+        from israel_stewart.core.metrics import MinkowskiMetric
+
+        grid = SpaceGrid(
+            "cartesian",
+            [(0.0, 2.0)] * 3,
+            (16, 16, 16),
+            boundary_conditions="periodic",
+            metric=MinkowskiMetric(),
+        )
+        fields = ISFieldConfiguration(grid)
+
+        # Test case: u^i varies linearly in one direction
+        # u^x = 0.05 * x, u^y = 0, u^z = 0
+        # Then ∂_x u^x = 0.05, so θ = 0.05
+        X, Y, Z = grid.meshgrid()
+        velocity_gradient = 0.05
+
+        fields.u_mu[..., 0] = 1.0  # Time component
+        fields.u_mu[..., 1] = velocity_gradient * (X - 1.0)  # Centered around x=1
+        fields.u_mu[..., 2] = 0.0
+        fields.u_mu[..., 3] = 0.0
+
+        fields.rho[:] = 1.0
+        fields.pressure[:] = 0.3
+
+        # Create relaxation equations
+        from israel_stewart.core.fields import TransportCoefficients
+        from israel_stewart.equations.relaxation import ISRelaxationEquations
+
+        coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
+        relaxation = ISRelaxationEquations(grid, grid.metric, coeffs)
+
+        # Compute expansion scalar
+        theta = relaxation._compute_expansion_scalar(fields.u_mu)
+
+        # Expected: θ = ∂_x u^x = velocity_gradient (uniform across grid)
+        # Check interior points (away from boundaries where numerical derivatives may be less accurate)
+        theta_interior = theta[4:-4, 4:-4, 4:-4]
+        expected = velocity_gradient
+
+        np.testing.assert_allclose(np.mean(theta_interior), expected, rtol=0.15)
+
+
 class TestIntegrationWithGrid:
     """Test integration with different grid types."""
 

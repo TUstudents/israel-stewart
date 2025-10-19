@@ -387,8 +387,8 @@ class ISRelaxationEquations:
         # Shear-particle diffusion coupling (Landau frame)
         # Term: λ_πV * (V^μ ∇^ν(μ_B/T) + V^ν ∇^μ(μ_B/T)) / 2
         # This couples shear stress to particle diffusion gradients
-        # NOTE: λ_πV from IReD is ALREADY DIMENSIONLESS (Table III: 0.20890 τ_π/β)
-        # DO NOT multiply by T - it has correct dimensions as-is!
+        # NOTE: λ_πV from IReD has units of GeV¹ (see IReD Table IV: 0.20890/β)
+        # The coefficient is used here without further temperature scaling.
         if self.coeffs.lambda_pi_V != 0:
             from ..core.tensor_utils import optimized_einsum
 

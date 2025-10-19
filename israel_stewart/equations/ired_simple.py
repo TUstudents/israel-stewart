@@ -439,22 +439,43 @@ class HardSphereIReD:
 
     def validate_against_ired_paper(self) -> dict[str, bool]:
         """
-        Validate computed values against IReD Table III.
+        Validate ALL computed values against IReD Tables III & IV.
+
+        Validates all 15 transport coefficients from Wagner, Palermo, Ambrus (2022):
+        - First-order: η, ζ, D
+        - Relaxation times: τ_π, τ_Π, τ_V
+        - Second-order shear: τ_ππ, δ_ππ, λ_πV, ℓ_πV, τ_πV
+        - Second-order diffusion: δ_VV, λ_VV, λ_Vπ, ℓ_Vπ, τ_Vπ
 
         Returns:
-            Dictionary of validation results
+            Dictionary of validation results (True if within 0.01% of IReD paper)
         """
         results = {}
 
-        # Expected values from Table III (N₂=3, N₁=4, 41 total moments)
+        # Get relaxation times for formulas
+        tau_pi = self.shear_relaxation_time()
+        tau_V = self.diffusion_relaxation_time()
+
+        # Expected values from IReD Tables III & IV (N₂=3, N₁=4, 41 total moments)
         expected = {
+            # First-order coefficients (Table III)
             "shear_viscosity": 1.2678 / (self.cross_section * self.beta),
-            "shear_relaxation_time": 1.6552 * self.mean_free_path,
-            "tau_pi_pi": 1.6944 * 1.6552 * self.mean_free_path,
-            "delta_pi_pi": 4.0 / 3.0,
             "diffusion_coefficient": 0.15959 / self.cross_section,
+            # Relaxation times (Table III)
+            "shear_relaxation_time": 1.6552 * self.mean_free_path,
             "diffusion_relaxation_time": 2.0794 * self.mean_free_path,
+            # Second-order shear coefficients (Table III & IV)
+            "tau_pi_pi": 1.6944 * tau_pi,
+            "delta_pi_pi": 4.0 / 3.0,
+            "lambda_pi_V": 0.20890 / self.beta,  # Table IV: λ_πn = 0.20890/β
+            "ell_pi_V": -0.56014 / self.beta,  # Table IV: ℓ_πn = -0.56014/β
+            "tau_pi_V": -0.56014 / (self.beta * self.pressure),  # τ_πn = -0.56014/(βP)
+            # Second-order diffusion coefficients (Table III)
             "delta_V_V": 1.0,
+            "lambda_V_V": 0.89501 * tau_V,
+            "lambda_V_pi": 0.069240 * self.beta * tau_V,
+            "ell_V_pi": 0.028677 * self.beta * tau_V,
+            "tau_V_pi": 0.0071692 * self.beta * tau_V / self.pressure,
         }
 
         tolerance = 1e-4  # 0.01% tolerance

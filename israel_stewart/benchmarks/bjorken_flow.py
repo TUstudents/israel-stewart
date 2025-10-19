@@ -166,7 +166,6 @@ class BjorkenFlowSolution:
 
         # Second-order coefficients
         lambda_PiPi = getattr(coefficients, "lambda_Pi_Pi", 0.0)
-        xi_1 = getattr(coefficients, "xi_1", 0.0)
 
         def ode_system(y: np.ndarray, tau_val: float) -> np.ndarray:
             """ODE system for Israel-Stewart Bjorken flow. Variables: y = [T, Pi, pi^eta_tau]"""

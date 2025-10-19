@@ -371,9 +371,11 @@ coeffs = TransportCoefficients(
     shear_relaxation_time=0.5,  # τ_π (phenomenological)
     bulk_relaxation_time=0.3,   # τ_Π (phenomenological)
 
-    # Second-order J terms (optional, phenomenological)
-    xi_1=0.0,     # ξ₁ (nonlinear bulk)
-    xi_2=0.0,     # ξ₂ (nonlinear shear)
+    # IReD second-order coefficients (optional, phenomenological)
+    delta_Pi_Pi=0.0,   # δ_ΠΠ (bulk self-coupling to expansion)
+    lambda_Pi_pi=0.0,  # λ_Ππ (bulk-shear coupling)
+    lambda_pi_pi=0.0,  # λ_ππ (shear self-coupling)
+    # Note: For rigorous values, use HardSphereIReD from ired_simple.py
 )
 ```
 

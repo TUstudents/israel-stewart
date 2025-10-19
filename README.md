@@ -145,14 +145,15 @@ grid = SpaceGrid(
     boundary_conditions="periodic"
 )
 
-# Transport coefficients with second-order terms
+# Transport coefficients with IReD second-order terms
 coeffs = TransportCoefficients(
     shear_viscosity=0.1,
     bulk_viscosity=0.05,
     shear_relaxation_time=0.5,
     bulk_relaxation_time=0.3,
-    lambda_pi_pi=0.1,  # Second-order coupling
-    xi_1=0.2           # Bulk nonlinearity
+    lambda_pi_pi=0.1,   # Shear self-coupling (IReD)
+    delta_Pi_Pi=0.2,    # Bulk self-coupling (IReD)
+    lambda_Pi_pi=0.05,  # Bulk-shear coupling (IReD)
 )
 
 # Initialize field configuration (pure 3D arrays)

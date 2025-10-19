@@ -523,9 +523,11 @@ class SoundWaveAnalysis:
 
         # Second-order transport coefficients
         lambda_pi_pi = getattr(self.transport_coeffs, "lambda_pi_pi", 0.0)
-        xi_1 = getattr(self.transport_coeffs, "xi_1", 0.0)
+        delta_Pi_Pi = getattr(self.transport_coeffs, "delta_Pi_Pi", 0.0)  # IReD bulk self-coupling
 
-        return (lambda_pi_pi + xi_1) * k**4  # k^4 correction
+        # Note: In the linear regime, the k^4 correction combines shear and bulk contributions
+        # For the full nonlinear theory, see IReD paper (Wagner et al. 2022)
+        return (lambda_pi_pi + delta_Pi_Pi) * k**4  # k^4 correction
 
     def _is_physical_mode(self, properties: WaveProperties) -> bool:
         """
@@ -949,7 +951,7 @@ class WaveTestSuite:
             shear_relaxation_time=base_coeffs.shear_relaxation_time,
             bulk_relaxation_time=base_coeffs.bulk_relaxation_time,
             lambda_pi_pi=0.1,
-            xi_1=0.1,
+            delta_Pi_Pi=0.1,  # IReD bulk self-coupling (was xi_1)
         )
 
         enhanced_analysis = SoundWaveAnalysis(self.grid, self.metric, enhanced_coeffs)
@@ -1122,7 +1124,7 @@ class NumericalSoundWaveBenchmark:
             shear_relaxation_time=0.5,
             bulk_relaxation_time=0.3,
             lambda_pi_pi=0.1,
-            xi_1=0.05,
+            delta_Pi_Pi=0.05,  # IReD bulk self-coupling (was xi_1)
         )
 
     def setup_initial_conditions(

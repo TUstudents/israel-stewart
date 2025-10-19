@@ -59,7 +59,7 @@ def test_linear_divergence():
         "cartesian",
         [(0.0, 1.0)] * 3,
         (16, 16, 16),  # Higher resolution
-        boundary_conditions="periodic",
+        boundary_conditions="dirichlet",  # Linear field not compatible with periodic BC
         metric=MinkowskiMetric(),
     )
 
@@ -128,7 +128,7 @@ def test_divergence_with_metric():
         "cartesian",
         [(0.0, 1.0)] * 3,
         (8, 8, 8),
-        boundary_conditions="periodic",
+        boundary_conditions="dirichlet",  # Linear field not compatible with periodic BC
         metric=MinkowskiMetric(),
     )
 

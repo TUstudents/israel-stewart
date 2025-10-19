@@ -69,7 +69,7 @@ def test_uniform_velocity_gradient():
         "cartesian",
         [(0.0, 1.0)] * 3,
         (8, 8, 8),
-        boundary_conditions="periodic",
+        boundary_conditions="dirichlet",  # Linear field not compatible with periodic BC
         metric=MinkowskiMetric(),
     )
     fields = ISFieldConfiguration(grid)
@@ -145,7 +145,7 @@ def test_expansion_scaling():
         "cartesian",
         [(0.0, 1.0)] * 3,
         (8, 8, 8),
-        boundary_conditions="periodic",
+        boundary_conditions="dirichlet",  # Linear field not compatible with periodic BC
         metric=MinkowskiMetric(),
     )
 

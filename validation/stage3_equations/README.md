@@ -109,7 +109,13 @@ Current problem: When benchmarks fail, we can't tell if the issue is:
   - Test each J-term in isolation
   - Bulk: ξ₁·Π·θ, ξ₂·Π²/τ_Π, λ_ΠΠ·π^μν·σ_μν
   - Shear: τ_ππ·π^μλ·π_λ^ν/τ_π, λ_πΠ·Π·σ^μν, λ_πV·(V^μ∇^ν(μ/T) + ...)
-  - Diffusion: τ_VV·V^μ·V_μ/τ_V, λ_Vπ·π^μν·∇_ν(μ/T), ℓ_Vπ·π^μν·∇_ν(μ/T)
+  - **Diffusion (Landau frame)**: All 6 coupling terms now validated in Stage 2 ✅
+    - δ_VV·V^μ·θ (expansion coupling) - **CRITICAL**: Fixed in Stage 1 (was using wrong coefficient)
+    - λ_Vπ·T²·π^μν·∇_ν(μ/T) (diffusion-shear) - **CRITICAL**: Fixed T² scaling in Stage 1
+    - λ_πV·(V^μ∇^ν(μ/T) + V^ν∇^μ(μ/T))/2 (shear-diffusion) - **CRITICAL**: Fixed T scaling in Stage 1
+    - λ_VV·V^μ·V_μ/τ_V (diffusion-diffusion)
+    - τ_Vπ·π^μν·F_ν (diffusion-shear force, NOT YET IMPLEMENTED)
+    - ℓ_Vπ·∇^μ∇^ν(μ/T) (diffusion-shear gradient, NOT YET IMPLEMENTED)
 
 **Priority 3: Regime Warning**
 - `relaxation/test_regime_warnings.py`
@@ -256,11 +262,45 @@ def test_regime_warning_trigger():
         hydro = SpectralISHydrodynamics(grid_high_k, fields, coeffs)
 ```
 
+## Landau Frame Diffusion Coefficient Status
+
+**Updated**: 2025-10-19
+
+### Stage 2 Completion ✅
+
+All 6 Landau frame diffusion coupling coefficients now have **value validation** against IReD Table III:
+
+| Coefficient | IReD Formula | Stage 2 Test | Status |
+|-------------|--------------|--------------|--------|
+| `lambda_pi_V` | 0.20890 × τ_π / β | ✅ test_lambda_pi_V_value | **PASS** |
+| `lambda_V_V` | 0.89501 × τ_V | ✅ test_lambda_V_V_value | **PASS** |
+| `delta_V_V` | 1.0 (exact) | ✅ test_delta_V_V_value | **PASS** |
+| `lambda_V_pi` | 0.069240 × β × τ_V | ✅ test_lambda_V_pi_value | **PASS** (added 2025-10-19) |
+| `tau_V_pi` | 0.0071692 × β × τ_V / P | ✅ test_tau_V_pi_value | **PASS** (added 2025-10-19) |
+| `ell_V_pi` | 0.028677 × β × τ_V | ✅ test_ell_V_pi_value | **PASS** (added 2025-10-19) |
+
+### Stage 3 Requirements ❌ (This Stage)
+
+Need **equation usage** validation for diffusion relaxation RHS terms:
+
+| Term | Implementation | Stage 3 Test | Status |
+|------|----------------|--------------|--------|
+| `-δ_VV × V^μ × θ` | ✅ relaxation.py:459-465 | ❌ **MISSING** | Fixed coeff in Stage 1, not tested |
+| `-λ_Vπ × T² × π^μν × ∇_ν(μ/T)` | ✅ relaxation.py:471-478 | ❌ **MISSING** | Fixed T² scaling in Stage 1, not tested |
+| `-λ_πV × (V^μ∇^ν + V^ν∇^μ)/2` | ✅ relaxation.py:355-371 | ❌ **MISSING** | Fixed T scaling in Stage 1, not tested |
+| `-λ_VV × V^μ × V_μ / τ_V` | ✅ relaxation.py:??? | ❌ **MISSING** | Need to verify implementation |
+| `-τ_Vπ × π^μν × F_ν` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Future work |
+| `-ℓ_Vπ × ∇^μ∇^ν(μ/T)` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Future work |
+
+**Critical Gap**: Stage 1 fixed 3 dimensional errors in Landau diffusion terms, but Stage 3 has **no tests** to verify the equation usage is correct!
+
+**Priority**: Add relaxation RHS component tests for all implemented Landau diffusion terms.
+
 ## Remaining Work
 
-**Time estimate**: 6 days total
+**Time estimate**: 6-7 days total
 - 3 days: Conservation law tests (Tests 1-3)
-- 3 days: Relaxation equation tests (Tests 1-3)
+- 3-4 days: Relaxation equation tests (Tests 1-3) + **Landau diffusion term tests**
 
 **Breakdown**:
 1. Create 8 test scripts (1 day)

@@ -124,6 +124,36 @@ class TestHardSphereIReD:
 
         np.testing.assert_allclose(lambda_V_V, expected, rtol=1e-4)
 
+    def test_lambda_V_pi_value(self, model):
+        """Test diffusion-shear coupling matches IReD Table III."""
+        lambda_V_pi = model.lambda_V_pi()
+
+        # Expected: λ_Vπ = 0.069240 β τ_V
+        tau_V = model.diffusion_relaxation_time()
+        expected = 0.069240 * model.beta * tau_V
+
+        np.testing.assert_allclose(lambda_V_pi, expected, rtol=1e-4)
+
+    def test_tau_V_pi_value(self, model):
+        """Test diffusion-shear force coupling matches IReD Table III."""
+        tau_V_pi = model.tau_V_pi()
+
+        # Expected: τ_Vπ = 0.0071692 β τ_V/P
+        tau_V = model.diffusion_relaxation_time()
+        expected = 0.0071692 * model.beta * tau_V / model.pressure
+
+        np.testing.assert_allclose(tau_V_pi, expected, rtol=1e-4)
+
+    def test_ell_V_pi_value(self, model):
+        """Test diffusion-shear gradient coupling matches IReD Table III."""
+        ell_V_pi = model.ell_V_pi()
+
+        # Expected: ℓ_Vπ = 0.028677 β τ_V
+        tau_V = model.diffusion_relaxation_time()
+        expected = 0.028677 * model.beta * tau_V
+
+        np.testing.assert_allclose(ell_V_pi, expected, rtol=1e-4)
+
     # ========================================================================
     # Derived Quantities
     # ========================================================================

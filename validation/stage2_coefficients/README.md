@@ -1,8 +1,10 @@
 # Stage 2: Transport Coefficients
 
-**Status**: ✅ 100% Complete (26/26 tests passing)
+**Status**: ✅ 100% Complete (29/29 tests passing)
 
 **Priority**: - (Complete)
+
+**Last Updated**: 2025-10-19 (Added 3 missing Landau frame diffusion coefficient tests)
 
 ## Goal
 
@@ -31,17 +33,20 @@ Validate the IReD (Inverse-Reynolds-Dominance) transport coefficient implementat
    - τ_Π (bulk relaxation): Not applicable (ζ = 0)
    - τ_V (diffusion relaxation): 0.77867 × λ_mfp ✓
 
-3. **Second-Order Coupling Coefficients** (10 coefficients)
+3. **Second-Order Coupling Coefficients** (13 coefficients tested)
    - τ_ππ (nonlinear shear-shear): 1.6944 × τ_π ✓
    - δ_ππ (shear-shear trace): 4/3 (exact for conformal) ✓
    - λ_πΠ (shear-bulk coupling): 0.56851 ✓
    - λ_Ππ (nonlinear bulk): Not applicable (ζ = 0)
    - δ_ΠΠ (bulk trace): Not applicable
    - τ_VV (nonlinear diffusion): 0.80255 × τ_V ✓
-   - δ_VV (diffusion trace): 2/3 (kinetic theory) ✓
-   - λ_πV (shear-diffusion): 0.20890 × τ_π / β ✓
-   - λ_Vπ (diffusion-shear): -0.37037 ✓
-   - ℓ_Vπ (diffusion-shear geometric): -0.37037 ✓
+   - δ_VV (diffusion expansion): 1.0 (exact) ✓
+   - **Landau Frame Diffusion Couplings** (all 6 now tested):
+     - λ_πV (shear-diffusion): 0.20890 × τ_π / β ✓
+     - λ_VV (diffusion-diffusion): 0.89501 × τ_V ✓
+     - λ_Vπ (diffusion-shear): 0.069240 × β × τ_V ✓ (added 2025-10-19)
+     - τ_Vπ (diffusion-shear force): 0.0071692 × β × τ_V / P ✓ (added 2025-10-19)
+     - ℓ_Vπ (diffusion-shear gradient): 0.028677 × β × τ_V ✓ (added 2025-10-19)
 
 4. **Truncation Convergence**
    - 14-moment: Baseline accuracy
@@ -58,10 +63,11 @@ Validate the IReD (Inverse-Reynolds-Dominance) transport coefficient implementat
 
 ### Existing
 
-**Main test suite**: `tests/test_ired_coefficients.py` (26/26 passing)
+**Main test suite**: `tests/test_ired_coefficients.py` (29/29 passing)
 
 Tests validate:
 - Individual coefficient values vs IReD Tables III-IV
+- **All 6 Landau frame diffusion coupling coefficients** (3 added 2025-10-19)
 - Temperature scaling laws
 - Cross-section scaling laws
 - Truncation convergence (14 → 23 → 32 → 41)
@@ -150,13 +156,31 @@ HBARC = 0.197  # GeV·fm
 
 ## Test Coverage
 
-**26/26 tests passing**:
+**29/29 tests passing** (updated 2025-10-19):
 - 6 tests: First-order coefficients (η, ζ, D)
 - 6 tests: Relaxation times (τ_π, τ_Π, τ_V)
-- 10 tests: Second-order couplings (τ_ππ, δ_ππ, λ_πV, etc.)
+- 13 tests: Second-order couplings (τ_ππ, δ_ππ, all Landau diffusion couplings)
 - 4 tests: Truncation convergence
 
 **Code coverage**: 100% of `ired_simple.py`
+
+### Gap Found and Fixed (2025-10-19)
+
+**Issue**: During Stage 2 verification, 3 Landau frame diffusion coefficients had implementations but no tests:
+- ❌ `lambda_V_pi` (diffusion-shear coupling)
+- ❌ `tau_V_pi` (diffusion-shear force coupling)
+- ❌ `ell_V_pi` (diffusion-shear gradient coupling)
+
+**Impact**: These coefficients were calculated correctly by `ired_simple.py` but not validated against IReD Table III.
+
+**Fix**: Added 3 comprehensive tests validating:
+```python
+test_lambda_V_pi_value()  # λ_Vπ = 0.069240 β τ_V
+test_tau_V_pi_value()     # τ_Vπ = 0.0071692 β τ_V/P
+test_ell_V_pi_value()     # ℓ_Vπ = 0.028677 β τ_V
+```
+
+**Result**: All 6 Landau frame diffusion couplings now fully tested ✅
 
 ## Limitations
 

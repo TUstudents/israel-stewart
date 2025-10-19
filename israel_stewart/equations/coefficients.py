@@ -531,12 +531,13 @@ class TransportCoefficientCalculator:
         lambda_pi_q = 0.5 * np.sqrt(tau_pi * tau_q)
         lambda_q_pi = 0.3 * np.sqrt(tau_pi * tau_q)
 
-        # Bulk nonlinear coefficients
+        # IReD bulk sector coefficients (phenomenological estimates)
+        # For kinetic theory values, use HardSphereIReD from ired_simple.py
         if zeta > 0 and tau_Pi > 0:
-            xi_1 = 0.5 * tau_Pi / (density + 3 * temperature)  # Temperature dependence
-            xi_2 = 0.2 * tau_Pi
+            delta_Pi_Pi = 0.5 * tau_Pi / (density + 3 * temperature)  # Bulk self-coupling (was xi_1)
+            # Note: xi_2 (Π²/ζτ_Π term) removed - not part of IReD formulation
         else:
-            xi_1 = xi_2 = 0.0
+            delta_Pi_Pi = 0.0
 
         # Vorticity coupling (typically small)
         tau_pi_omega = 0.1 * tau_pi
@@ -547,8 +548,7 @@ class TransportCoefficientCalculator:
             "lambda_pi_q": lambda_pi_q,
             "lambda_Pi_pi": lambda_Pi_pi,
             "lambda_q_pi": lambda_q_pi,
-            "xi_1": xi_1,
-            "xi_2": xi_2,
+            "delta_Pi_Pi": delta_Pi_Pi,  # IReD bulk self-coupling
             "tau_pi_omega": tau_pi_omega,
         }
 
@@ -599,8 +599,7 @@ class TransportCoefficientCalculator:
             lambda_pi_q=coeffs.get("lambda_pi_q", 0.0),
             lambda_Pi_pi=coeffs.get("lambda_Pi_pi", 0.0),
             lambda_q_pi=coeffs.get("lambda_q_pi", 0.0),
-            xi_1=coeffs.get("xi_1", 0.0),
-            xi_2=coeffs.get("xi_2", 0.0),
+            delta_Pi_Pi=coeffs.get("delta_Pi_Pi", 0.0),  # IReD bulk self-coupling
             tau_pi_omega=coeffs.get("tau_pi_omega", 0.0),
         )
 

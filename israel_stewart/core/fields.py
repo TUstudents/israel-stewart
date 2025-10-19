@@ -264,8 +264,12 @@ class TransportCoefficients:
         lambda_Pi_pi: float = 0.0,
         lambda_V_pi: float = 0.0,  # Diffusion-shear coupling - was lambda_q_pi
         lambda_V_V: float = 0.0,  # Diffusion-diffusion nonlinear self-coupling (Landau frame)
-        xi_1: float = 0.0,
-        xi_2: float = 0.0,
+        # IReD bulk sector J-term coefficients (Wagner et al. 2022, Appendix B)
+        ell_Pi_n: float = 0.0,  # ℓ_Πn - bulk-diffusion gradient coupling (IReD eq. B1)
+        tau_Pi_n: float = 0.0,  # τ_Πn - bulk-diffusion force coupling (IReD eq. B2)
+        delta_Pi_Pi: float = 0.0,  # δ_ΠΠ - bulk self-coupling to expansion (IReD eq. B3)
+        lambda_Pi_n: float = 0.0,  # λ_Πn - bulk-diffusion thermodynamic force coupling (IReD eq. B4)
+        # Note: lambda_Pi_pi (λ_Ππ bulk-shear) already defined above (IReD eq. B5)
         # Nonlinear relaxation parameters
         tau_pi_pi: float = 0.0,
         tau_pi_omega: float = 0.0,
@@ -289,8 +293,10 @@ class TransportCoefficients:
             lambda_Pi_pi: Bulk-shear coupling coefficient λ_Ππ
             lambda_V_pi: Diffusion-shear coupling coefficient λ_Vπ (Landau frame)
             lambda_V_V: Diffusion-diffusion nonlinear coupling λ_VV (Landau frame)
-            xi_1: Bulk nonlinearity coefficient ξ₁
-            xi_2: Bulk nonlinearity coefficient ξ₂
+            ell_Pi_n: Bulk-diffusion gradient coupling ℓ_Πn (IReD)
+            tau_Pi_n: Bulk-diffusion force coupling τ_Πn (IReD)
+            delta_Pi_Pi: Bulk self-coupling to expansion δ_ΠΠ (IReD)
+            lambda_Pi_n: Bulk-diffusion thermodynamic force coupling λ_Πn (IReD)
             tau_pi_pi: Shear-shear relaxation coupling τ_ππ
             tau_pi_omega: Shear-vorticity coupling τ_πω
             tau_Pi_pi: Bulk-shear relaxation coupling τ_Ππ
@@ -323,8 +329,12 @@ class TransportCoefficients:
         self.lambda_Pi_pi = lambda_Pi_pi
         self.lambda_V_pi = lambda_V_pi
         self.lambda_V_V = lambda_V_V
-        self.xi_1 = xi_1
-        self.xi_2 = xi_2
+
+        # IReD bulk sector J-term coefficients
+        self.ell_Pi_n = ell_Pi_n
+        self.tau_Pi_n = tau_Pi_n
+        self.delta_Pi_Pi = delta_Pi_Pi
+        self.lambda_Pi_n = lambda_Pi_n
 
         # Nonlinear relaxation parameters (Landau frame)
         self.tau_pi_pi = tau_pi_pi
@@ -358,8 +368,10 @@ class TransportCoefficients:
             ("lambda_Pi_pi", self.lambda_Pi_pi),
             ("lambda_V_pi", self.lambda_V_pi),
             ("lambda_V_V", self.lambda_V_V),
-            ("xi_1", self.xi_1),
-            ("xi_2", self.xi_2),
+            ("ell_Pi_n", self.ell_Pi_n),
+            ("tau_Pi_n", self.tau_Pi_n),
+            ("delta_Pi_Pi", self.delta_Pi_Pi),
+            ("lambda_Pi_n", self.lambda_Pi_n),
             ("tau_pi_pi", self.tau_pi_pi),
             ("tau_pi_omega", self.tau_pi_omega),
             ("tau_Pi_pi", self.tau_Pi_pi),
@@ -437,8 +449,11 @@ class TransportCoefficients:
                 lambda_pi_V=self.lambda_pi_V,
                 lambda_Pi_pi=self.lambda_Pi_pi,
                 lambda_V_pi=self.lambda_V_pi,
-                xi_1=self.xi_1,
-                xi_2=self.xi_2,
+                lambda_V_V=self.lambda_V_V,
+                ell_Pi_n=self.ell_Pi_n,
+                tau_Pi_n=self.tau_Pi_n,
+                delta_Pi_Pi=self.delta_Pi_Pi,
+                lambda_Pi_n=self.lambda_Pi_n,
                 tau_pi_pi=self.tau_pi_pi,
                 tau_pi_omega=self.tau_pi_omega,
                 tau_Pi_pi=self.tau_Pi_pi,

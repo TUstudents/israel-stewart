@@ -1,8 +1,10 @@
 # Stage 3: Equation Components
 
-**Status**: 🔴 30% Complete (need isolated unit tests)
+**Status**: 🟢 70% Complete (core validation done, needs conservation tests)
 
 **Priority**: HIGH (blocks Stage 6 benchmark validation)
+
+**Last Updated**: 2025-10-19
 
 ## Goal
 
@@ -22,10 +24,10 @@ Current problem: When benchmarks fail, we can't tell if the issue is:
 
 ## Acceptance Criteria
 
-- ❌ Conservation laws pass in isolation
-- ❌ Relaxation equations pass unit tests
+- ⚠️ Conservation laws pass in isolation (partial - has tests, needs more)
+- ✅ Relaxation equations pass unit tests (24/24 pytest passing)
 - ✅ Form B structure verified (no /τ in sources)
-- ❌ Equilibrium RHS = 0
+- ✅ Equilibrium RHS = 0 (3/3 verification scripts passing)
 
 ## Current Status
 
@@ -37,7 +39,22 @@ Current problem: When benchmarks fail, we can't tell if the issue is:
    - Implementation: `israel_stewart/equations/relaxation.py:200-348`
    - Verified in `verify_ired_implementation.py` (12/16 checks passing)
 
-2. **Implementation Exists**
+2. **Equilibrium RHS = 0 Verified** (Added 2025-10-19)
+   - ✅ `verify_equilibrium_rhs.py`: All 3/3 tests passing
+     - Bulk RHS = 0 at equilibrium
+     - Shear RHS = 0 at equilibrium
+     - Diffusion RHS = 0 at equilibrium
+   - ✅ Pytest suite: 24/24 tests passing (`test_relaxation_equations.py`)
+     - Includes rigorous equilibrium tests with computed gradients
+     - All infrastructure methods verified (∇·n, F^μ, I^μ)
+
+3. **IReD J-terms Implemented** (Added 2025-10-19)
+   - ✅ All 5 bulk sector J-terms functional
+   - ✅ `test_coupling_terms.py`: 3/3 coupling tests passing
+   - ✅ Fixed grid.divergence() Christoffel bugs
+   - See: `IRED_IMPLEMENTATION_COMPLETE.md`
+
+4. **Implementation Exists**
    - Conservation laws: `israel_stewart/equations/conservation.py`
    - Relaxation equations: `israel_stewart/equations/relaxation.py`
    - Both used successfully in benchmarks (sound waves, Bjorken flow)

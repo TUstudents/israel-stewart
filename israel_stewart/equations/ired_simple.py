@@ -253,18 +253,21 @@ class HardSphereIReD:
 
     def lambda_pi_V(self, time_unit: str = "fm/c") -> float:
         """
-        Shear-diffusion coupling λ_πV from IReD Table III.
+        Shear-diffusion coupling λ_πV from IReD Table IV.
 
-        For N₂=3: λ_πV = 0.20890 τ_π/β
+        For N₂=3: λ_πn = 0.20890/β = 0.20890 × T
+
+        Units: GeV¹ (required for dimensional consistency in relaxation equation)
 
         Args:
-            time_unit: Unit for τ_π ('fm/c', 'natural', or 'SI')
+            time_unit: Ignored (kept for API compatibility)
 
         Returns:
-            λ_πV with time in requested unit (units depend on time_unit)
+            λ_πV in GeV
         """
-        tau_pi = self.shear_relaxation_time(time_unit=time_unit)
-        return 0.20890 * tau_pi / self.beta
+        # λ_πV = 0.20890/β = 0.20890 × T
+        # Units: GeV¹ (not dimensionless!)
+        return 0.20890 / self.beta
 
     def delta_pi_pi(self) -> float:
         """

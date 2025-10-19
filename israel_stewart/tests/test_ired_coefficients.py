@@ -101,12 +101,12 @@ class TestHardSphereIReD:
         assert model.delta_pi_pi() == pytest.approx(4.0 / 3.0)
 
     def test_lambda_pi_V_value(self, model):
-        """Test shear-diffusion coupling matches IReD Table III."""
+        """Test shear-diffusion coupling matches IReD Table IV."""
         lambda_pi_V = model.lambda_pi_V()
 
-        # Expected: λ_πV = 0.20890 τ_π/β
-        tau_pi = model.shear_relaxation_time()
-        expected = 0.20890 * tau_pi / model.beta
+        # Expected: λ_πn = 0.20890/β = 0.20890 × T
+        # Units: GeV¹ (required for dimensional consistency)
+        expected = 0.20890 / model.beta
 
         np.testing.assert_allclose(lambda_pi_V, expected, rtol=1e-4)
 

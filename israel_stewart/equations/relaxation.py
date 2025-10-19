@@ -494,18 +494,18 @@ class ISRelaxationEquations:
             expansion_term = -self.coeffs.delta_V_V * V_mu * theta[..., np.newaxis]
             nonlinear += expansion_term
 
-        # Shear-diffusion coupling: λ_Vπ * T² * π^μν ∇_ν(μ_B/T)
+        # Shear-diffusion coupling: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
         # Shear flow couples to diffusion gradients
         # NOTE: λ_Vπ from IReD has units GeV⁻² (= 0.069240 β τ_V)
-        # Multiply by T² for dimensional consistency: [λ_Vπ × T²] = dimensionless
+        # Multiply by T for dimensional consistency: [λ_Vπ × T × π × ∇] = GeV⁴ ✓
         if self.coeffs.lambda_V_pi != 0:
             from ..core.tensor_utils import optimized_einsum
 
-            # Term: λ_Vπ * T² * π^μν ∇_ν(μ_B/T)
-            # Scale by T² for dimensional consistency
+            # Term: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
+            # Scale by T (NOT T²!) for dimensional consistency
             shear_diffusion_term = (
                 self.coeffs.lambda_V_pi
-                * (temperature[..., np.newaxis] ** 2)
+                * temperature[..., np.newaxis]  # T, not T²!
                 * optimized_einsum("...ij,...j->...i", pi_munu, nabla_mu_over_T)
             )
             nonlinear += shear_diffusion_term

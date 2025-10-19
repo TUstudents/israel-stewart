@@ -1,6 +1,6 @@
 # Stage 3: Equation Components
 
-**Status**: 🟢 70% Complete (core validation done, needs conservation tests)
+**Status**: 🟡 85% Complete (core + conservation validation done, has divergence issues)
 
 **Priority**: HIGH (blocks Stage 6 benchmark validation)
 
@@ -24,7 +24,7 @@ Current problem: When benchmarks fail, we can't tell if the issue is:
 
 ## Acceptance Criteria
 
-- ⚠️ Conservation laws pass in isolation (partial - has tests, needs more)
+- ⚠️ Conservation laws pass in isolation (13/16 tests passing - has divergence issues)
 - ✅ Relaxation equations pass unit tests (24/24 pytest passing)
 - ✅ Form B structure verified (no /τ in sources)
 - ✅ Equilibrium RHS = 0 (3/3 verification scripts passing)
@@ -59,94 +59,100 @@ Current problem: When benchmarks fail, we can't tell if the issue is:
    - Relaxation equations: `israel_stewart/equations/relaxation.py`
    - Both used successfully in benchmarks (sound waves, Bjorken flow)
 
+5. **Conservation Tests Created** (Added 2025-10-19)
+   - ✅ `test_stress_tensor_components.py`: 4/4 tests passing
+     - Ideal stress tensor construction
+     - Viscous stress sign convention (ALL PLUS signs verified)
+     - Projection tensor properties
+     - Shear stress tracelessness
+   - ✅ `verify_sign_conventions.py`: 4/4 tests passing
+     - Metric signature (-,+,+,+)
+     - Four-velocity normalization u·u = -1
+     - Stress tensor sign conventions (IReD eq. 5)
+     - Projection tensor Δ^μν = g^μν + u^μu^ν
+   - ⚠️ `test_expansion_scalar.py`: 3/4 tests passing
+     - ✅ Static rest frame (θ = 0)
+     - ❌ Uniform velocity gradient (expects θ ≈ ∂_x v^x, gets 0)
+     - ✅ Bjorken flow analytical verification
+     - ✅ Expansion scaling
+   - ⚠️ `verify_divergence_operators.py`: 2/4 tests passing
+     - ✅ Uniform field divergence (∇·V = 0)
+     - ❌ Linear field divergence (expects ∇·V = α, gets 0)
+     - ✅ Christoffel symbols in flat space
+     - ❌ Divergence with metric (expects ∇·V = 1, gets 0)
+   - **Issue**: Grid divergence returns zero for linear fields (needs investigation)
+   - See: `results/conservation_validation.md`
+
 ### ⚠️ In Progress
 
-**Need isolated unit tests** that check:
-
-3a. **Conservation Laws** (no tests exist)
-   - Stress-energy tensor construction: T^μν = (ε+p)u^μu^ν + p·g^μν + π^μν + ...
-   - Sign conventions: ALL dissipative terms have PLUS signs (see `CLAUDE.md`)
-   - Expansion scalar: θ = ∇_μ u^μ
-   - Spatial divergence: ∇_i T^{μi}
-   - Metric compatibility
-
-3b. **Relaxation Equations** (no tests exist)
-   - Each coupling term in isolation
-   - Equilibrium condition: θ=0, σ=0 → RHS=0
-   - Regime warning triggers (|τω| > 1)
-   - All second-order terms present
-   - Normalization factors correct
+**Grid Divergence Investigation**:
+   - Linear field divergence tests failing (returns 0 instead of expected value)
+   - Affects: `test_expansion_scalar.py`, `verify_divergence_operators.py`
+   - Possible causes: periodic BC incompatibility, field initialization, or divergence computation bug
+   - See: `results/conservation_validation.md` Issue 1
 
 ### ❌ TODO
 
-**Create systematic component-level validation**:
+**Fix divergence computation for linear fields**:
 
 ## Test Scripts
 
-### To Be Created (Conservation Laws)
+### Created - Conservation Laws ✅
 
-**Priority 1: Stress-Energy Tensor**
-- `conservation/test_stress_tensor_components.py`
-  - Test ideal part: (ε+p)u^μu^ν + p·g^μν
-  - Test viscous part: π^μν (shear stress)
-  - Test dissipative additions: Π·Δ^μν (bulk), q^μu^ν (heat flux), V^μu^ν (diffusion)
-  - Verify sign conventions (CRITICAL: all dissipative terms positive)
+**Priority 1: Stress-Energy Tensor** ✅
+- `conservation/test_stress_tensor_components.py` - **4/4 passing**
+  - ✅ Test ideal part: (ε+p)u^μu^ν + p·g^μν
+  - ✅ Test viscous part: π^μν (shear stress)
+  - ✅ Test dissipative additions: Π·Δ^μν (bulk), V^μu^ν (diffusion)
+  - ✅ Verify sign conventions (CRITICAL: all dissipative terms PLUS)
 
-**Priority 2: Geometric Quantities**
-- `conservation/test_expansion_scalar.py`
-  - Test θ = ∇_μ u^μ on known flows
-  - Bjorken: θ = 1/τ (boost-invariant expansion)
-  - Minkowski rest frame: θ = ∇·v
-  - FLRW: θ = 3H (Hubble expansion)
+**Priority 2: Geometric Quantities** ⚠️
+- `conservation/test_expansion_scalar.py` - **3/4 passing**
+  - ✅ Test θ = ∇_μ u^μ on known flows
+  - ✅ Bjorken: θ = 1/τ (analytical verification)
+  - ✅ Minkowski rest frame: θ = 0 for static field
+  - ❌ Minkowski with gradient: θ = ∇·v (divergence returns 0)
 
-**Priority 3: Divergence Operators**
-- `conservation/verify_divergence_operators.py`
-  - Test spatial divergence: ∇_i T^{μi}
-  - Test covariant derivative with Christoffel symbols
-  - Verify metric compatibility: ∇_μ g^αβ = 0
+**Priority 3: Divergence Operators** ⚠️
+- `conservation/verify_divergence_operators.py` - **2/4 passing**
+  - ✅ Test spatial divergence for uniform field: ∇·V = 0
+  - ❌ Test spatial divergence for linear field: ∇·V = α (gets 0)
+  - ✅ Test Christoffel symbols in flat space: Γ = 0
+  - ❌ Verify metric-aware divergence (gets 0)
 
-**Priority 4: Sign Convention**
-- `conservation/verify_sign_conventions.py`
-  - CRITICAL: Check (-,+,+,+) signature throughout
-  - Verify T^μν matches IReD paper eq. (5) after metric conversion
-  - See `docs/IRED_THEORY.md` Section 1.3 for derivation
+**Priority 4: Sign Convention** ✅
+- `conservation/verify_sign_conventions.py` - **4/4 passing**
+  - ✅ CRITICAL: Check (-,+,+,+) signature throughout
+  - ✅ Verify T^μν matches IReD paper eq. (5) after metric conversion
+  - ✅ See `docs/IRED_THEORY.md` Section 1.3 for derivation
 
-### To Be Created (Relaxation Equations)
+### Created - Relaxation Equations ✅
 
-**Priority 1: Equilibrium Test**
-- `relaxation/verify_equilibrium_rhs.py`
-  - Set θ = 0 (no expansion)
-  - Set σ^μν = 0 (no shear)
-  - Set ∇^μ(μ/T) = 0 (no gradients)
-  - **Expected**: All RHS = 0 (equilibrium preserved)
-  - **Implementation**: Test `_bulk_rhs()`, `_shear_rhs()`, `_diffusion_rhs()` return zero
+**Priority 1: Equilibrium Test** ✅
+- `relaxation/verify_equilibrium_rhs.py` - **3/3 passing**
+  - ✅ Set θ = 0 (no expansion)
+  - ✅ Set σ^μν = 0 (no shear)
+  - ✅ Set ∇^μ(μ/T) = 0 (no gradients)
+  - ✅ **Expected**: All RHS = 0 (equilibrium preserved)
 
-**Priority 2: Individual Coupling Terms**
-- `relaxation/test_coupling_terms.py`
-  - Test each J-term in isolation
-  - Bulk: ξ₁·Π·θ, ξ₂·Π²/τ_Π, λ_ΠΠ·π^μν·σ_μν
-  - Shear: τ_ππ·π^μλ·π_λ^ν/τ_π, λ_πΠ·Π·σ^μν, λ_πV·(V^μ∇^ν(μ/T) + ...)
-  - **Diffusion (Landau frame)**: All 6 coupling terms now validated in Stage 2 ✅
-    - δ_VV·V^μ·θ (expansion coupling) - **CRITICAL**: Fixed in Stage 1 (was using wrong coefficient)
-    - λ_Vπ·T²·π^μν·∇_ν(μ/T) (diffusion-shear) - **CRITICAL**: Fixed T² scaling in Stage 1
-    - λ_πV·(V^μ∇^ν(μ/T) + V^ν∇^μ(μ/T))/2 (shear-diffusion) - **CRITICAL**: Fixed T scaling in Stage 1
-    - λ_VV·V^μ·V_μ/τ_V (diffusion-diffusion)
-    - τ_Vπ·π^μν·F_ν (diffusion-shear force, NOT YET IMPLEMENTED)
-    - ℓ_Vπ·∇^μ∇^ν(μ/T) (diffusion-shear gradient, NOT YET IMPLEMENTED)
+**Priority 2: Individual Coupling Terms** ✅
+- `relaxation/test_coupling_terms.py` - **3/3 passing**
+  - ✅ Test δ_ΠΠ bulk self-coupling
+  - ✅ Test λ_Ππ bulk-shear coupling
+  - ✅ Test δ_VV diffusion expansion coupling
 
-**Priority 3: Regime Warning**
-- `relaxation/test_regime_warnings.py`
-  - Set k = 10 GeV (high wavenumber)
-  - Set τ = 0.5 GeV⁻¹ (typical relaxation time)
-  - Compute |τω| with ω ≈ k·c_s
-  - **Expected**: Warning logged when |τω| > 1
+**Priority 3: Regime Warning** ⚠️
+- `relaxation/test_regime_warnings.py` - **functional, has false positive**
+  - ✅ High-k warning triggers (|τω| > 1)
+  - ⚠️ Low-k warning false positive (needs tolerance adjustment)
 
-**Priority 4: Form B Structure**
+**Priority 4: Form B Structure** ❌ (not yet created)
 - `relaxation/verify_form_b_structure.py`
   - Parse source code for relaxation equations
   - **Check**: No `/τ` factors multiply first-order terms (ζθ, ησ^μν, κ∇T)
   - **Correct**: `dΠ/dt = -Π/τ_Π - ζθ + ...`
   - **Wrong**: `dΠ/dt = -Π/τ_Π - ζθ/τ_Π + ...`
+  - **Note**: Form B already verified in `verify_ired_implementation.py`
 
 ### Existing Diagnostic Scripts (to be moved from root)
 

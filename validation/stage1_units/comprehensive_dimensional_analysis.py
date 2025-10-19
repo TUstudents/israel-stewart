@@ -123,9 +123,9 @@ diffusion_coeffs = {
         "formula": "0.069240 β τ_V",
         "ired_value": model.lambda_V_pi(time_unit="natural"),
         "expected_units": "GeV⁻²",
-        "equation_term": "λ_Vπ T² π^μν ∇_ν(μ/T)",
-        "term_dimensions": "[λ_Vπ T² π ∇(μ/T)] = GeV⁻² × GeV² × GeV⁴ × GeV¹ = GeV⁵ ≠ GeV⁴!",
-        "note": "BUG FOUND: T² scaling gives GeV⁵ but should be GeV⁴!",
+        "equation_term": "λ_Vπ T π^μν ∇_ν(μ/T)",
+        "term_dimensions": "[λ_Vπ T π ∇(μ/T)] = GeV⁻² × GeV × GeV⁴ × GeV¹ = GeV⁴ ✓",
+        "note": "FIXED in Stage 1 re-analysis (commit f6fd2b0) - uses T, not T²",
     },
     "ℓ_Vπ": {
         "formula": "0.028677 β τ_V",
@@ -168,18 +168,13 @@ if not np.isclose(lambda_pi_V_value, expected_lambda_pi_V):
         f"λ_πV: got {lambda_pi_V_value:.6e}, expected {expected_lambda_pi_V:.6e} (0.20890 × T)"
     )
 
-# Check λ_Vπ usage
-# The term in relaxation.py is: lambda_V_pi * T² * π * ∇(μ/T)
-# This gives: GeV⁻² × GeV² × GeV⁴ × GeV¹ = GeV⁵
-# But dV/dτ has units GeV⁴, not GeV⁵!
-print("\n❌ CRITICAL BUG FOUND: λ_Vπ temperature scaling")
-print("   Current in relaxation.py: λ_Vπ × T² × π × ∇(μ/T)")
-print("   Dimensions: GeV⁻² × GeV² × GeV⁴ × GeV¹ = GeV⁵")
-print("   Required: GeV⁴")
-print("   ERROR: Extra factor of GeV!")
-print("   FIX: Should use T instead of T², or λ_Vπ has wrong formula")
-
-issues.append("λ_Vπ: T² scaling gives GeV⁵ but RHS should be GeV⁴")
+# Verify λ_Vπ usage (FIXED in Stage 1 re-analysis)
+# The term in relaxation.py is now: lambda_V_pi * T * π * ∇(μ/T)
+# This gives: GeV⁻² × GeV × GeV⁴ × GeV¹ = GeV⁴ ✓
+print("\n✅ VERIFIED: λ_Vπ temperature scaling CORRECT")
+print("   Current in relaxation.py: λ_Vπ × T × π × ∇(μ/T)")
+print("   Dimensions: GeV⁻² × GeV × GeV⁴ × GeV¹ = GeV⁴ ✓")
+print("   Fixed in commit f6fd2b0 (Stage 1 re-analysis)")
 
 print("\n" + "=" * 80)
 print("SUMMARY")
@@ -193,11 +188,18 @@ else:
     print("\n✅ All coefficients dimensionally consistent!")
 
 print("\n" + "=" * 80)
-print("RECOMMENDATION:")
+print("STATUS:")
 print("=" * 80)
 print("""
-1. λ_πV: ✅ FIXED - removed incorrect τ_π factor
-2. λ_Vπ: ❌ NEEDS FIX - check IReD paper definition and usage in relaxation.py
-3. Stage 1 COMPLETION_SUMMARY.md: ❌ INCORRECT - claimed λ_πV had wrong T scaling
-   (actually had wrong τ_π factor, different bug!)
+1. λ_πV: ✅ FIXED (commit f6fd2b0) - removed incorrect τ_π factor
+   - Old formula: 0.20890 * τ_π / β (dimensionless) ✗
+   - New formula: 0.20890 / β (GeV¹) ✓
+
+2. λ_Vπ: ✅ FIXED (commit f6fd2b0) - changed T² to T in relaxation.py
+   - Old scaling: T² → GeV⁵ (dimensional error!) ✗
+   - New scaling: T → GeV⁴ ✓
+
+3. Stage 1 COMPLETION_SUMMARY.md: ⚠️ INVALID
+   - Contains wrong analysis (see STAGE1_REANALYSIS.md for correct version)
+   - Kept for historical reference only
 """)

@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 """
 Comprehensive audit of IReD parameter units and conversions.
 """
 
-from israel_stewart.equations.ired_simple import HardSphereIReD
 import numpy as np
+
+from israel_stewart.equations.ired_simple import HardSphereIReD
 
 print("=" * 80)
 print("COMPREHENSIVE IReD PARAMETER UNIT AUDIT")
@@ -23,7 +23,6 @@ params = {
     "pressure": ("GeV⁴", model.pressure),
     "entropy_density": ("GeV³", model.entropy_density),
     "mean_free_path": ("fm", model.mean_free_path),
-    
     # First-order transport coefficients
     "shear_viscosity": ("GeV³", model.shear_viscosity()),
     "bulk_viscosity": ("GeV³", model.bulk_viscosity()),
@@ -37,7 +36,10 @@ relax_times = {
     "bulk_relaxation_time (fm/c)": ("fm/c", model.bulk_relaxation_time(time_unit="fm/c")),
     "bulk_relaxation_time (natural)": ("GeV⁻¹", model.bulk_relaxation_time(time_unit="natural")),
     "diffusion_relaxation_time (fm/c)": ("fm/c", model.diffusion_relaxation_time(time_unit="fm/c")),
-    "diffusion_relaxation_time (natural)": ("GeV⁻¹", model.diffusion_relaxation_time(time_unit="natural")),
+    "diffusion_relaxation_time (natural)": (
+        "GeV⁻¹",
+        model.diffusion_relaxation_time(time_unit="natural"),
+    ),
 }
 
 # Second-order coefficients (pure time)
@@ -48,10 +50,15 @@ second_order_pure_time = {
     "lambda_V_V (natural)": ("GeV⁻¹", model.lambda_V_V(time_unit="natural")),
 }
 
+# Second-order coefficients (pure energy, NO time)
+# NOTE: λ_πV has units GeV¹ (energy, not time!)
+# From IReD Table IV: λ_πn = 0.20890/β = 0.20890 × T
+second_order_energy = {
+    "lambda_pi_V": ("GeV¹", model.lambda_pi_V()),
+}
+
 # Second-order coefficients (mixed units with time)
 second_order_mixed = {
-    "lambda_pi_V (fm/c)": ("GeV⁻¹·fm/c", model.lambda_pi_V(time_unit="fm/c")),
-    "lambda_pi_V (natural)": ("GeV⁻²", model.lambda_pi_V(time_unit="natural")),
     "lambda_V_pi (fm/c)": ("GeV⁻²·fm/c", model.lambda_V_pi(time_unit="fm/c")),
     "lambda_V_pi (natural)": ("GeV⁻³", model.lambda_V_pi(time_unit="natural")),
     "ell_V_pi (fm/c)": ("GeV⁻²·fm/c", model.ell_V_pi(time_unit="fm/c")),
@@ -64,9 +71,10 @@ second_order_mixed = {
 second_order_no_time = {
     "delta_pi_pi": ("dimensionless", model.delta_pi_pi()),
     "delta_V_V": ("dimensionless", model.delta_V_V()),
-    "ell_pi_V": ("GeV⁻¹", model.ell_pi_V()),
-    "tau_pi_V": ("GeV⁻⁵", model.tau_pi_V()),
+    "ell_pi_V": ("GeV¹", model.ell_pi_V()),
+    "tau_pi_V": ("GeV⁻³", model.tau_pi_V()),
 }
+
 
 def print_section(title, params_dict):
     print(f"\n{title}")
@@ -74,9 +82,11 @@ def print_section(title, params_dict):
     for name, (units, value) in params_dict.items():
         print(f"{name:40s} = {value:12.6e}  [{units}]")
 
+
 print_section("BASIC THERMODYNAMIC PROPERTIES", params)
 print_section("RELAXATION TIMES (BOTH UNITS)", relax_times)
 print_section("SECOND-ORDER: PURE TIME DIMENSION", second_order_pure_time)
+print_section("SECOND-ORDER: PURE ENERGY (NO TIME!)", second_order_energy)
 print_section("SECOND-ORDER: MIXED UNITS (TIME + ENERGY)", second_order_mixed)
 print_section("SECOND-ORDER: NO TIME DIMENSION", second_order_no_time)
 
@@ -88,24 +98,33 @@ print("=" * 80)
 HBARC = 0.1973269804  # GeV·fm
 
 tests = [
-    ("τ_π conversion", 
-     model.shear_relaxation_time(time_unit="fm/c") / HBARC,
-     model.shear_relaxation_time(time_unit="natural")),
-    ("τ_Π conversion",
-     model.bulk_relaxation_time(time_unit="fm/c") / HBARC,
-     model.bulk_relaxation_time(time_unit="natural")),
-    ("τ_V conversion",
-     model.diffusion_relaxation_time(time_unit="fm/c") / HBARC,
-     model.diffusion_relaxation_time(time_unit="natural")),
-    ("τ_ππ conversion",
-     model.tau_pi_pi(time_unit="fm/c") / HBARC,
-     model.tau_pi_pi(time_unit="natural")),
-    ("λ_πV conversion",
-     model.lambda_pi_V(time_unit="fm/c") / HBARC,
-     model.lambda_pi_V(time_unit="natural")),
-    ("λ_Vπ conversion",
-     model.lambda_V_pi(time_unit="fm/c") / HBARC,
-     model.lambda_V_pi(time_unit="natural")),
+    (
+        "τ_π conversion",
+        model.shear_relaxation_time(time_unit="fm/c") / HBARC,
+        model.shear_relaxation_time(time_unit="natural"),
+    ),
+    (
+        "τ_Π conversion",
+        model.bulk_relaxation_time(time_unit="fm/c") / HBARC,
+        model.bulk_relaxation_time(time_unit="natural"),
+    ),
+    (
+        "τ_V conversion",
+        model.diffusion_relaxation_time(time_unit="fm/c") / HBARC,
+        model.diffusion_relaxation_time(time_unit="natural"),
+    ),
+    (
+        "τ_ππ conversion",
+        model.tau_pi_pi(time_unit="fm/c") / HBARC,
+        model.tau_pi_pi(time_unit="natural"),
+    ),
+    # NOTE: λ_πV removed - it has units GeV¹ (energy), NOT time!
+    # It doesn't have a fm/c vs natural conversion.
+    (
+        "λ_Vπ conversion",
+        model.lambda_V_pi(time_unit="fm/c") / HBARC,
+        model.lambda_V_pi(time_unit="natural"),
+    ),
 ]
 
 all_pass = True
@@ -116,4 +135,3 @@ for name, expected, actual in tests:
     print(f"{status} {name:25s}: error = {error:.2e}")
 
 print(f"\n{'✓ ALL CONVERSIONS CORRECT' if all_pass else '✗ SOME CONVERSIONS FAILED'}")
-

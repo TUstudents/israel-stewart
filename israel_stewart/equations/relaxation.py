@@ -364,9 +364,7 @@ class ISRelaxationEquations:
             outer_product = optimized_einsum("...i,...j->...ij", V_mu, nabla_mu_over_T)
             # Symmetrize: (V^μ ∇^ν + V^ν ∇^μ) / 2
             diffusion_term = (
-                self.coeffs.lambda_pi_V
-                * 0.5
-                * (outer_product + np.swapaxes(outer_product, -1, -2))
+                self.coeffs.lambda_pi_V * 0.5 * (outer_product + np.swapaxes(outer_product, -1, -2))
             )
             nonlinear += diffusion_term
 
@@ -479,6 +477,36 @@ class ISRelaxationEquations:
                 * optimized_einsum("...ij,...j->...i", pi_munu, nabla_mu_over_T)
             )
             nonlinear += shear_diffusion_term
+
+        # Nonlinear diffusion self-coupling: -λ_VV/(D·τ_V) · V^ν V_ν · V^μ
+        # Analogous to shear self-coupling τ_ππ
+        # NOTE: λ_VV from IReD has units GeV⁻¹ (= 0.89501 τ_V)
+        # This is a higher-order correction (O(Re⁻²) R term)
+        if (
+            self.coeffs.lambda_V_V != 0
+            and self.coeffs.diffusion_coefficient
+            and self.coeffs.diffusion_relaxation_time
+        ):
+            from ..core.tensor_utils import optimized_einsum
+
+            # Compute V·V scalar (with metric lowering)
+            # In Minkowski: V_μ V^μ = -V^0 V^0 + V^i V^i
+            # For orthogonal V (V·u = 0), this is purely spatial
+            V_dot_V = optimized_einsum("...i,...i->...", V_mu, V_mu)
+
+            # Term: -λ_VV/(D·τ_V) · (V·V) · V^μ
+            diffusion_self_coupling = (
+                -self.coeffs.lambda_V_V
+                * V_dot_V[..., np.newaxis]
+                * V_mu
+                / (self.coeffs.diffusion_coefficient * self.coeffs.diffusion_relaxation_time)
+            )
+            nonlinear += diffusion_self_coupling
+
+        # TODO: Implement τ_Vπ and ℓ_Vπ terms (requires pressure gradient and second derivatives)
+        # τ_Vπ term: -τ_Vπ × π^μν × F_ν where F_ν = ∇_ν P (pressure gradient)
+        # ℓ_Vπ term: -ℓ_Vπ × ∇^μ∇^ν(μ_B/T) (second derivative of chemical potential)
+        # These require additional geometric computations not yet available in this method
 
         result: np.ndarray = linear + first_order + nonlinear
         return result

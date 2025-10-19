@@ -263,6 +263,7 @@ class TransportCoefficients:
         lambda_pi_V: float = 0.0,  # Shear-diffusion coupling - was lambda_pi_q
         lambda_Pi_pi: float = 0.0,
         lambda_V_pi: float = 0.0,  # Diffusion-shear coupling - was lambda_q_pi
+        lambda_V_V: float = 0.0,  # Diffusion-diffusion nonlinear self-coupling (Landau frame)
         xi_1: float = 0.0,
         xi_2: float = 0.0,
         # Nonlinear relaxation parameters
@@ -287,6 +288,7 @@ class TransportCoefficients:
             lambda_pi_V: Shear-diffusion coupling coefficient λ_πV (Landau frame)
             lambda_Pi_pi: Bulk-shear coupling coefficient λ_Ππ
             lambda_V_pi: Diffusion-shear coupling coefficient λ_Vπ (Landau frame)
+            lambda_V_V: Diffusion-diffusion nonlinear coupling λ_VV (Landau frame)
             xi_1: Bulk nonlinearity coefficient ξ₁
             xi_2: Bulk nonlinearity coefficient ξ₂
             tau_pi_pi: Shear-shear relaxation coupling τ_ππ
@@ -320,6 +322,7 @@ class TransportCoefficients:
         self.lambda_pi_V = lambda_pi_V
         self.lambda_Pi_pi = lambda_Pi_pi
         self.lambda_V_pi = lambda_V_pi
+        self.lambda_V_V = lambda_V_V
         self.xi_1 = xi_1
         self.xi_2 = xi_2
 
@@ -354,6 +357,7 @@ class TransportCoefficients:
             ("lambda_pi_V", self.lambda_pi_V),
             ("lambda_Pi_pi", self.lambda_Pi_pi),
             ("lambda_V_pi", self.lambda_V_pi),
+            ("lambda_V_V", self.lambda_V_V),
             ("xi_1", self.xi_1),
             ("xi_2", self.xi_2),
             ("tau_pi_pi", self.tau_pi_pi),

@@ -286,15 +286,33 @@ Need **equation usage** validation for diffusion relaxation RHS terms:
 | Term | Implementation | Stage 3 Test | Status |
 |------|----------------|--------------|--------|
 | `-δ_VV × V^μ × θ` | ✅ relaxation.py:459-465 | ❌ **MISSING** | Fixed coeff in Stage 1, not tested |
-| `-λ_Vπ × T² × π^μν × ∇_ν(μ/T)` | ✅ relaxation.py:471-478 | ❌ **MISSING** | Fixed T² scaling in Stage 1, not tested |
+| `-λ_Vπ × T² × π^μν × ∇_ν(μ/T)` | ✅ relaxation.py:471-481 | ❌ **MISSING** | Fixed T² scaling in Stage 1, not tested |
 | `-λ_πV × (V^μ∇^ν + V^ν∇^μ)/2` | ✅ relaxation.py:355-371 | ❌ **MISSING** | Fixed T scaling in Stage 1, not tested |
-| `-λ_VV × V^μ × V_μ / τ_V` | ✅ relaxation.py:??? | ❌ **MISSING** | Need to verify implementation |
-| `-τ_Vπ × π^μν × F_ν` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Future work |
-| `-ℓ_Vπ × ∇^μ∇^ν(μ/T)` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Future work |
+| `-λ_VV/(D·τ_V) × (V·V) × V^μ` | ✅ relaxation.py:483-506 | ❌ **MISSING** | **Implemented 2025-10-19**, not tested |
+| `-τ_Vπ × π^μν × F_ν` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Blocked: needs pressure gradient computation |
+| `-ℓ_Vπ × ∇^μ∇^ν(μ/T)` | ❌ **NOT IMPLEMENTED** | ❌ N/A | Blocked: needs second derivative infrastructure |
 
 **Critical Gap**: Stage 1 fixed 3 dimensional errors in Landau diffusion terms, but Stage 3 has **no tests** to verify the equation usage is correct!
 
 **Priority**: Add relaxation RHS component tests for all implemented Landau diffusion terms.
+
+### Recent Implementation (2025-10-19)
+
+**Added λ_VV term**: Implemented nonlinear diffusion self-coupling in `relaxation.py:483-506`
+- **Formula**: `-λ_VV/(D·τ_V) × (V·V) × V^μ`
+- **Pattern**: Analogous to shear self-coupling τ_ππ
+- **Units**: λ_VV = 0.89501 × τ_V (GeV⁻¹) from IReD Table III
+- **Physics**: Higher-order correction (O(Re⁻²) R term), suppresses diffusion at large current magnitudes
+- **Status**: Implemented and passes all existing tests ✅ (needs dedicated component test)
+
+**Blocked terms** (require additional infrastructure):
+- τ_Vπ: Needs pressure gradient ∇_ν P computation
+- ℓ_Vπ: Needs second derivative ∇^μ∇^ν infrastructure
+
+**Next steps**:
+1. Create component-level tests for 4 implemented Landau diffusion terms
+2. Implement pressure gradient computation for τ_Vπ
+3. Implement second derivative infrastructure for ℓ_Vπ
 
 ## Remaining Work
 

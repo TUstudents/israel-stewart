@@ -263,11 +263,13 @@ class TestISRelaxationEquations:
         fields.pi_munu.fill(0.05)
         fields.Pi.fill(0.02)
         fields.V_mu.fill(0.01)
+        fields.temperature.fill(1.0)  # Add temperature field
 
         theta = np.ones(grid.shape) * 0.3
         sigma_munu = np.ones((*grid.shape, 4, 4)) * 0.1
         omega_munu = np.zeros((*grid.shape, 4, 4))
         nabla_T = np.ones((*grid.shape, 4)) * 0.2
+        temperature = np.ones(grid.shape) * 1.0  # Temperature array
 
         dpi_dt = relaxation._shear_rhs(
             fields.pi_munu,
@@ -277,6 +279,7 @@ class TestISRelaxationEquations:
             sigma_munu,
             omega_munu,
             nabla_T,
+            temperature,  # Add temperature parameter
         )
 
         # Check output shape

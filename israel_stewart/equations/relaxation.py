@@ -144,6 +144,7 @@ class ISRelaxationEquations:
         lambda_pi_V = sp.Symbol("lambda_pi_V", real=True)  # Shear-diffusion coupling
         lambda_Pi_pi = sp.Symbol("lambda_Pi_pi", real=True)
         lambda_V_pi = sp.Symbol("lambda_V_pi", real=True)  # Diffusion-shear coupling
+        delta_V_V = sp.Symbol("delta_V_V", real=True)  # Diffusion expansion coupling
         xi_1, xi_2 = sp.symbols("xi_1 xi_2", real=True)
         tau_pi_pi, tau_pi_omega = sp.symbols("tau_pi_pi tau_pi_omega", real=True)
 
@@ -172,7 +173,7 @@ class ISRelaxationEquations:
         # Particle diffusion evolution equation (Landau frame - using V^0 as representative component)
         diffusion_linear = -V_0 / tau_V - D * sp.Symbol("nabla_0_mu_over_T")
         diffusion_nonlinear = (
-            lambda_V_pi * pi_00 * sp.Symbol("nabla_0_mu_over_T") - tau_V * V_0 * theta
+            lambda_V_pi * pi_00 * sp.Symbol("nabla_0_mu_over_T") - delta_V_V * V_0 * theta
         )
 
         dV_0_dt = diffusion_linear + diffusion_nonlinear
@@ -352,19 +353,18 @@ class ISRelaxationEquations:
             nonlinear += bulk_coupling
 
         # Shear-particle diffusion coupling (Landau frame)
-        # Term: λ_πV * T * (V^μ ∇^ν(μ_B/T) + V^ν ∇^μ(μ_B/T)) / 2
+        # Term: λ_πV * (V^μ ∇^ν(μ_B/T) + V^ν ∇^μ(μ_B/T)) / 2
         # This couples shear stress to particle diffusion gradients
-        # NOTE: λ_πV from IReD is dimensionless; multiply by T for correct units (GeV)
+        # NOTE: λ_πV from IReD is ALREADY DIMENSIONLESS (Table III: 0.20890 τ_π/β)
+        # DO NOT multiply by T - it has correct dimensions as-is!
         if self.coeffs.lambda_pi_V != 0:
             from ..core.tensor_utils import optimized_einsum
 
             # Outer product: V^μ ∇^ν(μ_B/T)
             outer_product = optimized_einsum("...i,...j->...ij", V_mu, nabla_mu_over_T)
             # Symmetrize: (V^μ ∇^ν + V^ν ∇^μ) / 2
-            # Scale by temperature for dimensional consistency: [λ_πV × T] = GeV
             diffusion_term = (
                 self.coeffs.lambda_pi_V
-                * temperature[..., np.newaxis, np.newaxis]
                 * 0.5
                 * (outer_product + np.swapaxes(outer_product, -1, -2))
             )
@@ -456,23 +456,26 @@ class ISRelaxationEquations:
         # Second-order nonlinear terms
         nonlinear = np.zeros_like(V_mu)
 
-        # Expansion coupling: -τ_Vπ V^μ θ
+        # Expansion coupling: -δ_VV V^μ θ
+        # This is the CORRECT coefficient from IReD Eq. (29b): J^μ = −δₙₙ n^μ θ
+        # δ_VV is dimensionless (= 1 for hard sphere gas, IReD Table III)
         # Expansion of fluid suppresses diffusion current
-        if self.coeffs.tau_V_pi != 0:
-            expansion_term = -self.coeffs.tau_V_pi * V_mu * theta[..., np.newaxis]
+        if self.coeffs.delta_V_V != 0:
+            expansion_term = -self.coeffs.delta_V_V * V_mu * theta[..., np.newaxis]
             nonlinear += expansion_term
 
-        # Shear-diffusion coupling: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
+        # Shear-diffusion coupling: λ_Vπ * T² * π^μν ∇_ν(μ_B/T)
         # Shear flow couples to diffusion gradients
-        # NOTE: λ_Vπ from IReD is dimensionless; multiply by T for correct units (GeV⁻¹ total)
+        # NOTE: λ_Vπ from IReD has units GeV⁻² (= 0.069240 β τ_V)
+        # Multiply by T² for dimensional consistency: [λ_Vπ × T²] = dimensionless
         if self.coeffs.lambda_V_pi != 0:
             from ..core.tensor_utils import optimized_einsum
 
-            # Term: λ_Vπ * T * π^μν ∇_ν(μ_B/T)
-            # Scale by temperature for dimensional consistency: [λ_Vπ × T] = GeV⁻¹
+            # Term: λ_Vπ * T² * π^μν ∇_ν(μ_B/T)
+            # Scale by T² for dimensional consistency
             shear_diffusion_term = (
                 self.coeffs.lambda_V_pi
-                * temperature[..., np.newaxis]
+                * (temperature[..., np.newaxis] ** 2)
                 * optimized_einsum("...ij,...j->...i", pi_munu, nabla_mu_over_T)
             )
             nonlinear += shear_diffusion_term

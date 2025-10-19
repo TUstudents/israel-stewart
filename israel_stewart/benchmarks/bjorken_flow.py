@@ -826,6 +826,7 @@ def create_bjorken_benchmark_with_ired(
         tau_pi_pi=ired_model.tau_pi_pi(),  # Shear-shear coupling τ_ππ
         lambda_pi_V=ired_model.lambda_pi_V(),  # Shear-diffusion coupling λ_πV
         lambda_V_pi=ired_model.lambda_V_pi(),  # Diffusion-shear coupling λ_Vπ
+        delta_V_V=ired_model.delta_V_V(),  # Diffusion expansion coupling δ_VV (dimensionless)
     )
 
     # Analytical solution

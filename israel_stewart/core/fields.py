@@ -270,6 +270,7 @@ class TransportCoefficients:
         tau_pi_omega: float = 0.0,
         tau_Pi_pi: float = 0.0,
         tau_V_pi: float = 0.0,  # Diffusion-shear relaxation coupling - was tau_q_pi
+        delta_V_V: float = 0.0,  # Diffusion expansion coupling δ_VV (Landau frame) - DIMENSIONLESS
     ):
         """
         Initialize transport coefficients with Israel-Stewart second-order terms (Landau frame).
@@ -292,6 +293,7 @@ class TransportCoefficients:
             tau_pi_omega: Shear-vorticity coupling τ_πω
             tau_Pi_pi: Bulk-shear relaxation coupling τ_Ππ
             tau_V_pi: Diffusion-shear relaxation coupling τ_Vπ (Landau frame)
+            delta_V_V: Diffusion expansion coupling δ_VV (Landau frame) - DIMENSIONLESS
         """
         # First-order transport coefficients
         self.shear_viscosity = self._validate_coefficient(shear_viscosity, "shear_viscosity")
@@ -326,6 +328,7 @@ class TransportCoefficients:
         self.tau_pi_omega = tau_pi_omega
         self.tau_Pi_pi = tau_Pi_pi
         self.tau_V_pi = tau_V_pi
+        self.delta_V_V = delta_V_V
 
         # Validate thermodynamic stability
         self._validate_stability_constraints()
@@ -357,6 +360,7 @@ class TransportCoefficients:
             ("tau_pi_omega", self.tau_pi_omega),
             ("tau_Pi_pi", self.tau_Pi_pi),
             ("tau_V_pi", self.tau_V_pi),
+            ("delta_V_V", self.delta_V_V),
         ]
 
         for name, value in coupling_coeffs:
@@ -435,6 +439,7 @@ class TransportCoefficients:
                 tau_pi_omega=self.tau_pi_omega,
                 tau_Pi_pi=self.tau_Pi_pi,
                 tau_V_pi=self.tau_V_pi,
+                delta_V_V=self.delta_V_V,
             )
 
         else:

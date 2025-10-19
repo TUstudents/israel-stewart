@@ -609,6 +609,7 @@ def create_diffusion_benchmark_with_ired(
         tau_pi_pi=ired_model.tau_pi_pi(),
         lambda_pi_V=ired_model.lambda_pi_V(),
         lambda_V_pi=ired_model.lambda_V_pi(),
+        delta_V_V=ired_model.delta_V_V(),  # Diffusion expansion coupling δ_VV (dimensionless)
     )
 
     logger.info(

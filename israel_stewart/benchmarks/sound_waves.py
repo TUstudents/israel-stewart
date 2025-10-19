@@ -2213,6 +2213,7 @@ def create_numerical_benchmark_with_ired(
         tau_pi_pi=ired_model.tau_pi_pi(time_unit="natural"),  # Shear-shear coupling τ_ππ
         lambda_pi_V=ired_model.lambda_pi_V(time_unit="natural"),  # Shear-diffusion coupling λ_πV
         lambda_V_pi=ired_model.lambda_V_pi(time_unit="natural"),  # Diffusion-shear coupling λ_Vπ
+        delta_V_V=ired_model.delta_V_V(),  # Diffusion expansion coupling δ_VV (dimensionless)
     )
 
     # Create numerical benchmark

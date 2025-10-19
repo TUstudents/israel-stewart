@@ -5,8 +5,8 @@ Test energy conservation by individual stress tensor components.
 Break down T^00 into its constituent parts to verify each contribution:
 - Perfect fluid: (ε+p)u^0u^0 + p·g^00
 - Bulk viscosity: Π·Δ^00
-- Shear stress: -π^00 (Convention B)
-- Heat flux: 2·q^0·u^0
+- Shear stress: π^00 (with correct sign convention)
+- Diffusion current: V^0·u^0 + u^0·V^0 = 2·V^0·u^0 (Landau frame)
 """
 
 import numpy as np
@@ -78,14 +78,14 @@ def compute_T00_components():
     # 2. Bulk viscosity: Π·Δ^00
     T_bulk_00 = f.Pi * Delta[..., 0, 0]
 
-    # 3. Shear stress: -π^00 (Convention B MINUS sign)
-    T_shear_00 = -f.pi_munu[..., 0, 0]
+    # 3. Shear stress: π^00 (with correct sign per IReD eq. 5)
+    T_shear_00 = f.pi_munu[..., 0, 0]
 
-    # 4. Heat flux: q^0·u^0 + u^0·q^0 = 2·q^0·u^0
-    T_heat_00 = 2.0 * f.q_mu[..., 0] * f.u_mu[..., 0]
+    # 4. Diffusion current: V^0·u^0 + u^0·V^0 = 2·V^0·u^0 (Landau frame)
+    T_diffusion_00 = 2.0 * f.V_mu[..., 0] * f.u_mu[..., 0]
 
     # Total should match T^00 from stress_energy_tensor()
-    T_total_00_computed = T_perfect_00 + T_bulk_00 + T_shear_00 + T_heat_00
+    T_total_00_computed = T_perfect_00 + T_bulk_00 + T_shear_00 + T_diffusion_00
 
     # Get actual T^00 from full tensor
     T_full = conservation.stress_energy_tensor()
@@ -95,7 +95,7 @@ def compute_T00_components():
         'perfect': T_perfect_00,
         'bulk': T_bulk_00,
         'shear': T_shear_00,
-        'heat': T_heat_00,
+        'diffusion': T_diffusion_00,
         'computed_total': T_total_00_computed,
         'actual_total': T_actual_00
     }
@@ -118,14 +118,14 @@ components_0 = compute_T00_components()
 E_perfect_0 = integrate_component(components_0['perfect'])
 E_bulk_0 = integrate_component(components_0['bulk'])
 E_shear_0 = integrate_component(components_0['shear'])
-E_heat_0 = integrate_component(components_0['heat'])
+E_diffusion_0 = integrate_component(components_0['diffusion'])
 E_computed_0 = integrate_component(components_0['computed_total'])
 E_actual_0 = integrate_component(components_0['actual_total'])
 
 print(f"Perfect fluid energy:  E_pf  = {E_perfect_0:.10f}")
 print(f"Bulk viscosity:        E_Π   = {E_bulk_0:.10f}")
 print(f"Shear stress:          E_π   = {E_shear_0:.10f}")
-print(f"Heat flux:             E_q   = {E_heat_0:.10f}")
+print(f"Diffusion current:     E_V   = {E_diffusion_0:.10f}")
 print(f"---")
 print(f"Computed total:        E_sum = {E_computed_0:.10f}")
 print(f"Actual T^00:           E_act = {E_actual_0:.10f}")
@@ -154,14 +154,14 @@ components_f = compute_T00_components()
 E_perfect_f = integrate_component(components_f['perfect'])
 E_bulk_f = integrate_component(components_f['bulk'])
 E_shear_f = integrate_component(components_f['shear'])
-E_heat_f = integrate_component(components_f['heat'])
+E_diffusion_f = integrate_component(components_f['diffusion'])
 E_computed_f = integrate_component(components_f['computed_total'])
 E_actual_f = integrate_component(components_f['actual_total'])
 
 print(f"Perfect fluid energy:  E_pf  = {E_perfect_f:.10f}")
 print(f"Bulk viscosity:        E_Π   = {E_bulk_f:.10f}")
 print(f"Shear stress:          E_π   = {E_shear_f:.10f}")
-print(f"Heat flux:             E_q   = {E_heat_f:.10f}")
+print(f"Diffusion current:     E_V   = {E_diffusion_f:.10f}")
 print(f"---")
 print(f"Computed total:        E_sum = {E_computed_f:.10f}")
 print(f"Actual T^00:           E_act = {E_actual_f:.10f}")
@@ -177,19 +177,19 @@ print()
 dE_perfect = E_perfect_f - E_perfect_0
 dE_bulk = E_bulk_f - E_bulk_0
 dE_shear = E_shear_f - E_shear_0
-dE_heat = E_heat_f - E_heat_0
+dE_diffusion = E_diffusion_f - E_diffusion_0
 dE_total = E_actual_f - E_actual_0
 
-print(f"ΔE_perfect = {dE_perfect:+.6e}  ({dE_perfect/E_actual_0*100:+.6f}%)")
-print(f"ΔE_bulk    = {dE_bulk:+.6e}  ({dE_bulk/E_actual_0*100:+.6f}%)")
-print(f"ΔE_shear   = {dE_shear:+.6e}  ({dE_shear/E_actual_0*100:+.6f}%)")
-print(f"ΔE_heat    = {dE_heat:+.6e}  ({dE_heat/E_actual_0*100:+.6f}%)")
+print(f"ΔE_perfect   = {dE_perfect:+.6e}  ({dE_perfect/E_actual_0*100:+.6f}%)")
+print(f"ΔE_bulk      = {dE_bulk:+.6e}  ({dE_bulk/E_actual_0*100:+.6f}%)")
+print(f"ΔE_shear     = {dE_shear:+.6e}  ({dE_shear/E_actual_0*100:+.6f}%)")
+print(f"ΔE_diffusion = {dE_diffusion:+.6e}  ({dE_diffusion/E_actual_0*100:+.6f}%)")
 print(f"---")
 print(f"ΔE_total   = {dE_total:+.6e}  ({dE_total/E_actual_0*100:+.6f}%)")
 print()
 
 # Check that sum of changes equals total change
-sum_changes = dE_perfect + dE_bulk + dE_shear + dE_heat
+sum_changes = dE_perfect + dE_bulk + dE_shear + dE_diffusion
 print(f"Sum of changes:  {sum_changes:+.6e}")
 print(f"Total change:    {dE_total:+.6e}")
 print(f"Difference:      {abs(sum_changes - dE_total):.6e}")
@@ -201,23 +201,23 @@ print("INTERPRETATION")
 print("=" * 80)
 print()
 
-print("Sign Convention (Convention B - Landau-Lifshitz):")
-print("  T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν - π^μν + q^μu^ν + q^νu^μ")
-print("         ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^ MINUS ^^^^^ ^^^^^^^^^^^")
-print("         Perfect fluid          Bulk    Shear  Heat flux")
+print("Sign Convention (IReD eq. 5, Landau frame):")
+print("  T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν + π^μν + V^μu^ν + V^νu^μ")
+print("         ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^ PLUS ^^^^^ ^^^^^^^^^^^^")
+print("         Perfect fluid          Bulk    Shear  Diffusion current")
 print()
 
 print("Physical meaning:")
 print("  - Perfect fluid: Conserved exactly if no viscosity")
 print("  - Bulk Π > 0: Resists compression (adds pressure)")
-print("  - Shear π^μν > 0: Dissipates energy (MINUS sign = energy sink)")
-print("  - Heat flux q^μ: Transfers energy between regions")
+print("  - Shear π^μν: Anisotropic stress (dissipates energy)")
+print("  - Diffusion V^μ: Particle current (Landau frame, not heat flux)")
 print()
 
 # Check sign consistency
 if abs(E_shear_0) > 1e-10 or abs(E_shear_f) > 1e-10:
     print(f"✓ Shear contribution detected: E_π(0) = {E_shear_0:.6e}, E_π(t) = {E_shear_f:.6e}")
-    print(f"  Sign check: Convention B uses -π^00, so positive π^00 → negative contribution")
+    print(f"  Sign check: IReD uses +π^00, so positive π^00 → positive contribution to T^00")
 else:
     print("Note: Shear stress π^00 ≈ 0 in this test (rest frame, no off-diagonal stress)")
 

@@ -3,9 +3,12 @@
 Test sign conventions with strong viscous effects.
 
 Set up a case with significant shear and bulk viscosity to verify:
-1. Shear stress π^μν enters with MINUS sign (Convention B)
+1. Shear stress π^μν enters with PLUS sign (IReD convention, eq. 5)
 2. Bulk pressure Π enters with PLUS sign
-3. Signs are consistent with dispersion relation
+3. Signs are consistent with IReD paper
+
+Reference: IReD paper eq. (5): T^μν = (ε+p)u^μu^ν + p·g^μν + Π·Δ^μν + π^μν + ...
+All dissipative terms have PLUS signs in (-,+,+,+) signature.
 """
 
 import numpy as np
@@ -94,53 +97,53 @@ print(f"                 π^yy = {fields.pi_munu[i,j,k,2,2]:+.4f}")
 print(f"                 π^zz = {fields.pi_munu[i,j,k,3,3]:+.4f}")
 print()
 
-print("STRESS TENSOR COMPONENTS (Convention B)")
+print("STRESS TENSOR COMPONENTS (IReD Convention)")
 print("=" * 80)
 print()
 
-# T^00 = (ε+p)u^0u^0 + p·g^00 + Π·Δ^00 - π^00
+# T^00 = (ε+p)u^0u^0 + p·g^00 + Π·Δ^00 + π^00
 print("T^00 (energy density):")
 T00_perfect = (fields.rho[i,j,k] + fields.pressure[i,j,k]) * 1.0 * 1.0
 T00_pressure = fields.pressure[i,j,k] * (-1.0)  # g^00 = -1
 T00_bulk = fields.Pi[i,j,k] * Delta[i,j,k,0,0]
-T00_shear = -fields.pi_munu[i,j,k,0,0]  # MINUS sign (Convention B)
+T00_shear = fields.pi_munu[i,j,k,0,0]  # PLUS sign (IReD eq. 5)
 
 print(f"  Perfect fluid:    (ε+p)u^0u^0       = {T00_perfect:+.4f}")
 print(f"  Pressure:         p·g^00            = {T00_pressure:+.4f}")
 print(f"  Bulk:             Π·Δ^00            = {T00_bulk:+.4f}  (Δ^00 = {Delta[i,j,k,0,0]:.4f})")
-print(f"  Shear:            -π^00             = {T00_shear:+.4f}  (π^00 = {fields.pi_munu[i,j,k,0,0]:.4f})")
+print(f"  Shear:            +π^00             = {T00_shear:+.4f}  (π^00 = {fields.pi_munu[i,j,k,0,0]:.4f})")
 print(f"  ---")
 print(f"  Total:            T^00              = {T[i,j,k,0,0]:+.4f}")
 print(f"  Computed sum:                       = {T00_perfect + T00_pressure + T00_bulk + T00_shear:+.4f}")
 print()
 
-# T^xx = (ε+p)u^xu^x + p·g^xx + Π·Δ^xx - π^xx
+# T^xx = (ε+p)u^xu^x + p·g^xx + Π·Δ^xx + π^xx
 print("T^xx (spatial stress):")
 T11_perfect = (fields.rho[i,j,k] + fields.pressure[i,j,k]) * 0.0 * 0.0  # u^x = 0
 T11_pressure = fields.pressure[i,j,k] * 1.0  # g^xx = 1
 T11_bulk = fields.Pi[i,j,k] * Delta[i,j,k,1,1]
-T11_shear = -fields.pi_munu[i,j,k,1,1]  # MINUS sign (Convention B)
+T11_shear = fields.pi_munu[i,j,k,1,1]  # PLUS sign (IReD eq. 5)
 
 print(f"  Perfect fluid:    (ε+p)u^xu^x       = {T11_perfect:+.4f}")
 print(f"  Pressure:         p·g^xx            = {T11_pressure:+.4f}")
 print(f"  Bulk:             Π·Δ^xx            = {T11_bulk:+.4f}  (Δ^xx = {Delta[i,j,k,1,1]:.4f})")
-print(f"  Shear:            -π^xx             = {T11_shear:+.4f}  (π^xx = {fields.pi_munu[i,j,k,1,1]:+.4f})")
+print(f"  Shear:            +π^xx             = {T11_shear:+.4f}  (π^xx = {fields.pi_munu[i,j,k,1,1]:+.4f})")
 print(f"  ---")
 print(f"  Total:            T^xx              = {T[i,j,k,1,1]:+.4f}")
 print(f"  Computed sum:                       = {T11_perfect + T11_pressure + T11_bulk + T11_shear:+.4f}")
 print()
 
-# T^yy = (ε+p)u^yu^y + p·g^yy + Π·Δ^yy - π^yy
+# T^yy = (ε+p)u^yu^y + p·g^yy + Π·Δ^yy + π^yy
 print("T^yy (spatial stress):")
 T22_perfect = 0.0  # u^y = 0
 T22_pressure = fields.pressure[i,j,k] * 1.0
 T22_bulk = fields.Pi[i,j,k] * Delta[i,j,k,2,2]
-T22_shear = -fields.pi_munu[i,j,k,2,2]  # MINUS sign (Convention B)
+T22_shear = fields.pi_munu[i,j,k,2,2]  # PLUS sign (IReD eq. 5)
 
 print(f"  Perfect fluid:    (ε+p)u^yu^y       = {T22_perfect:+.4f}")
 print(f"  Pressure:         p·g^yy            = {T22_pressure:+.4f}")
 print(f"  Bulk:             Π·Δ^yy            = {T22_bulk:+.4f}  (Δ^yy = {Delta[i,j,k,2,2]:.4f})")
-print(f"  Shear:            -π^yy             = {T22_shear:+.4f}  (π^yy = {fields.pi_munu[i,j,k,2,2]:+.4f})")
+print(f"  Shear:            +π^yy             = {T22_shear:+.4f}  (π^yy = {fields.pi_munu[i,j,k,2,2]:+.4f})")
 print(f"  ---")
 print(f"  Total:            T^yy              = {T[i,j,k,2,2]:+.4f}")
 print(f"  Computed sum:                       = {T22_perfect + T22_pressure + T22_bulk + T22_shear:+.4f}")
@@ -151,23 +154,23 @@ print("SIGN CONVENTION VERIFICATION")
 print("=" * 80)
 print()
 
-# Check Convention B sign: T^μν = ... - π^μν
-print("Convention B (Landau-Lifshitz): T^μν = ... - π^μν")
+# Check IReD sign: T^μν = ... + π^μν
+print("IReD Convention (eq. 5): T^μν = ... + π^μν")
 print()
 
 # For T^xx:
 # Π > 0 should ADD pressure (resist compression)
-# π^xx > 0 should SUBTRACT (dissipation opposes flow)
+# π^xx > 0 should ADD (anisotropic stress contribution)
 print(f"Bulk viscosity Π = {fields.Pi[i,j,k]:+.4f}:")
-print(f"  Appears as +Π in T^xx → increases pressure")
+print(f"  Appears as +Π in T^xx → increases pressure isotropically")
 print(f"  Effect: T^xx = p + Π + ... = {fields.pressure[i,j,k]:.4f} + {fields.Pi[i,j,k]:.4f} + ...")
 print()
 
 print(f"Shear stress π^xx = {fields.pi_munu[i,j,k,1,1]:+.4f}:")
-print(f"  Appears as -π^xx in T^xx → decreases pressure in x-direction")
-print(f"  This is ANISOTROPIC: compresses x, expands y")
-print(f"  T^xx = ... - π^xx = ... - ({fields.pi_munu[i,j,k,1,1]:+.4f}) = ... + {-fields.pi_munu[i,j,k,1,1]:+.4f}")
-print(f"  T^yy = ... - π^yy = ... - ({fields.pi_munu[i,j,k,2,2]:+.4f}) = ... + {-fields.pi_munu[i,j,k,2,2]:+.4f}")
+print(f"  Appears as +π^xx in T^xx → adds anisotropic stress in x-direction")
+print(f"  This is ANISOTROPIC: π^xx > 0 increases T^xx, π^yy < 0 decreases T^yy")
+print(f"  T^xx = ... + π^xx = ... + ({fields.pi_munu[i,j,k,1,1]:+.4f})")
+print(f"  T^yy = ... + π^yy = ... + ({fields.pi_munu[i,j,k,2,2]:+.4f})")
 print()
 
 # Verify signs match code
@@ -175,7 +178,7 @@ assert abs(T[i,j,k,1,1] - (T11_perfect + T11_pressure + T11_bulk + T11_shear)) <
 assert abs(T[i,j,k,2,2] - (T22_perfect + T22_pressure + T22_bulk + T22_shear)) < 1e-10
 
 print("✓ Component breakdown matches full tensor")
-print("✓ MINUS sign for shear stress verified (Convention B)")
+print("✓ PLUS sign for shear stress verified (IReD convention)")
 print("✓ PLUS sign for bulk viscosity verified")
 print()
 

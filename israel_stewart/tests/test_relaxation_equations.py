@@ -692,15 +692,12 @@ class TestEquilibriumRHS:
         """
         fields, relaxation, coeffs = equilibrium_setup
 
-        # Compute all required quantities
+        # Compute all required quantities (should all be zero at equilibrium)
         theta = relaxation._compute_expansion_scalar(fields.u_mu)
         sigma_munu = relaxation._compute_shear_tensor(fields.u_mu)
-
-        # For equilibrium (uniform fields), all spatial gradients are zero
-        # Use simple zero arrays instead of computing divergence to avoid grid.divergence() bug
-        div_n = np.zeros(fields.grid.shape)  # ∇·V = 0 at equilibrium
-        F_mu = np.zeros(fields.grid.shape + (4,))  # ∇P = 0 at equilibrium
-        I_mu = np.zeros(fields.grid.shape + (4,))  # ∇(μ/T) = 0 at equilibrium
+        div_n = relaxation._compute_diffusion_divergence(fields.V_mu)
+        F_mu = relaxation._compute_pressure_gradient(fields, fields.u_mu)
+        I_mu = relaxation._compute_chemical_potential_gradient(fields, fields.u_mu)
 
         dPi_dt = relaxation._bulk_rhs(
             Pi=fields.Pi,
@@ -717,6 +714,15 @@ class TestEquilibriumRHS:
         np.testing.assert_allclose(dPi_dt, 0.0, atol=1e-14)
         np.testing.assert_allclose(
             theta, 0.0, atol=1e-14, err_msg="Expansion scalar not zero at equilibrium"
+        )
+        np.testing.assert_allclose(
+            div_n, 0.0, atol=1e-14, err_msg="Diffusion divergence not zero at equilibrium"
+        )
+        np.testing.assert_allclose(
+            F_mu, 0.0, atol=1e-14, err_msg="Pressure gradient not zero at equilibrium"
+        )
+        np.testing.assert_allclose(
+            I_mu, 0.0, atol=1e-14, err_msg="Chemical potential gradient not zero at equilibrium"
         )
 
     def test_shear_rhs_equilibrium(self, equilibrium_setup) -> None:

@@ -520,19 +520,30 @@ class SpaceGrid:
             # Handle numerical Christoffel symbols
             if hasattr(christoffel, "shape") and isinstance(christoffel, np.ndarray):
                 # Trace: Γ^i_{ij} V^j (sum over i, j)
+                # For spatial divergence, extract spatial-spatial part of 4D Christoffel symbols
+                # christoffel shape: (4, 4, 4) for Γ^μ_νρ where μ,ν,ρ ∈ {0,1,2,3} (time + space)
+                # We need: Γ^i_{ij} for i,j ∈ {1,2,3} (spatial indices only)
                 from .tensor_utils import optimized_einsum
 
-                i_indices = np.arange(3)
-                gamma_trace = christoffel[i_indices, i_indices, :]  # Shape: (3, 3)
+                # Extract spatial-spatial part: indices [1,2,3] in 4D indexing
+                spatial_indices = [1, 2, 3]
+                gamma_trace = christoffel[spatial_indices, spatial_indices, :][
+                    :, spatial_indices
+                ]  # Shape: (3, 3)
                 christoffel_correction = optimized_einsum("ij,...j->...", gamma_trace, vector_field)
                 divergence += christoffel_correction
 
             # Handle symbolic Christoffel symbols
             elif hasattr(christoffel, "__getitem__"):
-                for i in range(3):
-                    for j in range(3):
-                        gamma_trace = christoffel[i, i, j]
-                        divergence += gamma_trace * vector_field[..., j]
+                # Symbolic Christoffel symbols not fully supported - use flat space
+                # This matches the approach in ISRelaxationEquations.__init__()
+                warnings.warn(
+                    "Symbolic Christoffel symbols not supported in divergence(). "
+                    "Using flat-space approximation.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                # Divergence already computed above from partial derivatives only
 
             return divergence
 

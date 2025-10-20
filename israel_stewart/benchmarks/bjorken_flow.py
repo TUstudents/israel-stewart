@@ -341,8 +341,10 @@ class BjorkenBenchmark:
         # Initialize fields
         self.fields = ISFieldConfiguration(grid)
 
+        # Get metric from grid, or create MilneMetric if not provided
+        self.metric = grid.metric if grid.metric is not None else MilneMetric()
+
         # Create spectral solver
-        self.metric = MilneMetric()
         self.solver = SpectralISHydrodynamics(grid, self.fields, coefficients)
 
         # Results storage
@@ -388,7 +390,9 @@ class BjorkenBenchmark:
         record_state(self.analytical.tau0, self.fields)
 
         # Evolve using spectral solver
+        # For Bjorken flow, time is proper time τ starting at tau0
         self.solver.evolve(
+            t_initial=self.analytical.tau0,
             t_final=final_time,
             dt=timestep,
             method=method,
@@ -805,12 +809,19 @@ def create_bjorken_benchmark_with_ired(
     # Create IReD transport coefficient model
     ired_model = HardSphereIReD(temperature=T0, cross_section=cross_section, truncation=truncation)
 
-    # Create pure 3D spatial grid
+    # Create Bjorken/Milne metric for proper curved spacetime evolution
+    # Initialize with tau0 for numerical evaluation
+    from ..core.metrics import BJorkenMetric
+
+    bjorken_metric = BJorkenMetric(tau_value=tau0)
+
+    # Create pure 3D spatial grid with Bjorken metric
     grid = SpaceGrid(
-        coordinate_system="cartesian",
+        coordinate_system="cartesian",  # Using cartesian coords but with Bjorken metric
         spatial_ranges=[(0.0, domain_size)] * 3,
         grid_points=grid_points,
         boundary_conditions="periodic",
+        metric=bjorken_metric,  # Pass the metric for proper Christoffel symbols
     )
 
     # Extract IReD transport coefficients

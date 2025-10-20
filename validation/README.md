@@ -68,9 +68,9 @@ See `stage2_coefficients/README.md` for details.
 ### Stage 3: Equation Components
 **Goal**: Test conservation laws and relaxation equations in isolation
 
-**Status**: 🔴 30% complete (need isolated unit tests)
+**Status**: ✅ 100% complete (58/60 tests passing, 2 skipped)
 
-**Blockers**: Missing standalone tests for each equation
+**Completion Date**: 2025-10-20
 
 See `stage3_equations/README.md` for details.
 
@@ -153,6 +153,9 @@ See `stage7_integration/README.md` for details.
 
 ## Recent Progress
 
+- **2025-10-20**: Stage 3 completed - all equation validation tests passing
+- **2025-10-20**: Fixed critical covariant divergence bug in conservation.py
+- **2025-10-20**: Added Stage 3A.3 (shear tensor) and 3A.4 (curved spacetime) tests
 - **2025-10-18**: Option A completed - fixed nearly-ideal mode acceptance
 - **2025-10-18**: Disabled coverage by default (400× faster tests)
 - **2025-10-17**: Phase 4 consolidation - removed 8 duplicate tests

@@ -1052,7 +1052,12 @@ class ISFieldConfiguration:
         if self.grid.metric is None:
             g_inv = np.broadcast_to(np.diag([-1, 1, 1, 1]), (*grid_shape, 4, 4))
         else:
-            g_inv = self.grid.metric.inverse
+            g_inv_raw = self.grid.metric.inverse
+            # Convert sympy matrices to numpy if needed
+            if hasattr(g_inv_raw, "tolist"):  # Sympy matrix
+                g_inv = np.array(g_inv_raw.tolist(), dtype=float)
+            else:
+                g_inv = g_inv_raw
             if g_inv.ndim == 2:
                 g_inv = np.broadcast_to(g_inv, (*grid_shape, 4, 4))
 

@@ -1013,21 +1013,41 @@ class MilneMetric(MetricBase):
     - x, y: transverse coordinates
 
     Line element: ds² = dτ² - τ²dη² - dx² - dy²
+
+    This metric can be evaluated numerically at a specific τ value for
+    computational efficiency during time evolution.
     """
 
-    def __init__(self, coordinates: list[str] | None = None):
+    def __init__(self, coordinates: list[str] | None = None, tau_value: float | None = None):
         """
         Initialize Milne metric.
 
         Args:
             coordinates: Coordinate names (default: ['tau', 'eta', 'x', 'y'])
+            tau_value: If provided, evaluate metric numerically at this proper time τ
         """
         default_coords = ["tau", "eta", "x", "y"]
         super().__init__(coordinates or default_coords)
 
+        # Store current tau value for numerical evaluation
+        self._tau_value = tau_value
+
+        # Cache for numerical evaluation
+        self._numerical_components = None
+        self._numerical_inverse = None
+        self._numerical_christoffel = None
+
+        # Pre-compute numerical values if tau_value provided
+        if tau_value is not None:
+            self._evaluate_at_tau(tau_value)
+
     @property
-    def components(self) -> sp.Matrix:
-        """Return Milne metric components as symbolic matrix."""
+    def components(self) -> sp.Matrix | np.ndarray:
+        """Return Milne metric components (numerical if evaluated, else symbolic)."""
+        if self._numerical_components is not None:
+            return self._numerical_components
+
+        # Return symbolic form
         tau = sp.Symbol("tau", positive=True)
 
         # Milne metric: diag(1, -τ², -1, -1)
@@ -1038,6 +1058,69 @@ class MilneMetric(MetricBase):
         metric[3, 3] = -1  # -dy²
 
         return metric
+
+    @cached_property
+    def inverse(self) -> np.ndarray | sp.Matrix:
+        """Return inverse metric (numerical if evaluated, else symbolic)."""
+        if self._numerical_inverse is not None:
+            return self._numerical_inverse
+
+        # Fall back to base class symbolic inversion
+        return super().inverse
+
+    @cached_property
+    def christoffel_symbols(self) -> np.ndarray | sp.Array:
+        """Return Christoffel symbols (numerical if evaluated, else symbolic)."""
+        if self._numerical_christoffel is not None:
+            return self._numerical_christoffel
+
+        # Fall back to base class symbolic computation
+        return super().christoffel_symbols
+
+    def _evaluate_at_tau(self, tau_value: float) -> None:
+        """
+        Evaluate metric numerically at specific proper time τ.
+
+        This pre-computes metric, inverse, and Christoffel symbols for
+        computational efficiency during time evolution.
+
+        Args:
+            tau_value: Proper time τ at which to evaluate
+        """
+        self._tau_value = tau_value
+
+        # Evaluate metric components
+        # Milne metric: diag(1, -τ², -1, -1)
+        self._numerical_components = np.diag([1.0, -(tau_value**2), -1.0, -1.0])
+
+        # Inverse: diag(1, -1/τ², -1, -1)
+        self._numerical_inverse = np.diag([1.0, -1.0 / (tau_value**2), -1.0, -1.0])
+
+        # Christoffel symbols for Milne metric
+        # Only non-zero components are:
+        # Γ^τ_ηη = τ
+        # Γ^η_τη = Γ^η_ητ = 1/τ
+        self._numerical_christoffel = np.zeros((4, 4, 4))
+        self._numerical_christoffel[0, 1, 1] = tau_value  # Γ^τ_ηη
+        self._numerical_christoffel[1, 0, 1] = 1.0 / tau_value  # Γ^η_τη
+        self._numerical_christoffel[1, 1, 0] = 1.0 / tau_value  # Γ^η_ητ
+
+        # Clear cached properties to force re-evaluation
+        if "inverse" in self.__dict__:
+            del self.__dict__["inverse"]
+        if "christoffel_symbols" in self.__dict__:
+            del self.__dict__["christoffel_symbols"]
+
+    def update_tau(self, tau_value: float) -> None:
+        """
+        Update metric evaluation to new proper time τ.
+
+        Call this during time evolution to update the metric to the current time.
+
+        Args:
+            tau_value: New proper time τ
+        """
+        self._evaluate_at_tau(tau_value)
 
     @property
     def signature(self) -> tuple[int, int, int, int]:
@@ -1057,9 +1140,14 @@ class BJorkenMetric(MilneMetric):
     commonly used in relativistic heavy-ion collisions.
     """
 
-    def __init__(self) -> None:
-        """Initialize Bjorken flow metric."""
-        super().__init__(["tau", "eta", "x", "y"])
+    def __init__(self, tau_value: float | None = None) -> None:
+        """
+        Initialize Bjorken flow metric.
+
+        Args:
+            tau_value: If provided, evaluate metric numerically at this proper time τ
+        """
+        super().__init__(["tau", "eta", "x", "y"], tau_value=tau_value)
 
 
 class FLRWMetric(MetricBase):

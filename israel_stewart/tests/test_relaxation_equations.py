@@ -780,5 +780,13 @@ class TestEquilibriumRHS:
         np.testing.assert_allclose(dV_dt, 0.0, atol=1e-14)
 
 
+# ============================================================================
+# NOTE: Stage 3B tests are already covered by existing tests:
+# - Stage 3B.1 (equilibrium): test_bulk_rhs_equilibrium, test_shear_rhs_equilibrium
+# - Stage 3B.2 (first-order sources): test_bulk_rhs_physics, test_shear_rhs_physics
+# - Stage 3B.3 (second-order couplings): test_second_order_coupling_effects
+# ============================================================================
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

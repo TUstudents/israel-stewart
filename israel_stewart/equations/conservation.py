@@ -210,21 +210,38 @@ class ConservationLaws:
                 dmom_dt[..., j - 1] = -self.fields.grid.divergence(momentum_flux_vector, order=2)
 
         # Add Christoffel symbol corrections if metric is not flat
+        # Correct formula: ∂_t T^0ν = -∇_i T^iν
+        # Where: ∇_i T^iν = ∂_i T^iν + Γ^i_{iλ}T^λν + Γ^ν_{iλ}T^iλ
+        # (sum over repeated spatial index i and all indices λ)
         if self.metric and not self.metric.is_flat():
             christoffel = self.covariant_derivative.christoffel_symbols
 
-            # Energy: connection terms for spatial divergence only
-            for i in range(1, 4):
-                for lam in range(4):
-                    drho_dt -= christoffel[i, i, lam] * T[..., lam, 0]
-                    drho_dt -= christoffel[0, i, lam] * T[..., i, lam]
+            # Energy equation (ν=0): ∂_t T^00 = -∇_i T^i0
+            # Connection terms: Γ^i_{iλ}T^λ0 + Γ^0_{iλ}T^iλ
+            connection_energy = np.zeros(grid_shape)
+            for i in range(1, 4):  # Sum over spatial indices i=1,2,3
+                for lam in range(4):  # Sum over all indices λ=0,1,2,3
+                    # First connection term: Γ^i_{iλ}T^λ0
+                    connection_energy += christoffel[i, i, lam] * T[..., lam, 0]
+                    # Second connection term: Γ^0_{iλ}T^iλ
+                    connection_energy += christoffel[0, i, lam] * T[..., i, lam]
 
-            # Momentum: connection terms for spatial divergence only
-            for j in range(1, 4):
-                for i in range(1, 4):
-                    for lam in range(4):
-                        dmom_dt[..., j - 1] -= christoffel[i, i, lam] * T[..., lam, j]
-                        dmom_dt[..., j - 1] -= christoffel[j, i, lam] * T[..., i, lam]
+            # Apply correction: ∂_t T^00 = -∂_i T^i0 - (connection terms)
+            drho_dt -= connection_energy
+
+            # Momentum equations (ν=j, j=1,2,3): ∂_t T^0j = -∇_i T^ij
+            # Connection terms: Γ^i_{iλ}T^λj + Γ^j_{iλ}T^iλ
+            for j in range(1, 4):  # For each momentum component ν=j
+                connection_momentum = np.zeros(grid_shape)
+                for i in range(1, 4):  # Sum over spatial indices i=1,2,3
+                    for lam in range(4):  # Sum over all indices λ=0,1,2,3
+                        # First connection term: Γ^i_{iλ}T^λj
+                        connection_momentum += christoffel[i, i, lam] * T[..., lam, j]
+                        # Second connection term: Γ^j_{iλ}T^iλ
+                        connection_momentum += christoffel[j, i, lam] * T[..., i, lam]
+
+                # Apply correction: ∂_t T^0j = -∂_i T^ij - (connection terms)
+                dmom_dt[..., j - 1] -= connection_momentum
 
         # Particle number conservation: ∂_t n = -∂_i N^i = -∂_i (n u^i + V^i)
         # Landau frame: N^i = n u^i + V^i (particle current includes diffusion)

@@ -14,7 +14,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from israel_stewart.core import ISFieldConfiguration
+from israel_stewart.core import ISFieldConfiguration, TransportCoefficients
 from israel_stewart.core.metrics import MinkowskiMetric
 from israel_stewart.core.spacegrid import SpaceGrid
 from israel_stewart.equations import ConservationLaws
@@ -697,6 +697,159 @@ def test_different_thermodynamic_states(rho: float, pressure: float) -> None:
     expected_T11 = pressure
     np.testing.assert_allclose(T[..., 0, 0], expected_T00, rtol=1e-12)
     np.testing.assert_allclose(T[..., 1, 1], expected_T11, rtol=1e-12)
+
+
+# ============================================================================
+# Stage 3A Tests: Missing critical unit tests from validation plan
+# ============================================================================
+
+
+def test_shear_tensor_calculation() -> None:
+    """
+    Test shear tensor calculation σ^μν.
+
+    Stage 3A.3: Verify that _compute_shear_tensor correctly computes the rate
+    of shear deformation for a simple shearing velocity field.
+
+    For a shearing flow u^x = α·y, the shear tensor σ^xy should be non-zero.
+    """
+    from israel_stewart.equations.relaxation import ISRelaxationEquations
+
+    # Create grid with explicit Minkowski metric
+    metric = MinkowskiMetric()
+    grid = SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 1.0)] * 3,
+        grid_points=(8, 8, 8),
+        boundary_conditions="periodic",
+        metric=metric,
+    )
+
+    # Setup shearing velocity field: u^x = 0.1 * y
+    fields = ISFieldConfiguration(grid)
+    fields.rho[:] = 1.0
+    fields.pressure[:] = 1.0 / 3.0
+
+    # Rest frame initially
+    fields.u_mu[..., 0] = 1.0
+    fields.u_mu[..., 1:4] = 0.0
+
+    # Add small shear in x-direction proportional to y
+    _, Y, _ = grid.meshgrid()
+    shear_amplitude = 0.1
+    fields.u_mu[..., 1] = shear_amplitude * Y  # u^x = 0.1 * y
+
+    # Renormalize four-velocity
+    fields.normalize_four_velocity()
+
+    # Compute shear tensor using ISRelaxationEquations
+    coeffs = TransportCoefficients(shear_viscosity=0.1, shear_relaxation_time=0.5)
+    relaxation = ISRelaxationEquations(grid, metric, coeffs)
+    sigma = relaxation._compute_shear_tensor(fields.u_mu)
+
+    # For shearing flow u^x = α·y, we expect σ^xy ≠ 0
+    # The shear tensor is traceless and symmetric
+    # Check that shear tensor has non-zero xy component
+    sigma_xy_mean = np.abs(np.mean(sigma[..., 1, 2]))  # x=1, y=2 indices
+
+    assert sigma_xy_mean > 1e-10, "Shear tensor should have non-zero xy component for shearing flow"
+
+    # Verify tracelessness: g_μν σ^μν = 0 at each grid point
+    # For Minkowski metric: trace = -σ^00 + σ^11 + σ^22 + σ^33
+    trace = -sigma[..., 0, 0] + sigma[..., 1, 1] + sigma[..., 2, 2] + sigma[..., 3, 3]
+
+    np.testing.assert_allclose(trace, 0.0, atol=1e-10, err_msg="Shear tensor must be traceless")
+
+    # Verify symmetry: σ^μν = σ^νμ
+    for mu in range(4):
+        for nu in range(4):
+            np.testing.assert_allclose(
+                sigma[..., mu, nu],
+                sigma[..., nu, mu],
+                atol=1e-14,
+                err_msg=f"Shear tensor must be symmetric: σ^{mu}{nu} = σ^{nu}{mu}",
+            )
+
+
+def test_covariant_divergence_curved_spacetime() -> None:
+    """
+    Test covariant divergence in curved spacetime with Christoffel symbols.
+
+    Stage 3A.4: This validates the critical bug fix where connection terms
+    were incorrectly summed. For Bjorken/Milne metric:
+
+        ∇_i T^iν = ∂_i T^iν + Γ^i_{iλ}T^λν + Γ^ν_{iλ}T^iλ
+
+    For uniform Bjorken flow at proper time τ, the energy equation should give:
+        drho/dt = -(ρ + p)/τ
+    """
+    from israel_stewart.core.metrics import MilneMetric
+
+    # Setup: uniform Bjorken flow at τ = 1.0 fm/c
+    tau = 1.0
+    metric = MilneMetric(tau_value=tau)
+
+    grid = SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 1.0)] * 3,
+        grid_points=(4, 4, 4),
+        boundary_conditions="periodic",
+        metric=metric,
+    )
+
+    # Radiation fluid: p = ρ/3
+    fields = ISFieldConfiguration(grid)
+    fields.rho[:] = 1.0
+    fields.pressure[:] = 1.0 / 3.0
+    fields.u_mu[..., 0] = 1.0  # Rest frame
+    fields.Pi[:] = 0.0
+    fields.pi_munu[:] = 0.0
+    fields.V_mu[:] = 0.0
+
+    # Compute evolution equations
+    conservation = ConservationLaws(fields)
+    rhs = conservation.evolution_equations()
+
+    # For Bjorken flow: drho/dt = -(ρ + p)/τ
+    expected_drho_dt = -(fields.rho[0, 0, 0] + fields.pressure[0, 0, 0]) / tau
+
+    drho_dt_computed = np.mean(rhs["drho_dt"])
+
+    # Verify connection terms give correct Bjorken expansion rate
+    np.testing.assert_allclose(
+        drho_dt_computed,
+        expected_drho_dt,
+        rtol=1e-10,
+        err_msg=f"Covariant divergence in Milne metric: expected {expected_drho_dt:.6f}, got {drho_dt_computed:.6f}",
+    )
+
+    # Additional check: in flat space, connection terms should vanish
+    grid_flat = SpaceGrid(
+        coordinate_system="cartesian",
+        spatial_ranges=[(0.0, 1.0)] * 3,
+        grid_points=(4, 4, 4),
+        boundary_conditions="periodic",
+        # No metric → Minkowski
+    )
+
+    fields_flat = ISFieldConfiguration(grid_flat)
+    fields_flat.rho[:] = 1.0
+    fields_flat.pressure[:] = 1.0 / 3.0
+    fields_flat.u_mu[..., 0] = 1.0
+    fields_flat.Pi[:] = 0.0
+    fields_flat.pi_munu[:] = 0.0
+    fields_flat.V_mu[:] = 0.0
+
+    conservation_flat = ConservationLaws(fields_flat)
+    rhs_flat = conservation_flat.evolution_equations()
+
+    # Uniform fields in flat space → no evolution
+    np.testing.assert_allclose(
+        rhs_flat["drho_dt"],
+        0.0,
+        atol=1e-14,
+        err_msg="Flat space with uniform fields should have drho/dt = 0",
+    )
 
 
 if __name__ == "__main__":

@@ -2166,13 +2166,16 @@ class SpectralISHydrodynamics:
         operator splitting errors.
 
         RK4 stages:
-            k1 = F(y_n)
-            k2 = F(y_n + dt/2 * k1)
-            k3 = F(y_n + dt/2 * k2)
-            k4 = F(y_n + dt * k3)
+            k1 = F(y_n, t_n)
+            k2 = F(y_n + dt/2 * k1, t_n + dt/2)
+            k3 = F(y_n + dt/2 * k2, t_n + dt/2)
+            k4 = F(y_n + dt * k3, t_n + dt)
             y_{n+1} = y_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
 
         This is O(dt⁴) accurate vs O(dt²) for split-step methods.
+
+        Note: For time-dependent metrics (e.g., Bjorken flow), the metric must be
+        updated at each RK4 stage to use the correct Christoffel symbols.
         """
         # Save initial state
         rho_0 = self.fields.rho.copy()
@@ -2182,18 +2185,30 @@ class SpectralISHydrodynamics:
         pi_munu_0 = self.fields.pi_munu.copy()
         V_mu_0 = self.fields.V_mu.copy()
 
-        # Stage 1: k1 = F(y_n)
+        # Get current time from evolve loop (stored in self._current_time)
+        # If not set, default to 0 (backward compatibility)
+        t_current = getattr(self, "_current_time", 0.0)
+
+        # Stage 1: k1 = F(y_n, t_n)
+        # Metric already at t_current from evolve loop
         k1 = self._compute_full_coupled_rhs(self.fields)
 
-        # Stage 2: k2 = F(y_n + dt/2 * k1)
+        # Stage 2: k2 = F(y_n + dt/2 * k1, t_n + dt/2)
+        if hasattr(self.grid, "metric") and self.grid.metric is not None:
+            if hasattr(self.grid.metric, "update_tau"):
+                self.grid.metric.update_tau(t_current + dt / 2)
         self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k1, dt / 2)
         k2 = self._compute_full_coupled_rhs(self.fields)
 
-        # Stage 3: k3 = F(y_n + dt/2 * k2)
+        # Stage 3: k3 = F(y_n + dt/2 * k2, t_n + dt/2)
+        # Metric already at t_current + dt/2
         self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k2, dt / 2)
         k3 = self._compute_full_coupled_rhs(self.fields)
 
-        # Stage 4: k4 = F(y_n + dt * k3)
+        # Stage 4: k4 = F(y_n + dt * k3, t_n + dt)
+        if hasattr(self.grid, "metric") and self.grid.metric is not None:
+            if hasattr(self.grid.metric, "update_tau"):
+                self.grid.metric.update_tau(t_current + dt)
         self._update_fields_from_rhs(rho_0, n_0, u_mu_0, Pi_0, pi_munu_0, V_mu_0, k3, dt)
         k4 = self._compute_full_coupled_rhs(self.fields)
 
@@ -2594,6 +2609,7 @@ class SpectralISHydrodynamics:
         self,
         t_final: float,
         dt: float | None = None,
+        t_initial: float = 0.0,
         method: str = "spectral_imex",
         output_callback: Callable | None = None,
         callback: Callable[[float, "ISFieldConfiguration"], None] | None = None,
@@ -2601,11 +2617,12 @@ class SpectralISHydrodynamics:
         snapshot_config: dict[str, Any] | None = None,
     ) -> None:
         """
-        Evolve hydrodynamics from t=0 to t_final using time stepping.
+        Evolve hydrodynamics from t_initial to t_final using time stepping.
 
         Args:
             t_final: Final simulation time
             dt: Timestep (uses adaptive stepping if None)
+            t_initial: Initial simulation time (default: 0.0)
             method: Integration method ('spectral_imex', 'rk4', etc.)
             output_callback: Optional callback for data output (called every step as callback(t, step, fields))
             callback: Optional simple callback for monitoring (called as callback(t, fields))
@@ -2662,7 +2679,7 @@ class SpectralISHydrodynamics:
 
             # Save initial state if requested
             if snapshot_config.get("save_initial", True):
-                stream.save(0.0, self.fields)
+                stream.save(t_initial, self.fields)
 
         elif save_trajectory is not None:
             # Old trajectory writer (backward compatibility)
@@ -2676,11 +2693,11 @@ class SpectralISHydrodynamics:
 
             # Write initial state if requested
             if save_trajectory.get("save_initial", True):
-                trajectory_writer.write_snapshot(0.0, self.fields)
+                trajectory_writer.write_snapshot(t_initial, self.fields)
 
-        t = 0.0
+        t = t_initial
         step = 0
-        last_snapshot_time = 0.0
+        last_snapshot_time = t_initial
         snapshot_interval = save_trajectory.get("interval", 0.1) if save_trajectory else None
 
         try:
@@ -2692,6 +2709,16 @@ class SpectralISHydrodynamics:
                     dt_step = dt
 
                 dt_step = min(dt_step, t_final - t)  # Don't overshoot
+
+                # Update time-dependent metric if present (e.g., Bjorken flow)
+                # Store current time for RK4 to access
+                self._current_time = t
+
+                if hasattr(self.grid, "metric") and self.grid.metric is not None:
+                    if hasattr(self.grid.metric, "update_tau"):
+                        # Update metric to current time before computing RHS
+                        # For RK4, intermediate stages will update metric to t+dt/2 and t+dt
+                        self.grid.metric.update_tau(t)
 
                 # Advance one time step with specified method
                 self.time_step(dt_step, method=method)

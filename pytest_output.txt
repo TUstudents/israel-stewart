@@ -1,0 +1,305 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.8, pytest-8.4.2, pluggy-1.6.0 -- /home/user/israel-stewart/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/user/israel-stewart
+configfile: pyproject.toml
+testpaths: tests
+plugins: xdist-3.8.0, timeout-2.4.0, cov-7.0.0
+collecting ... collected 62 items
+
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved XFAIL [  1%]
+tests/test_logging_config.py::TestLoggingConfig::test_basic_logging_configuration PASSED [  3%]
+tests/test_logging_config.py::TestLoggingConfig::test_environment_file_logging PASSED [  4%]
+tests/test_logging_config.py::TestLoggingConfig::test_environment_variable_configuration PASSED [  6%]
+tests/test_logging_config.py::TestLoggingConfig::test_file_logging_configuration PASSED [  8%]
+tests/test_logging_config.py::TestLoggingConfig::test_get_logger PASSED  [  9%]
+tests/test_logging_config.py::TestLoggingConfig::test_logging_status PASSED [ 11%]
+tests/test_logging_config.py::TestLoggingConfig::test_memory_debugging_toggle PASSED [ 12%]
+tests/test_logging_config.py::TestLoggingConfig::test_memory_tracking_configuration PASSED [ 14%]
+tests/test_logging_config.py::TestLoggingConfig::test_performance_logging_configuration PASSED [ 16%]
+tests/test_logging_config.py::TestLoggingConfig::test_performance_logging_toggle PASSED [ 17%]
+tests/test_logging_config.py::TestLoggingConfig::test_runtime_log_level_adjustment PASSED [ 19%]
+tests/test_logging_config.py::TestLoggerClasses::test_performance_logger PASSED [ 20%]
+tests/test_logging_config.py::TestLoggerClasses::test_physics_logger PASSED [ 22%]
+tests/test_logging_config.py::TestLoggingIntegration::test_logger_isolation PASSED [ 24%]
+tests/test_logging_config.py::TestLoggingIntegration::test_third_party_logger_levels PASSED [ 25%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_fallback_mechanism_logging FAILED [ 27%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_memory_usage_logging FAILED [ 29%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_performance_monitoring_logging FAILED [ 30%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_physics_logger_integration FAILED [ 32%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_slow_operation_logging FAILED [ 33%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_solver_error_logging FAILED [ 35%]
+tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_solver_warning_logging_integration FAILED [ 37%]
+tests/test_solver_logging_integration.py::TestPerformanceImpact::test_disabled_logger_performance PASSED [ 38%]
+tests/test_solver_logging_integration.py::TestPerformanceImpact::test_logging_overhead PASSED [ 40%]
+tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_initialization PASSED [ 41%]
+tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_lax_friedrichs_flux FAILED [ 43%]
+tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_first_derivative_accuracy FAILED [ 45%]
+tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_second_derivative_vectorization FAILED [ 46%]
+tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_christoffel_contributions_flat_space PASSED [ 48%]
+tests/test_solvers/test_finite_difference.py::TestUpwindFiniteDifference::test_upwind_derivative_vectorization FAILED [ 50%]
+tests/test_solvers/test_finite_difference.py::TestUpwindFiniteDifference::test_characteristic_speeds FAILED [ 51%]
+tests/test_solvers/test_finite_difference.py::TestUpwindFiniteDifference::test_godunov_flux_selection PASSED [ 53%]
+tests/test_solvers/test_finite_difference.py::TestWENOFiniteDifference::test_weno_initialization PASSED [ 54%]
+tests/test_solvers/test_finite_difference.py::TestWENOFiniteDifference::test_weno5_smoothness_indicators PASSED [ 56%]
+tests/test_solvers/test_finite_difference.py::TestWENOFiniteDifference::test_weno_weights_normalization PASSED [ 58%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_conservative_solver ERROR [ 59%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_upwind_solver ERROR [ 61%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_weno_solver ERROR [ 62%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_invalid_solver_type ERROR [ 64%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceIntegration::test_conservative_with_tensor_divergence ERROR [ 66%]
+tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceIntegration::test_performance_vs_accuracy_tradeoff ERROR [ 67%]
+tests/test_trajectory_io.py::test_trajectory_writer_creation PASSED      [ 69%]
+tests/test_trajectory_io.py::test_write_single_snapshot PASSED           [ 70%]
+tests/test_trajectory_io.py::test_write_multiple_snapshots PASSED        [ 72%]
+tests/test_trajectory_io.py::test_read_trajectory PASSED                 [ 74%]
+tests/test_trajectory_io.py::test_round_trip_data_integrity PASSED       [ 75%]
+tests/test_trajectory_io.py::test_get_snapshot_at_time PASSED            [ 77%]
+tests/test_trajectory_io.py::test_field_timeseries PASSED                [ 79%]
+tests/test_trajectory_io.py::test_context_manager PASSED                 [ 80%]
+tests/test_trajectory_io.py::test_metadata_preservation PASSED           [ 82%]
+tests/test_trajectory_io.py::test_max_snapshots_limit PASSED             [ 83%]
+tests/test_trajectory_io.py::test_compression PASSED                     [ 85%]
+tests/test_trajectory_io.py::test_all_fields_saved[rho] PASSED           [ 87%]
+tests/test_trajectory_io.py::test_all_fields_saved[pressure] PASSED      [ 88%]
+tests/test_trajectory_io.py::test_all_fields_saved[temperature] PASSED   [ 90%]
+tests/test_trajectory_io.py::test_all_fields_saved[Pi] PASSED            [ 91%]
+tests/test_trajectory_io.py::test_all_fields_saved[u_mu] PASSED          [ 93%]
+tests/test_trajectory_io.py::test_all_fields_saved[q_mu] PASSED          [ 95%]
+tests/test_trajectory_io.py::test_all_fields_saved[pi_munu] PASSED       [ 96%]
+tests/test_trajectory_io.py::test_reader_repr PASSED                     [ 98%]
+tests/test_trajectory_io.py::test_snapshot_stream_with_spacegrid PASSED  [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of TestFiniteDifferenceFactory.test_create_conservative_solver _
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 299
+      def test_create_conservative_solver(self, simple_grid, flat_metric):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:299
+___ ERROR at setup of TestFiniteDifferenceFactory.test_create_upwind_solver ____
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 306
+      def test_create_upwind_solver(self, simple_grid, flat_metric):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:306
+____ ERROR at setup of TestFiniteDifferenceFactory.test_create_weno_solver _____
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 313
+      def test_create_weno_solver(self, simple_grid, flat_metric):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:313
+____ ERROR at setup of TestFiniteDifferenceFactory.test_invalid_solver_type ____
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 320
+      def test_invalid_solver_type(self, simple_grid, flat_metric):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:320
+_ ERROR at setup of TestFiniteDifferenceIntegration.test_conservative_with_tensor_divergence _
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 329
+      def test_conservative_with_tensor_divergence(self, simple_grid, flat_metric):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:329
+_ ERROR at setup of TestFiniteDifferenceIntegration.test_performance_vs_accuracy_tradeoff _
+file /home/user/israel-stewart/tests/test_solvers/test_finite_difference.py, line 343
+      def test_performance_vs_accuracy_tradeoff(self, simple_grid, flat_metric, test_field_1d):
+E       fixture 'simple_grid' not found
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, cov, doctest_namespace, ired_regime_valid_coarse, ired_regime_valid_large_domain, medium_grid_3d, memory_check_per_test, memory_protection, monkeypatch, no_cover, periodic_grid_3d, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, small_grid_3d, test_coeffs, test_fields_3d, test_fields_wave, testrun_uid, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, worker_id
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/user/israel-stewart/tests/test_solvers/test_finite_difference.py:343
+=================================== FAILURES ===================================
+_________ TestSolverLoggingIntegration.test_fallback_mechanism_logging _________
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+____________ TestSolverLoggingIntegration.test_memory_usage_logging ____________
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+_______ TestSolverLoggingIntegration.test_performance_monitoring_logging _______
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+_________ TestSolverLoggingIntegration.test_physics_logger_integration _________
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+___________ TestSolverLoggingIntegration.test_slow_operation_logging ___________
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+____________ TestSolverLoggingIntegration.test_solver_error_logging ____________
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+_____ TestSolverLoggingIntegration.test_solver_warning_logging_integration _____
+tests/test_solver_logging_integration.py:44: in setUp
+    self.fields = ISFieldConfiguration(self.grid)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+__________ TestConservativeFiniteDifference.test_lax_friedrichs_flux ___________
+tests/test_solvers/test_finite_difference.py:98: in test_lax_friedrichs_flux
+    assert flux.shape == tuple(expected_shape)
+E   AssertionError: assert (20, 13, 16) == (20, 14, 16)
+E     
+E     At index 1 diff: 13 != 14
+E     
+E     Full diff:
+E       (
+E           20,
+E     -     14,...
+E     
+E     ...Full output truncated (5 lines hidden), use '-vv' to show
+_______ TestConservativeFiniteDifference.test_first_derivative_accuracy ________
+tests/test_solvers/test_finite_difference.py:119: in test_first_derivative_accuracy
+    error = np.abs(computed_deriv - analytical_3d)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ValueError: operands could not be broadcast together with shapes (16,13,16) (16,16,16)
+____ TestConservativeFiniteDifference.test_second_derivative_vectorization _____
+tests/test_solvers/test_finite_difference.py:135: in test_second_derivative_vectorization
+    result = solver._compute_second_derivative(field, axis=1, spatial_dim=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/solvers/finite_difference.py:486: in _compute_second_derivative
+    derivative = np.sum(np.stack(stencil_arrays, axis=0), axis=0)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/_core/shape_base.py:460: in stack
+    raise ValueError('all input arrays must have the same shape')
+E   ValueError: all input arrays must have the same shape
+_______ TestUpwindFiniteDifference.test_upwind_derivative_vectorization ________
+tests/test_solvers/test_finite_difference.py:174: in test_upwind_derivative_vectorization
+    result = solver._compute_upwind_derivative(
+israel_stewart/solvers/finite_difference.py:951: in _compute_upwind_derivative
+    derivative = np.sum(np.stack(stencil_contributions, axis=0), axis=0)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/_core/shape_base.py:460: in stack
+    raise ValueError('all input arrays must have the same shape')
+E   ValueError: all input arrays must have the same shape
+____________ TestUpwindFiniteDifference.test_characteristic_speeds _____________
+tests/test_solvers/test_finite_difference.py:186: in test_characteristic_speeds
+    fields = ISFieldConfiguration(simple_grid)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+israel_stewart/core/fields.py:615: in __init__
+    raise TypeError(
+E   TypeError: grid must be a SpaceGrid instance, got SpacetimeGrid. For pure 3D evolution, use SpaceGrid instead of SpacetimeGrid.
+=============================== warnings summary ===============================
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved
+  /home/user/israel-stewart/israel_stewart/solvers/spectral.py:1103: UserWarning: Maximum |τω| = 13.86 > 1. Outside Israel-Stewart regime of applicability. (k_max = 24.00, τ_max = 1.000, c_s = 0.577). Results may be unphysical with instabilities at high wavenumbers. Consider reducing k_max (coarser grid) or relaxation times. See Wagner & Gavassino (2024) and HIGH_K_INSTABILITY_RESOLUTION.md.
+    self.spectral = SpectralISolver(grid, fields, coeffs)
+
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved
+  <string>:13: UserWarning: Negative attenuation indicates instability
+
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved
+  <string>:13: UserWarning: Sound speed outside physical range [0,1]
+
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved
+  /home/user/israel-stewart/tests/test_eigenmode_preservation.py:51: UserWarning: Only viscous modes found for k=1.0. Using simplified initialization.
+    benchmark.setup_initial_conditions(wave_number=k)
+
+tests/test_eigenmode_preservation.py::test_eigenmode_ratios_are_preserved
+  /home/user/israel-stewart/israel_stewart/equations/conservation.py:82: UserWarning: Computing stress-energy tensor without enforcing constraints
+    return self.fields.compute_stress_energy_tensor()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.8-final-0 ________________
+
+Name                                            Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------------
+israel_stewart/benchmarks/bjorken_flow.py         279    279     0%   9-851
+israel_stewart/benchmarks/diffusion_flow.py       146    146     0%   30-622
+israel_stewart/benchmarks/equilibration.py        353    353     0%   28-1023
+israel_stewart/benchmarks/sound_waves.py          843    525    38%   77, 195-196, 215, 219, 224, 226, 230, 236-238, 246, 263, 268, 307, 371-372, 457-473, 479, 493, 502, 512, 522, 543, 558, 564, 568, 596, 603, 616, 631-664, 678, 691-704, 719-720, 733-764, 783-790, 794-819, 824-849, 860-887, 896-907, 916-921, 930-935, 945-976, 1006-1017, 1033-1034, 1048-1050, 1066, 1121, 1158-1167, 1179, 1183, 1187, 1189, 1203-1280, 1369-1490, 1512, 1543-1566, 1584-1669, 1691-1747, 1765-1811, 1826-1840, 1857-1880, 1914-1961, 1967-1991, 2004-2047, 2051-2074, 2086-2110, 2155, 2201-2229
+israel_stewart/core/constants.py                   89     37    58%   83, 88-89, 94, 99-100, 150-160, 179-182, 195-197, 213-217, 235, 237, 254, 263-264, 273, 282-283, 302-304, 318
+israel_stewart/core/derivatives.py                427    373    13%   23-27, 41, 64, 84-156, 172-211, 234-242, 269-287, 316-344, 373-401, 418-444, 459-480, 484-490, 500-521, 532-599, 605-615, 621-631, 641-663, 683-696, 707-728, 739-760, 778-783, 809-826, 845-887, 894-899, 910-918, 933-979, 996-1033, 1046-1060, 1072-1090, 1102-1118, 1130-1154, 1173-1176, 1194-1206
+israel_stewart/core/fields.py                     393    221    44%   22-23, 34, 69-79, 83-87, 91-96, 101-103, 110, 121, 133-154, 157, 179-183, 187-192, 198-211, 216-220, 225, 229-230, 234-235, 238-239, 323, 358, 360, 384, 394-396, 404-415, 430-465, 495-501, 506-510, 525-540, 560-564, 573, 651, 675, 696-734, 746, 764-790, 795-796, 814-825, 829-848, 852-879, 883-900, 905-916, 940-949, 1009-1019, 1053, 1060, 1092-1128, 1177-1180, 1194
+israel_stewart/core/four_vectors.py               228    184    19%   25, 50-67, 72, 77, 82, 87, 92, 105-140, 149, 158-162, 178-199, 213-242, 256-285, 297-313, 326-372, 385-420, 436-450, 455, 460-461, 478-486, 497-500, 511, 522-526, 538-539, 551-561
+israel_stewart/core/memory_optimization.py        151     80    47%   17-21, 55-67, 76-83, 87-90, 101-103, 137-140, 159-166, 181-193, 209-212, 224-226, 250-254, 268-269, 286-292, 307-312, 331-333, 337, 342-357, 364-368, 379-383, 416-418, 423
+israel_stewart/core/metrics.py                    474    369    22%   20-24, 63, 88, 101-136, 146-154, 169-172, 183-185, 197-208, 226-238, 253-304, 322-353, 358-410, 423-430, 444, 466-565, 585-679, 698-779, 802-809, 823, 835-860, 864, 891-894, 904, 914-917, 930-934, 947-951, 964-965, 987-998, 1003, 1029-1042, 1047-1060, 1065-1069, 1074-1078, 1090-1112, 1123, 1128, 1132, 1150, 1168-1170, 1175-1189, 1194, 1198, 1216-1217, 1222-1235, 1240, 1244
+israel_stewart/core/performance.py                361    279    23%   32-39, 68-117, 127-129, 144-190, 199-237, 241-275, 279-282, 333-391, 409, 421, 425, 434-444, 448-461, 472-501, 505-536, 540-556, 560-574, 578-630, 634-676, 680-689, 699, 704, 727, 741-749, 759, 769, 774-775, 790-813, 849-865, 881-897, 913-922, 939-950, 959-992, 996, 1000, 1004, 1013, 1023, 1037-1041
+israel_stewart/core/spacegrid.py                  255    183    28%   40, 119, 125, 131, 137, 142, 149, 160-179, 188-197, 219, 225, 258, 266-271, 322-476, 498-567, 588-641, 662-669, 687-692, 709-721, 725
+israel_stewart/core/spacetime_grid.py             474    391    18%   20-22, 92, 98, 101, 104, 107, 116-127, 135-137, 145-147, 159, 167-172, 193-202, 214-215, 227-233, 245-253, 270-294, 309-411, 426-491, 505-514, 531-550, 562-636, 651-670, 685-758, 773-844, 859-930, 939-1008, 1054, 1084-1086, 1095, 1138-1139, 1160-1165, 1189-1194
+israel_stewart/core/stress_tensors.py             272    239    12%   23, 42-48, 61-77, 90-106, 118-149, 173-185, 199-200, 214-227, 236-249, 260-264, 284-319, 338-347, 352-377, 390-435, 447-470, 482-498, 529-619, 644-713, 737-784
+israel_stewart/core/tensor_base.py                463    430     7%   31, 56-60, 64-122, 134-140, 144-197, 204-205, 212, 227-265, 272-278, 291-344, 357-376, 389-408, 425-518, 542-671, 693-727, 746-792, 812-858, 879-921, 934-976, 988-1077
+israel_stewart/core/tensor_utils.py               293    249    15%   20-24, 30, 45-53, 58, 68, 81-110, 115-141, 163-281, 303-435, 456-473, 482-530, 554, 562-564, 572-636
+israel_stewart/core/tensors.py                      8      0   100%
+israel_stewart/core/transformations.py            215    174    19%   23, 41, 54-83, 97-121, 135-151, 165-226, 239, 253, 267-292, 305-328, 356-421, 435-451, 470-476, 494, 509-518, 530, 543-548, 559-566, 584-591, 611-619, 645-661
+israel_stewart/equations/coefficients.py          205    205     0%   8-612
+israel_stewart/equations/conservation.py          176    121    31%   27, 59-61, 101-150, 204-210, 217-244, 262, 275-298, 324, 339-372, 386-403, 418-454, 466-486, 489
+israel_stewart/equations/constraints.py           235    235     0%   8-717
+israel_stewart/equations/ired_coefficients.py     191    191     0%   36-509
+israel_stewart/equations/ired_simple.py           122     88    28%   64-84, 104-119, 137-145, 156, 171-172, 191-200, 216, 231-233, 251-252, 270, 281, 292, 303, 314, 328-329, 343-344, 358-359, 373-374, 390, 402, 415-417, 431-434, 453-488, 497-523, 528-556
+israel_stewart/equations/relaxation.py            471    244    48%   75-94, 294, 299-300, 304, 309-310, 314-315, 367, 374-379, 384-385, 393-401, 412-419, 424-430, 494-495, 502-511, 522-536, 577-588, 592-596, 633-651, 655-659, 734-752, 756-760, 807-862, 905-918, 933, 980-991, 1003, 1042-1054, 1068-1110, 1123-1147, 1152-1186, 1191-1242, 1247-1254, 1267-1282, 1292-1297
+israel_stewart/linearization/dispersion.py          0      0   100%
+israel_stewart/linearization/perturbations.py       0      0   100%
+israel_stewart/linearization/stability.py           0      0   100%
+israel_stewart/rg_analysis/fixed_points.py          0      0   100%
+israel_stewart/rg_analysis/flow_equations.py        0      0   100%
+israel_stewart/rg_analysis/msrjd.py                 0      0   100%
+israel_stewart/rg_analysis/propagators.py           0      0   100%
+israel_stewart/solvers/finite_difference.py       576    362    37%   114, 137, 161-167, 181-185, 190-196, 245-265, 282-297, 341-366, 378, 381, 398-412, 424-444, 489-491, 505-525, 549-585, 594-602, 611-674, 678-707, 721-743, 753-764, 777-800, 837-848, 858-884, 909-928, 954-956, 969-1032, 1049-1090, 1094-1096, 1110, 1150-1151, 1214, 1231-1245, 1260-1289, 1341-1394, 1420-1427, 1491, 1503-1516, 1523-1539, 1576-1579, 1604-1611
+israel_stewart/solvers/implicit.py                568    504    11%   32-33, 62-70, 124-146, 165-178, 182-185, 226-228, 243-298, 308-322, 326-359, 375-384, 398-472, 487-641, 656-688, 697, 712-735, 744-747, 778-800, 811-816, 820-827, 831-836, 852-869, 873-878, 895-910, 928-993, 1003-1032, 1042-1069, 1082-1087, 1093-1118, 1122-1139, 1143-1150, 1155-1162, 1175-1180, 1186-1205, 1209-1225, 1241-1248, 1277-1283, 1298-1315, 1327-1345, 1359-1380, 1407-1414
+israel_stewart/solvers/spectral.py               1020    649    36%   32-36, 76, 86, 139, 179-186, 271-278, 311-315, 318, 322, 343, 366-403, 420-447, 464, 468, 489, 522-523, 547-553, 575-600, 616-623, 642-673, 693, 705-715, 737, 751-756, 766-805, 817-833, 837-878, 885-912, 924-964, 977-1018, 1025-1026, 1029, 1136-1144, 1150-1164, 1189-1195, 1209, 1212-1215, 1222-1235, 1283-1284, 1290-1291, 1300-1301, 1308-1309, 1319-1320, 1329-1330, 1337-1338, 1348-1349, 1358-1363, 1404, 1414-1427, 1437-1452, 1461-1478, 1487-1510, 1534, 1566-1595, 1641-1643, 1648-1650, 1694, 1739-1741, 1752-1754, 1773-1808, 1856, 1867, 1875-1876, 1881-1883, 1896-1941, 1950-1979, 1994-1997, 2001-2008, 2018-2053, 2072-2112, 2145-2158, 2181-2241, 2250-2266, 2285-2291, 2306, 2322-2353, 2365-2400, 2410-2477, 2494-2530, 2540-2546, 2550-2554, 2560-2570, 2580-2605, 2666-2682, 2686-2696, 2707, 2721, 2736-2737, 2740-2742, 2746, 2764-2765, 2768-2770, 2773
+israel_stewart/solvers/splitting.py               466    400    14%   28-29, 58-67, 123-126, 140-224, 237-245, 259-291, 300-305, 325-328, 341-355, 368-386, 400-411, 422-452, 461-502, 506-509, 557-558, 574-596, 618, 632-651, 664-669, 678-686, 719-720, 729-754, 763-778, 791-808, 845-863, 876-921, 930-931, 949-980, 988-989, 993-996, 1039-1045, 1050-1072, 1097-1100, 1114-1171, 1185-1201, 1211-1225, 1235, 1250-1280, 1289-1313, 1322-1329, 1338-1342, 1369-1378, 1405-1411, 1431-1443
+israel_stewart/stochastic/correlators.py            0      0   100%
+israel_stewart/stochastic/langevin.py               0      0   100%
+israel_stewart/stochastic/noise.py                  0      0   100%
+israel_stewart/utils/dimensionless.py               0      0   100%
+israel_stewart/utils/io.py                        213     37    83%   18-20, 65-66, 103, 107-111, 139-141, 170-172, 314, 337-340, 368-369, 400-401, 405, 417, 441, 500, 505, 512-518, 538-539
+israel_stewart/utils/logging_config.py            121     16    87%   20-21, 30, 150-158, 166-173, 181-185, 196, 201, 366
+israel_stewart/utils/streaming.py                  75     21    72%   17, 98, 120, 136, 237-254, 264-269, 280-282, 286, 290, 294
+israel_stewart/utils/visualization.py               0      0   100%
+-----------------------------------------------------------------------------
+TOTAL                                           10163   7585    25%
+=========================== short test summary info ============================
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_fallback_mechanism_logging
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_memory_usage_logging
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_performance_monitoring_logging
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_physics_logger_integration
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_slow_operation_logging
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_solver_error_logging
+FAILED tests/test_solver_logging_integration.py::TestSolverLoggingIntegration::test_solver_warning_logging_integration
+FAILED tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_lax_friedrichs_flux
+FAILED tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_first_derivative_accuracy
+FAILED tests/test_solvers/test_finite_difference.py::TestConservativeFiniteDifference::test_second_derivative_vectorization
+FAILED tests/test_solvers/test_finite_difference.py::TestUpwindFiniteDifference::test_upwind_derivative_vectorization
+FAILED tests/test_solvers/test_finite_difference.py::TestUpwindFiniteDifference::test_characteristic_speeds
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_conservative_solver
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_upwind_solver
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_create_weno_solver
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceFactory::test_invalid_solver_type
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceIntegration::test_conservative_with_tensor_divergence
+ERROR tests/test_solvers/test_finite_difference.py::TestFiniteDifferenceIntegration::test_performance_vs_accuracy_tradeoff
+======= 12 failed, 43 passed, 1 xfailed, 5 warnings, 6 errors in 22.10s ========

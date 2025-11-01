@@ -953,6 +953,54 @@ class ISFieldConfiguration:
         # Ensure pressure positivity after EOS update
         self.pressure = np.maximum(self.pressure, -0.1 * self.rho)
 
+    def update_temperature_from_eos(self, eos_type: str = "radiation") -> None:
+        """
+        Update temperature from energy density using equation of state.
+
+        For radiation fluid: ε = a T^4 where a = π^2/30 (Stefan-Boltzmann constant for photons)
+        So: T = (ε/a)^{1/4} = (30 ε / π^2)^{1/4}
+
+        This is critical for diffusion physics, which depends on chemical potential μ_B/T.
+
+        Args:
+            eos_type: Type of equation of state
+                - "radiation": T from ε = (π^2/30) T^4
+                - "ideal_gas": T from ε = n_dof × n × T / 2 (requires particle density)
+                - "stiff": T from ε (linear relation)
+
+        Note:
+            Must be called whenever energy density ρ is updated if diffusion is active.
+            Chemical potential μ_B/T ∝ ln(n/T^3) for radiation, so wrong T breaks diffusion.
+        """
+        if eos_type == "radiation":
+            # Stefan-Boltzmann: ε = (π^2/30) T^4 for photons
+            # In natural units (ℏ = c = k_B = 1)
+            stefan_boltzmann_a = np.pi**2 / 30.0
+
+            # T = (ε/a)^{1/4} = (30 ε / π^2)^{1/4}
+            # Ensure positive energy density
+            rho_safe = np.maximum(self.rho, 1e-15)
+            self.temperature[:] = (rho_safe / stefan_boltzmann_a) ** 0.25
+
+        elif eos_type == "ideal_gas":
+            # Ideal gas: ε = (3/2) n T for monatomic gas
+            # T = (2/3) ε / n
+            n_safe = np.maximum(self.n, 1e-15)
+            rho_safe = np.maximum(self.rho, 1e-15)
+            self.temperature[:] = (2.0 / 3.0) * rho_safe / n_safe
+
+        elif eos_type == "stiff":
+            # Stiff matter: ε = T (linear, extreme relativistic)
+            self.temperature[:] = np.maximum(self.rho, 1e-15)
+
+        else:
+            raise ValueError(
+                f"Unknown EOS type: {eos_type}. " f"Supported: 'radiation', 'ideal_gas', 'stiff'"
+            )
+
+        # Ensure temperature positivity
+        self.temperature = np.maximum(self.temperature, 1e-10)
+
     def compute_chemical_potential_over_temperature(
         self, eos_type: str = "radiation", reference_temperature: float = 1.0
     ) -> np.ndarray:

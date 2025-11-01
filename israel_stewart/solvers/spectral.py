@@ -1214,6 +1214,10 @@ class SpectralISHydrodynamics:
         else:
             raise ValueError(f"Unknown time stepping method: {method}")
 
+        # BUG FIX: Enforce Landau frame constraints after evolution
+        # Ensures V^μ u_μ = 0, π^μν u_μ = 0, π^μ_μ = 0, u·u = -1
+        self.fields.apply_constraints()
+
     def _split_step_advance(self, dt: float) -> None:
         """
         Split-step method: spectral linear terms + real-space nonlinear terms.
@@ -1894,6 +1898,7 @@ class SpectralISHydrodynamics:
         """
         # Stage 1: Compute k1 = f(t, y)
         k1_rho = evolution_rhs.get("drho_dt", np.zeros_like(self.fields.rho))
+        k1_n = evolution_rhs.get("dn_dt", np.zeros_like(self.fields.n))  # BUG FIX: Get dn_dt
 
         # Convert momentum density derivative to velocity derivative
         dmom_dt = evolution_rhs.get("dmom_dt", np.zeros_like(self.fields.u_mu[..., 1:4]))
@@ -1904,10 +1909,12 @@ class SpectralISHydrodynamics:
 
         # Store initial state
         rho_0 = self.fields.rho.copy()
+        n_0 = self.fields.n.copy()  # BUG FIX: Store initial particle density
         u_mu_0 = self.fields.u_mu.copy()
 
         # Intermediate step: y_1 = y_0 + (dt/2) * k1
         self.fields.rho[:] = rho_0 + (dt / 2) * k1_rho
+        self.fields.n[:] = n_0 + (dt / 2) * k1_n  # BUG FIX: Update particle density
         self.fields.u_mu[:] = u_mu_0 + (dt / 2) * k1_velocity
 
         # Stage 2: Compute k2 = f(t + dt/2, y_1)
@@ -1917,6 +1924,7 @@ class SpectralISHydrodynamics:
             else:
                 evolution_rhs_2 = {}
             k2_rho = evolution_rhs_2.get("drho_dt", k1_rho)
+            k2_n = evolution_rhs_2.get("dn_dt", k1_n)  # BUG FIX: Get dn_dt for stage 2
 
             # Convert momentum to velocity for stage 2
             dmom_dt_2 = evolution_rhs_2.get("dmom_dt", dmom_dt)
@@ -1927,10 +1935,12 @@ class SpectralISHydrodynamics:
         except Exception:
             # Fallback to k1 if second evaluation fails
             k2_rho = k1_rho
+            k2_n = k1_n  # BUG FIX: Fallback for particle density
             k2_velocity = k1_velocity
 
         # Final update: y_n+1 = y_0 + dt * k2
         self.fields.rho[:] = rho_0 + dt * k2_rho
+        self.fields.n[:] = n_0 + dt * k2_n  # BUG FIX: Update particle density
         self.fields.u_mu[:] = u_mu_0 + dt * k2_velocity
 
         # CRITICAL: Update pressure from equation of state after ρ changes

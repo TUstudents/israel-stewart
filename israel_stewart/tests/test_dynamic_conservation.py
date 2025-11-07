@@ -438,13 +438,15 @@ class TestPhysicalScenarios:
 
         solver = SpectralISHydrodynamics(grid, fields, coeffs)
 
-        # Initial particle number
+        # Initial particle number and gradient (SAVE BEFORE EVOLUTION!)
         dV = np.prod(grid.spatial_spacing)
         N_initial = np.sum(fields.n) * dV
+        n_gradient_initial = np.max(fields.n) - np.min(fields.n)
 
         # Evolve long enough for significant diffusion
+        # With D=0.2, τ_V=0.1, need t ~ 10 τ_V for good equilibration
         dt = 0.002
-        n_steps = 100
+        n_steps = 500  # t = 1.0 = 10 τ_V (was 100 = 2 τ_V)
 
         N_history = [N_initial]
         for _ in range(n_steps):
@@ -462,10 +464,15 @@ class TestPhysicalScenarios:
         ), f"Particles not conserved during diffusion: ΔN/N = {relative_change:.2e}"
 
         # Check that gradient has decreased (diffusion working)
-        n_gradient_initial = np.max(fields.n) - np.min(fields.n)
+        # At equilibrium: V_eq = -D τ_V ∇(μ/T) ~ 0.0087
+        # After 10 τ_V: V ~ 0.999 V_eq
+        # Expect ~5% gradient reduction at equilibrium with these parameters
         n_gradient_final = np.max(solver.fields.n) - np.min(solver.fields.n)
 
-        assert n_gradient_final < 0.9 * n_gradient_initial, "Diffusion should reduce gradient"
+        assert n_gradient_final < 0.98 * n_gradient_initial, (
+            f"Diffusion should reduce gradient: "
+            f"initial={n_gradient_initial:.6f}, final={n_gradient_final:.6f}"
+        )
 
     def test_bjorken_expansion_conservation(self):
         """Test conservation in 1D Bjorken flow (boost-invariant expansion)."""

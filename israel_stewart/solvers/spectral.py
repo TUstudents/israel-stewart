@@ -1673,6 +1673,10 @@ class SpectralISHydrodynamics:
         self.fields.pressure.flags.writeable = True
         self.fields.update_pressure_from_eos("radiation")
 
+        # CRITICAL: Update temperature for diffusion physics (chemical potential μ/T depends on T)
+        if self.coeffs and getattr(self.coeffs, "diffusion_coefficient", 0) > 0:
+            self.fields.update_temperature_from_eos("radiation")
+
         # Update derived quantities (includes velocity normalization)
         self._update_derived_fields()
 
@@ -1947,6 +1951,10 @@ class SpectralISHydrodynamics:
         # Without this, pressure gradients are wrong and sound waves don't propagate correctly
         self.fields.update_pressure_from_eos("radiation")
 
+        # CRITICAL: Update temperature for diffusion physics (chemical potential μ/T depends on T)
+        if self.coeffs and getattr(self.coeffs, "diffusion_coefficient", 0) > 0:
+            self.fields.update_temperature_from_eos("radiation")
+
         # Update derived quantities (includes normalization)
         self._update_derived_fields()
 
@@ -1994,6 +2002,14 @@ class SpectralISHydrodynamics:
             # Update pressure from equation of state (CRITICAL for sound propagation!)
             if hasattr(self.fields, "update_pressure_from_eos"):
                 self.fields.update_pressure_from_eos("radiation")
+
+            # Update temperature for diffusion physics (CRITICAL: μ/T depends on T!)
+            if (
+                self.coeffs
+                and getattr(self.coeffs, "diffusion_coefficient", 0) > 0
+                and hasattr(self.fields, "update_temperature_from_eos")
+            ):
+                self.fields.update_temperature_from_eos("radiation")
 
             # Ensure four-velocity normalization
             if hasattr(self.fields, "normalize_four_velocity"):
@@ -2161,6 +2177,10 @@ class SpectralISHydrodynamics:
 
         # Update pressure from equation of state
         self.fields.update_pressure_from_eos("radiation")
+
+        # Update temperature for diffusion physics
+        if self.coeffs and getattr(self.coeffs, "diffusion_coefficient", 0) > 0:
+            self.fields.update_temperature_from_eos("radiation")
 
         # Update u^0 to maintain normalization constraint g_μν u^μ u^ν = -1
         # This computes u^0 = sqrt(1 + |u_spatial|²) from updated spatial velocity

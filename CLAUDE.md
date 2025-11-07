@@ -196,6 +196,45 @@ grid = SpaceGrid(..., grid_points=(64, 64, 64))  # Missing boundary_conditions
 
 **Why**: FFT assumes periodicity. Dirichlet: `dx = L/(N-1)`, Periodic: `dx = L/N`. Wrong spacing shifts wavenumbers by `(N-1)/N`, causing systematic derivative errors. See `EXPANSION_SCALAR_BUG_FIX.md`.
 
+### Particle Diffusion in Landau Frame
+
+**CRITICAL: Diffusion requires temperature to be set and updated!**
+
+The particle diffusion current V^μ (Landau frame) is driven by chemical potential gradients:
+```
+dV^μ/dτ = -V^μ/τ_V - D ∇^μ(μ_B/T) + coupling terms
+```
+
+**Chemical potential depends on temperature:** μ_B/T = ln(n/n_eq(T)) where n_eq ∝ T³ for radiation.
+
+**Required setup for diffusion problems:**
+
+```python
+# Initialize fields
+fields.rho[:] = 1.0
+fields.n[:] = 0.5 + 0.2 * np.sin(X)  # Particle gradient
+fields.pressure[:] = fields.rho / 3.0
+
+# CRITICAL: Set temperature from energy density
+fields.update_temperature_from_eos(eos_type="radiation")
+
+# Apply constraints (V·u = 0, etc.)
+fields.apply_constraints()
+
+# Enable diffusion
+coeffs = TransportCoefficients(
+    diffusion_coefficient=0.2,
+    diffusion_relaxation_time=0.1,
+    # ... other coefficients
+)
+```
+
+**Automatic temperature updates:** Temperature is automatically updated during evolution when `diffusion_coefficient > 0`. The solver calls `fields.update_temperature_from_eos()` after every time step to maintain correct μ/T.
+
+**Equilibrium diffusion current:** V_eq = -D τ_V ∇(μ/T), NOT just -D ∇(μ/T). The relaxation time τ_V sets the equilibrium magnitude.
+
+**Timescales:** Diffusion approaches equilibrium on timescale t ~ 5-10 τ_V. For significant gradient reduction, evolve for at least 10 relaxation times.
+
 ### Linear Regime Detection
 
 **For small perturbations, use linearized momentum conversion to avoid spurious harmonics:**
